@@ -2,7 +2,7 @@
 
 Mobile web app for the parent volunteers who run an after-lunch snack table at our school: stock, the cash count-up after each sale, purchases and reimbursements, and simple sales insights.
 
-**Status:** design handoff. No app code yet. Start with [`CLAUDE.md`](CLAUDE.md) and [`docs/HANDOFF.md`](docs/HANDOFF.md).
+**Status:** design handoff; no app code yet. Start with [`CLAUDE.md`](CLAUDE.md), then the first ticket: [#2 Scaffold app, theme and CI](https://github.com/calvincchan/snack-shack/issues/2).
 
 | | |
 |---|---|

@@ -11,6 +11,13 @@ A mobile web app for parent volunteers who run an after-lunch snack table at an 
 5. `docs/prototype/`: clickable prototype and screenshots. Match its flows and wording, not its code.
 6. GitHub issues: the build is broken into `ready-for-agent` tickets with native blocking; take any ticket whose blockers are closed. Open questions are `needs-info` issues with working assumptions.
 
+## Picking up work
+
+1. Find the next ticket: open `ready-for-agent` issues whose blockers are all closed (`gh issue list --label ready-for-agent`, then check each with `gh issue view <n>`; the "Blocked by" section and GitHub's native dependencies agree). The first is #2 (scaffold).
+2. Read the ticket, the HANDOFF sections and ADRs it cites, and `CONTEXT.md` for wording.
+3. Build the ticket end to end (database, UI, tests), meet every acceptance criterion, then close it with a short comment.
+4. Hit an undecided question? Check the `needs-info` issues for a working assumption; use it and note it in the ticket. If none exists, open a `needs-info` issue rather than guessing.
+
 ## Stack
 
 Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanStack Query, TanStack Router or React Router, react-hook-form + zod, Supabase (Postgres, Auth, Realtime, Storage, Edge Functions, Cron), Resend (or similar) for email, vite-plugin-pwa with persisted TanStack Query mutations for the offline count up, pnpm. Tests: pgTAP, Vitest, Playwright. Check current versions when scaffolding; don't pin from docs.

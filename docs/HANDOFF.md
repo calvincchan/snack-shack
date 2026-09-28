@@ -1,6 +1,6 @@
 # Snack Shack: handoff
 
-This document is the source of truth for what Snack Shack does and why. Read it before writing code. The companion files are:
+This document is the source of truth for what Snack Shack does: background, screens and business rules. The reasons behind decisions are in the ADRs. Read it before writing code. The companion files are:
 
 | File | What it covers |
 |---|---|
@@ -19,7 +19,7 @@ The prototype is a single-file vanilla JS mock with fake data. It shows the agre
 Snack Shack is a snack table run by parent volunteers at an elementary school in British Columbia, Canada. It raises money for the school's PAC (Parent Advisory Council).
 
 - **When:** during the free time after lunch, about **15–20 minutes**, on irregular days. One of these is a **sale day**.
-- **Customers:** students aged **5 to 12**.
+- **Kids:** students aged **5 to 12**.
 - **Payment:** **cash only**, mostly loonies and toonies. Prices are whole dollars: **$1**, **$2**, or a deal such as **"2 for $1"**.
 - **Rules for kids:** each kid can buy **up to 3 items**, of which **at most 1 is a treat** (sugary).
 - **What is sold:** chips, crackers, popcorn and similar **snacks**; candy, chocolate, granola bars, popsicles and ice-cream bars as **treats**. Bought in bulk from Costco and grocery stores.
