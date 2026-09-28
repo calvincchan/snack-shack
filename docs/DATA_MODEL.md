@@ -57,7 +57,7 @@ All views use `security_invoker = true`, so row level security still applies.
 | View | Gives you |
 |---|---|
 | `item_stock` | Every item column plus `on_hand` (sum of the ledger) |
-| `item_overview` | What the Items tab reads: `item_stock` plus `days_out`, `is_new` (never in a finished lineup), `pieces_per_day_out`, and who bought it last |
+| `item_overview` | What the Items tab reads: `item_stock` plus `days_out`, `is_new` (never in a finished lineup), `pieces_per_day_out`, who bought it last, and who edited it last (for the conflict prompt) |
 | `claims` | Purchases plus `claim_label` (SS-001), `total_cents`, `buyer_name` |
 | `sale_day_item_results` | Per lineup item: `sold_pieces = start − left − out`, `sales_cents = round(sold × locked price ÷ locked bundle)` |
 | `sale_day_totals` | Per sale day: `pieces_sold`, `treat_pieces_sold`, `sales_cents`, `expected_cents = float + sales − helper credits × 100`, `counted_cents`, `over_short_cents`, `deposit_cents = counted − float`, `signoffs`, `items_over_start`, `items_uncounted` |

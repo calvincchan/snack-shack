@@ -1051,8 +1051,9 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
     (COALESCE("st"."days_out", 0) = 0) AS "is_new",
     "st"."pieces_per_day_out",
     "last_buy"."buyer_name" AS "last_bought_by",
-    "last_buy"."purchased_on" AS "last_bought_on"
-   FROM (("public"."item_stock" "s"
+    "last_buy"."purchased_on" AS "last_bought_on",
+    "editor"."display_name" AS "updated_by_name"
+   FROM ((("public"."item_stock" "s"
      LEFT JOIN "public"."item_sale_stats" "st" ON (("st"."item_id" = "s"."id")))
      LEFT JOIN LATERAL ( SELECT "pr"."display_name" AS "buyer_name",
             "p"."purchased_on"
@@ -1061,7 +1062,8 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
              JOIN "public"."profiles" "pr" ON (("pr"."id" = "p"."buyer_id")))
           WHERE ("l"."item_id" = "s"."id")
           ORDER BY "p"."purchased_on" DESC, "p"."claim_no" DESC
-         LIMIT 1) "last_buy" ON (true));
+         LIMIT 1) "last_buy" ON (true))
+     LEFT JOIN "public"."profiles" "editor" ON (("editor"."id" = "s"."updated_by")));
 
 
 ALTER VIEW "public"."item_overview" OWNER TO "postgres";

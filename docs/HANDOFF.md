@@ -142,6 +142,7 @@ Three segments: **What to buy · Log purchase · Claims**.
   - **Type:** Snack / Treat.
   - **Storage:** Shelf / ❄ Freezer.
   - **Name kids see.**
+  - **Archive this item:** it stays in the history but is no longer offered in a lineup or shown in the list. *Show archived items* brings the list back, and the editor puts one back on the list.
 - During a sale, a note says prices and types are locked for today and changes apply from the next sale day. A changed item shows "today $2" or "today still a treat".
 - Anyone on the team can edit any item. There is **no separate sale or clearance price**; to discount old stock, change the price.
 

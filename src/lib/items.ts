@@ -16,8 +16,11 @@ export type Item = {
   costPerPieceCents: number
   onHand: number
   isNew: boolean
+  archived: boolean
   version: number
   lastBoughtBy: string | null
+  updatedByName: string | null
+  updatedAt: string | null
 }
 
 function toItem(row: OverviewRow): Item {
@@ -31,61 +34,157 @@ function toItem(row: OverviewRow): Item {
     costPerPieceCents: Number(row.unit_cost_cents ?? 0),
     onHand: row.on_hand ?? 0,
     isNew: row.is_new ?? true,
+    archived: row.archived ?? false,
     version: row.version!,
     lastBoughtBy: row.last_bought_by,
+    updatedByName: row.updated_by_name,
+    updatedAt: row.updated_at,
   }
 }
 
 export const itemsQueryKey = ['items'] as const
 
-export function useItems() {
+export function useItems({ includeArchived = false } = {}) {
   return useQuery({
-    queryKey: itemsQueryKey,
+    queryKey: [...itemsQueryKey, { includeArchived }],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('item_overview')
-        .select('*')
-        .eq('archived', false)
-        .order('type')
-        .order('name')
+      let query = supabase.from('item_overview').select('*')
+      if (!includeArchived) query = query.eq('archived', false)
+      const { data, error } = await query.order('type').order('name')
       if (error) throw error
       return data.map(toItem)
     },
   })
 }
 
+/** What an item looks like on the sale day that is open right now, if any. */
+export type LockedItem = {
+  priceCents: number | null
+  bundleSize: number | null
+  type: Enums<'item_type'> | null
+}
+
+export type OpenSaleDay = {
+  phase: Enums<'sale_phase'>
+  /** Only filled once the sale has started; keyed by item id. */
+  locked: Record<string, LockedItem>
+}
+
+export function useOpenSaleDay() {
+  return useQuery({
+    queryKey: ['open-sale-day'],
+    queryFn: async (): Promise<OpenSaleDay | null> => {
+      const { data: day, error } = await supabase
+        .from('sale_days')
+        .select('id, phase')
+        .neq('phase', 'closed')
+        .maybeSingle()
+      if (error) throw error
+      if (!day) return null
+
+      const { data: rows, error: rowsError } = await supabase
+        .from('sale_day_items')
+        .select('item_id, locked_price_cents, locked_bundle_size, locked_type')
+        .eq('sale_day_id', day.id)
+      if (rowsError) throw rowsError
+
+      return {
+        phase: day.phase,
+        locked: Object.fromEntries(
+          rows.map((row) => [
+            row.item_id,
+            {
+              priceCents: row.locked_price_cents,
+              bundleSize: row.locked_bundle_size,
+              type: row.locked_type,
+            },
+          ]),
+        ),
+      }
+    },
+  })
+}
+
+export type ItemEdit = {
+  name: string
+  type: Enums<'item_type'>
+  storage: Enums<'storage_kind'>
+  priceCents: number | null
+  bundleSize: number
+}
+
+/** Someone else saved first; the caller decides whose edit wins. */
+export class ItemChangedError extends Error {
+  /** The item as it stands now, so the prompt can name who changed what. */
+  current: Item
+
+  constructor(current: Item) {
+    super('This item changed while you were editing it.')
+    this.name = 'ItemChangedError'
+    this.current = current
+  }
+}
+
+async function readItem(id: string): Promise<Item> {
+  const { data, error } = await supabase
+    .from('item_overview')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return toItem(data)
+}
+
 /**
- * Give an item a price, which also takes it off the "Needs a price" list.
+ * Save an edit, but only if nobody else has saved since the screen loaded.
  *
- * The update carries the version the screen loaded, so a price someone else
- * changed in the meantime is not overwritten silently (see DATA_MODEL).
+ * The update carries the version it loaded (see DATA_MODEL): zero rows changed
+ * means someone got there first, so the caller is handed their row and asks
+ * the volunteer whose edit to keep.
  */
-export function useSetPrice() {
+export function useSaveItem() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (input: {
+    mutationFn: async ({
+      id,
+      version,
+      edit,
+    }: {
       id: string
       version: number
-      priceCents: number
-      bundleSize: number
+      edit: ItemEdit
     }) => {
       const { data, error } = await supabase
         .from('items')
         .update({
-          price_cents: input.priceCents,
-          bundle_size: input.bundleSize,
+          name: edit.name,
+          type: edit.type,
+          storage: edit.storage,
+          price_cents: edit.priceCents,
+          bundle_size: edit.bundleSize,
         })
-        .eq('id', input.id)
-        .eq('version', input.version)
+        .eq('id', id)
+        .eq('version', version)
         .select('id')
       if (error) throw error
-      if (data.length === 0) {
-        throw new Error(
-          'Someone else changed this item. Pull to refresh and try again.',
-        )
-      }
+      if (data.length === 0) throw new ItemChangedError(await readItem(id))
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: itemsQueryKey }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: itemsQueryKey }),
+  })
+}
+
+export function useSetArchived() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      const { error } = await supabase
+        .from('items')
+        .update({ archived })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: itemsQueryKey }),
   })
 }

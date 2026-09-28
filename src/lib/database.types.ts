@@ -786,6 +786,7 @@ export type Database = {
           unit_cost_cents: number | null
           updated_at: string | null
           updated_by: string | null
+          updated_by_name: string | null
           version: number | null
         }
         Relationships: []

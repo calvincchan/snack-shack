@@ -1,6 +1,15 @@
+import { useState } from 'react'
 import { toast } from 'sonner'
+import { cn } from 'cn'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
-import { useItems, useSetPrice, type Item } from '@/lib/items'
+import { ItemEditor } from '@/app/items/item-editor'
+import {
+  useItems,
+  useOpenSaleDay,
+  useSaveItem,
+  type Item,
+  type LockedItem,
+} from '@/lib/items'
 import { formatCents } from '@/lib/money'
 import {
   formatMargin,
@@ -9,15 +18,26 @@ import {
   priceLabel,
   priceOptions,
 } from '@/lib/pricing'
-import { cn } from 'cn'
 
 export function ItemsPage() {
-  const items = useItems()
+  const [showArchived, setShowArchived] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
 
-  const needPrice = (items.data ?? []).filter(
-    (item) => item.priceCents === null,
+  const items = useItems({ includeArchived: showArchived })
+  const saleDay = useOpenSaleDay()
+
+  const all = items.data ?? []
+  const needPrice = all.filter(
+    (item) => item.priceCents === null && !item.archived,
   )
-  const priced = (items.data ?? []).filter((item) => item.priceCents !== null)
+  const priced = all.filter(
+    (item) => item.priceCents !== null && !item.archived,
+  )
+  const archived = all.filter((item) => item.archived)
+
+  const sellingNow = saleDay.data != null && saleDay.data.phase !== 'lineup'
+  const lockedFor = (item: Item) =>
+    sellingNow ? (saleDay.data?.locked[item.id] ?? null) : null
 
   return (
     <div className="flex flex-col gap-6 p-4 pb-8">
@@ -46,23 +66,62 @@ export function ItemsPage() {
 
       {priced.length > 0 && (
         <section className="flex flex-col gap-3">
-          <SectionHeading title="All items" />
+          <SectionHeading title="All items" note="Tap to edit" />
           <ul
             aria-label="All items"
             className="border-border bg-card divide-border divide-y overflow-hidden rounded-xl border"
           >
             {priced.map((item) => (
-              <ItemRow key={item.id} item={item} />
+              <ItemRow
+                key={item.id}
+                item={item}
+                locked={lockedFor(item)}
+                onOpen={() => setEditing(item.id)}
+              />
             ))}
           </ul>
         </section>
       )}
+
+      {showArchived && archived.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <SectionHeading title="Archived" note="Not offered in a lineup" />
+          <ul
+            aria-label="Archived items"
+            className="border-border bg-card divide-border divide-y overflow-hidden rounded-xl border opacity-70"
+          >
+            {archived.map((item) => (
+              <ItemRow
+                key={item.id}
+                item={item}
+                locked={null}
+                onOpen={() => setEditing(item.id)}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <button
+        type="button"
+        className="text-muted-foreground min-h-11 self-start text-sm underline underline-offset-4"
+        onClick={() => setShowArchived((shown) => !shown)}
+      >
+        {showArchived ? 'Hide archived items' : 'Show archived items'}
+      </button>
 
       <p className="text-muted-foreground text-sm">
         Anyone on the team can edit an item, any time. Price and type changes
         made during a sale apply from the next sale day. Every change is
         recorded, so Insights can compare how an item sold at each price.
       </p>
+
+      <ItemEditor
+        key={editing}
+        item={all.find((item) => item.id === editing) ?? null}
+        saleDay={saleDay.data ?? null}
+        onClose={() => setEditing(null)}
+      />
     </div>
   )
 }
@@ -90,7 +149,35 @@ function ItemName({ item }: { item: Item }) {
   )
 }
 
-function ItemRow({ item }: { item: Item }) {
+/** "today $2" / "today still a treat" when an edit does not apply until the next sale day. */
+function TodayNote({ item, locked }: { item: Item; locked: LockedItem }) {
+  const priceChanged =
+    locked.priceCents !== item.priceCents ||
+    (locked.bundleSize ?? 1) !== item.bundleSize
+  const typeChanged = locked.type !== null && locked.type !== item.type
+
+  if (!priceChanged && !typeChanged) return null
+
+  return (
+    <span className="text-warn text-sm">
+      {priceChanged &&
+        `today ${priceLabel(locked.priceCents, locked.bundleSize ?? 1)}`}
+      {priceChanged && typeChanged && ' · '}
+      {typeChanged &&
+        `today still a ${locked.type === 'treat' ? 'treat' : 'snack'}`}
+    </span>
+  )
+}
+
+function ItemRow({
+  item,
+  locked,
+  onOpen,
+}: {
+  item: Item
+  locked: LockedItem | null
+  onOpen: () => void
+}) {
   const margin = marginOf(
     item.costPerPieceCents,
     item.priceCents!,
@@ -98,25 +185,34 @@ function ItemRow({ item }: { item: Item }) {
   )
 
   return (
-    <li className="flex items-center gap-3 p-3">
-      <TypeDot type={item.type} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <ItemName item={item} />
-        <p className="text-muted-foreground text-sm tabular-nums">
-          {item.onHand} on hand · {formatCents(item.costPerPieceCents)} a piece
-          · {formatMargin(margin)}
-        </p>
-        <BandPill band={marginBand(margin)} className="self-start" />
-      </div>
-      <span className="font-heading shrink-0 text-lg font-semibold tabular-nums">
-        {priceLabel(item.priceCents, item.bundleSize)}
-      </span>
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="hover:bg-accent flex w-full items-center gap-3 p-3 text-left"
+      >
+        <TypeDot type={item.type} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <ItemName item={item} />
+          <p className="text-muted-foreground text-sm tabular-nums">
+            {item.onHand} on hand · {formatCents(item.costPerPieceCents)} a
+            piece · {formatMargin(margin)}
+          </p>
+          <span className="flex flex-wrap items-center gap-2">
+            <BandPill band={marginBand(margin)} />
+            {locked && <TodayNote item={item} locked={locked} />}
+          </span>
+        </div>
+        <span className="font-heading text-foreground shrink-0 text-lg font-semibold tabular-nums">
+          {priceLabel(item.priceCents, item.bundleSize)}
+        </span>
+      </button>
     </li>
   )
 }
 
 function NeedsPriceCard({ item }: { item: Item }) {
-  const setPrice = useSetPrice()
+  const save = useSaveItem()
 
   return (
     <div className="border-border bg-card flex flex-col gap-3 rounded-xl border p-3">
@@ -136,14 +232,19 @@ function NeedsPriceCard({ item }: { item: Item }) {
           <button
             key={`${option.priceCents}-${option.bundleSize}`}
             type="button"
-            disabled={setPrice.isPending}
+            disabled={save.isPending}
             onClick={() =>
-              setPrice.mutate(
+              save.mutate(
                 {
                   id: item.id,
                   version: item.version,
-                  priceCents: option.priceCents,
-                  bundleSize: option.bundleSize,
+                  edit: {
+                    name: item.name,
+                    type: item.type,
+                    storage: item.storage,
+                    priceCents: option.priceCents,
+                    bundleSize: option.bundleSize,
+                  },
                 },
                 {
                   onSuccess: () =>

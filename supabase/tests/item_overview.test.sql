@@ -8,6 +8,10 @@ select plan(8);
 set local client_min_messages = warning;
 truncate table auth.users, public.items cascade;
 alter table public.purchases alter column claim_no restart with 1;
+update public.settings
+   set float_cents = 3000, target_sale_days = 2,
+       over_short_ok_cents = 300, over_short_warn_cents = 1000, gst_rate = 0.05,
+       max_items_per_kid = 3, max_treats_per_kid = 1, treasurer_email = null;
 
 insert into auth.users (id, email)
 values ('00000000-0000-0000-0000-00000000000a', 'calvin@example.com');
