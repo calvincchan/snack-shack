@@ -6,7 +6,7 @@ Mobile web app for the parent volunteers who run an after-lunch snack table at o
 
 | | |
 |---|---|
-| What and why | [`docs/HANDOFF.md`](docs/HANDOFF.md), [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| What and why | [`docs/HANDOFF.md`](docs/HANDOFF.md), [`CONTEXT.md`](CONTEXT.md) (glossary), [`docs/adr/`](docs/adr/) (decisions) |
 | Database | [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md), [`supabase/`](supabase/) |
 | Plan | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md), [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) |
 | Prototype | [`docs/prototype/`](docs/prototype/) |

@@ -107,7 +107,7 @@ The `supabase_realtime` publication includes `sale_days`, `sale_day_items`, `cas
 
 ## What's deliberately not in the schema
 
-Individual sales, customers, payment methods, barcodes, per-flavour stock, sale/clearance prices, a healthy flag, claim approval. See `DECISIONS.md`.
+Individual sales, customers, payment methods, barcodes, per-flavour stock, sale/clearance prices, a healthy flag, claim approval. See `docs/adr/`.
 
 ## Things to confirm during the build
 

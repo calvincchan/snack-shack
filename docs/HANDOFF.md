@@ -4,7 +4,8 @@ This document is the source of truth for what Snack Shack does and why. Read it 
 
 | File | What it covers |
 |---|---|
-| [`DECISIONS.md`](DECISIONS.md) | Every product decision, with the reason, including ideas that were tried and dropped |
+| [`../CONTEXT.md`](../CONTEXT.md) | Glossary: the words to use, and the ones to avoid |
+| [`adr/`](adr/) | Every product and technical decision, with the reason, including ideas that were tried and rejected |
 | [`DATA_MODEL.md`](DATA_MODEL.md) | Tables, views, database functions, access rules, audit trail |
 | [`BUILD_PLAN.md`](BUILD_PLAN.md) | Milestones and how to check each one is done |
 | [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) | What is still undecided, and what to learn from the first real sale |
@@ -66,24 +67,7 @@ Every volunteer uses their **own phone and their own login**. That makes the aud
 
 ## 3. Glossary
 
-Use these words in the UI. They were chosen with the team; avoid retail jargon.
-
-| Term | Meaning |
-|---|---|
-| **Sale day** | One after-lunch selling period. Replaces "session". |
-| **Lineup** | The 4–6 items put out for a given sale day. Everything else stays in storage untouched. |
-| **Check stock** | Before selling, count each lineup box and report anything missing or damaged. |
-| **Count up** | After selling, count what's left of each lineup item, then count the cash, then sign off. Replaces "close-out". |
-| **Change float** | Fixed cash kept in the box for making change. Default **$30**. |
-| **Helper credit** | $1 of snacks given to the student helper with no cash taken. Lowers expected cash by $1 each. |
-| **Out** | Pieces removed during a sale without being sold (melted, dropped). Not the same as missing/damaged found during Check stock. |
-| **Over / short** | Cash counted minus cash expected. |
-| **Deal** | A multi-piece price, e.g. "2 for $1". Counts as **one item** (and one treat, if a treat) for the kid rules. |
-| **Type** | **Snack** or **Treat**. The only split the rules use. |
-| **Storage** | **Shelf** or **Freezer**. A label only (❄ Freezer) so volunteers know where to fetch a box. It has no effect on rules or grouping. |
-| **Target stock** | About 2 sale days' worth, the most storage can hold. Replaces "par". |
-| **Claim** | A logged purchase waiting to be reimbursed (numbered SS-001, SS-002, …). |
-| **Margin** | 1 − (cost per piece × pieces per deal) ÷ deal price. |
+The glossary lives in [`CONTEXT.md`](../CONTEXT.md). Use its words in the UI and code, and avoid the ones it lists under _Avoid_ (session, close-out, par, variance, …).
 
 Spelling: **Canadian English** in all UI copy (colour, centre, cheque), keeping "-ize" endings (organize).
 
@@ -343,4 +327,4 @@ The prototype's look was approved. Carry it over as shadcn/ui theme tokens.
 
 ## 8. Out of scope (for now)
 
-Per-sale logging, card payments, barcode scanning, pre-bagging, splitting variety packs into flavours, separate sale/clearance prices, a "healthy pick" tag, an approval step for claims, AI-written insights, multiple schools. Reasons are in `DECISIONS.md`.
+Per-sale logging, card payments, barcode scanning, pre-bagging, splitting variety packs into flavours, separate sale/clearance prices, a "healthy pick" tag, an approval step for claims, AI-written insights, multiple schools. Reasons are in [`adr/`](adr/).
