@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { timeAgo } from '@/lib/time'
+import { formatSaleDate, timeAgo, todayDate } from '@/lib/time'
 
 const now = new Date('2026-09-28T12:00:00Z')
 const ago = (ms: number) => timeAgo(new Date(now.getTime() - ms), now)
@@ -26,5 +26,21 @@ describe('timeAgo', () => {
 
   it('takes a timestamp string straight from the database', () => {
     expect(timeAgo('2026-09-28T11:50:00Z', now)).toBe('10 minutes ago')
+  })
+})
+
+describe('formatSaleDate', () => {
+  it('reads like the header on the sale day screen', () => {
+    expect(formatSaleDate('2026-09-29')).toBe('Tue, Sep 29')
+  })
+
+  it('keeps the day the volunteer is standing in, not UTC midnight', () => {
+    expect(formatSaleDate('2026-01-01')).toBe('Thu, Jan 1')
+  })
+})
+
+describe('todayDate', () => {
+  it('writes the local date the way the database stores it', () => {
+    expect(todayDate(new Date(2026, 8, 29, 23, 30))).toBe('2026-09-29')
   })
 })

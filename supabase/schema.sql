@@ -1069,6 +1069,25 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
 ALTER VIEW "public"."item_overview" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."lineup_options" WITH ("security_invoker"='true') AS
+ SELECT "s"."item_id",
+    "i"."name",
+    "i"."type",
+    "i"."storage",
+    "i"."price_cents",
+    "i"."bundle_size",
+    "i"."unit_cost_cents",
+    "i"."on_hand",
+    "s"."score",
+    "s"."reason",
+    "s"."suggested"
+   FROM ("public"."suggest_lineup"() "s"("item_id", "type", "score", "reason", "suggested")
+     JOIN "public"."item_stock" "i" ON (("i"."id" = "s"."item_id")));
+
+
+ALTER VIEW "public"."lineup_options" OWNER TO "postgres";
+
+
 ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME "public"."purchases_claim_no_seq"
     START WITH 1
@@ -1078,6 +1097,65 @@ ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS
     CACHE 1
 );
 
+
+
+CREATE OR REPLACE VIEW "public"."sale_day_lineup" WITH ("security_invoker"='true') AS
+ SELECT "sdi"."sale_day_id",
+    "sdi"."item_id",
+    "i"."name",
+    "i"."storage",
+    COALESCE("sdi"."locked_type", "i"."type") AS "type",
+    COALESCE("sdi"."locked_price_cents", "i"."price_cents") AS "price_cents",
+    COALESCE("sdi"."locked_bundle_size", "i"."bundle_size") AS "bundle_size",
+    "i"."unit_cost_cents",
+    "i"."on_hand" AS "expected_count",
+    "sdi"."check_count",
+    "sdi"."check_reason",
+    "sdi"."start_count",
+    COALESCE("st"."pieces_per_day_out", (15)::numeric) AS "rate"
+   FROM (("public"."sale_day_items" "sdi"
+     JOIN "public"."item_stock" "i" ON (("i"."id" = "sdi"."item_id")))
+     LEFT JOIN "public"."item_sale_stats" "st" ON (("st"."item_id" = "sdi"."item_id")));
+
+
+ALTER VIEW "public"."sale_day_lineup" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."sale_day_lineup_totals" WITH ("security_invoker"='true') AS
+ WITH "numbered" AS (
+         SELECT "sale_days"."id",
+            "sale_days"."sale_date",
+            "sale_days"."phase",
+            "sale_days"."float_cents",
+            ("row_number"() OVER (ORDER BY "sale_days"."sale_date", "sale_days"."created_at"))::integer AS "day_no"
+           FROM "public"."sale_days"
+        ), "lineup" AS (
+         SELECT "sale_day_lineup"."sale_day_id",
+            ("count"(*) FILTER (WHERE ("sale_day_lineup"."type" = 'snack'::"public"."item_type")))::integer AS "snacks",
+            ("count"(*) FILTER (WHERE ("sale_day_lineup"."type" = 'treat'::"public"."item_type")))::integer AS "treats",
+            ("count"(*) FILTER (WHERE (("sale_day_lineup"."check_count" IS NOT NULL) AND ("sale_day_lineup"."check_count" <> "sale_day_lineup"."expected_count"))))::integer AS "items_off",
+            "sum"(("sale_day_lineup"."rate" * "sale_day_lineup"."unit_cost_cents")) AS "cost_weight",
+            "sum"((("sale_day_lineup"."rate" * ("sale_day_lineup"."price_cents")::numeric) / ("sale_day_lineup"."bundle_size")::numeric)) AS "price_weight"
+           FROM "public"."sale_day_lineup"
+          GROUP BY "sale_day_lineup"."sale_day_id"
+        )
+ SELECT "n"."id" AS "sale_day_id",
+    "n"."sale_date",
+    "n"."phase",
+    "n"."float_cents",
+    "n"."day_no",
+    COALESCE("l"."snacks", 0) AS "snacks",
+    COALESCE("l"."treats", 0) AS "treats",
+    COALESCE("l"."items_off", 0) AS "items_off",
+        CASE
+            WHEN ("l"."price_weight" > (0)::numeric) THEN ((1)::numeric - ("l"."cost_weight" / "l"."price_weight"))
+            ELSE NULL::numeric
+        END AS "margin"
+   FROM ("numbered" "n"
+     LEFT JOIN "lineup" "l" ON (("l"."sale_day_id" = "n"."id")));
+
+
+ALTER VIEW "public"."sale_day_lineup_totals" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."sale_day_signoffs" (
@@ -2136,9 +2214,27 @@ GRANT ALL ON TABLE "public"."item_overview" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."lineup_options" TO "anon";
+GRANT ALL ON TABLE "public"."lineup_options" TO "authenticated";
+GRANT ALL ON TABLE "public"."lineup_options" TO "service_role";
+
+
+
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."sale_day_lineup" TO "anon";
+GRANT ALL ON TABLE "public"."sale_day_lineup" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_day_lineup" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "anon";
+GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "service_role";
 
 
 

@@ -19,6 +19,8 @@ import { NoProfilePage } from '@/app/routes/no-profile'
 import { AccountMenu } from '@/app/account-menu'
 import { useAuth } from '@/lib/auth'
 import { useItems } from '@/lib/items'
+import { useSaleDay } from '@/lib/sale-day'
+import { formatSaleDate } from '@/lib/time'
 
 const tabs = [
   { to: '/', label: 'Sale day', icon: CalendarCheck2 },
@@ -51,6 +53,7 @@ export function AppShell() {
 
 function MemberShell() {
   const items = useItems()
+  const saleDay = useSaleDay()
   const needPrice = (items.data ?? []).filter(
     (item) => item.priceCents === null,
   ).length
@@ -62,7 +65,9 @@ function MemberShell() {
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <h1 className="font-heading text-lg font-semibold">Snack Shack</h1>
             <p className="text-muted-foreground truncate text-sm">
-              No sale day scheduled
+              {saleDay.data
+                ? `Sale day ${saleDay.data.dayNo} · ${formatSaleDate(saleDay.data.saleDate)}`
+                : 'No sale day scheduled'}
             </p>
           </div>
           <AccountMenu />

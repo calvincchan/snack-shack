@@ -65,6 +65,9 @@ All views use `security_invoker = true`, so row level security still applies.
 | `sale_day_totals` | Per sale day: `pieces_sold`, `treat_pieces_sold`, `sales_cents`, `expected_cents = float + sales − helper credits × 100`, `counted_cents`, `over_short_cents`, `deposit_cents = counted − float`, `signoffs`, `items_over_start`, `items_uncounted` |
 | `type_benchmarks` | Per type: what a piece usually costs and how fast one item of that type sells, for Deal check (HANDOFF §5.4) |
 | `stock_by_type` | Per type: pieces on hand, pieces sold on an average sale day, target stock, "buy about N" and sale days left |
+| `lineup_options` | Every item a lineup may hold (priced, active, stock > 0) with its reason tag and whether the app suggests it |
+| `sale_day_lineup` | Per lineup item: today's price, deal size and type (locked once the sale starts), the pieces Check stock expects, the counts entered, and the pieces-a-day rate behind the lineup margin |
+| `sale_day_lineup_totals` | Per sale day: `day_no`, date, phase, float, `snacks`, `treats`, `items_off` and the weighted lineup `margin` |
 | `item_sale_stats` | Per item across closed sale days: `days_out`, `pieces_sold`, `pieces_per_day_out`, `sales_since_out` (0 = out at the last sale, null = never), `sold_out_recently` (closed at 0 in the last 2), `sold_out_days` |
 
 ## Functions (the only way to do the important things)

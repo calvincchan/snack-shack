@@ -135,6 +135,13 @@ export type Database = {
             foreignKeyName: 'cash_counts_sale_day_id_fkey'
             columns: ['sale_day_id']
             isOneToOne: false
+            referencedRelation: 'sale_day_lineup_totals'
+            referencedColumns: ['sale_day_id']
+          },
+          {
+            foreignKeyName: 'cash_counts_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
             referencedRelation: 'sale_day_totals'
             referencedColumns: ['sale_day_id']
           },
@@ -428,6 +435,13 @@ export type Database = {
             foreignKeyName: 'sale_day_items_sale_day_id_fkey'
             columns: ['sale_day_id']
             isOneToOne: false
+            referencedRelation: 'sale_day_lineup_totals'
+            referencedColumns: ['sale_day_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
             referencedRelation: 'sale_day_totals'
             referencedColumns: ['sale_day_id']
           },
@@ -457,6 +471,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'sale_day_lineup_totals'
+            referencedColumns: ['sale_day_id']
+          },
           {
             foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
             columns: ['sale_day_id']
@@ -676,6 +697,13 @@ export type Database = {
             foreignKeyName: 'stock_movements_sale_day_id_fkey'
             columns: ['sale_day_id']
             isOneToOne: false
+            referencedRelation: 'sale_day_lineup_totals'
+            referencedColumns: ['sale_day_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
             referencedRelation: 'sale_day_totals'
             referencedColumns: ['sale_day_id']
           },
@@ -823,6 +851,22 @@ export type Database = {
         }
         Relationships: []
       }
+      lineup_options: {
+        Row: {
+          bundle_size: number | null
+          item_id: string | null
+          name: string | null
+          on_hand: number | null
+          price_cents: number | null
+          reason: string | null
+          score: number | null
+          storage: Database['public']['Enums']['storage_kind'] | null
+          suggested: boolean | null
+          type: Database['public']['Enums']['item_type'] | null
+          unit_cost_cents: number | null
+        }
+        Relationships: []
+      }
       sale_day_item_results: {
         Row: {
           check_count: number | null
@@ -875,6 +919,13 @@ export type Database = {
             foreignKeyName: 'sale_day_items_sale_day_id_fkey'
             columns: ['sale_day_id']
             isOneToOne: false
+            referencedRelation: 'sale_day_lineup_totals'
+            referencedColumns: ['sale_day_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
             referencedRelation: 'sale_day_totals'
             referencedColumns: ['sale_day_id']
           },
@@ -886,6 +937,88 @@ export type Database = {
             referencedColumns: ['id']
           },
         ]
+      }
+      sale_day_lineup: {
+        Row: {
+          bundle_size: number | null
+          check_count: number | null
+          check_reason: Database['public']['Enums']['check_reason'] | null
+          expected_count: number | null
+          item_id: string | null
+          name: string | null
+          price_cents: number | null
+          rate: number | null
+          sale_day_id: string | null
+          start_count: number | null
+          storage: Database['public']['Enums']['storage_kind'] | null
+          type: Database['public']['Enums']['item_type'] | null
+          unit_cost_cents: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'item_overview'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'item_sale_stats'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'item_stock'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'items'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'sale_day_lineup_totals'
+            referencedColumns: ['sale_day_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'sale_day_totals'
+            referencedColumns: ['sale_day_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'sale_days'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      sale_day_lineup_totals: {
+        Row: {
+          day_no: number | null
+          float_cents: number | null
+          items_off: number | null
+          margin: number | null
+          phase: Database['public']['Enums']['sale_phase'] | null
+          sale_date: string | null
+          sale_day_id: string | null
+          snacks: number | null
+          treats: number | null
+        }
+        Relationships: []
       }
       sale_day_totals: {
         Row: {
