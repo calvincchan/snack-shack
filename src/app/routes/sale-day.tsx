@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Lineup } from '@/app/sale-day/lineup'
 import { CheckStock } from '@/app/sale-day/check-stock'
 import { Selling } from '@/app/sale-day/selling'
+import { CountUp } from '@/app/sale-day/count-up'
+import { Done } from '@/app/sale-day/done'
 import {
   STEPS,
   stepIndex,
@@ -26,7 +28,14 @@ export function SaleDayPage() {
   // Check stock is part of the lineup phase in the database (nothing is
   // written until Start sale), so which of the two is on screen lives here.
   const [checking, setChecking] = useState(false)
+  // The finished sale day is closed, so it is no longer "the open one": the
+  // page remembers it to show the deposit until the volunteer moves on.
+  const [finishedId, setFinishedId] = useState<string | null>(null)
   const saleDay = useSaleDay()
+
+  if (finishedId) {
+    return <Done saleDayId={finishedId} onClose={() => setFinishedId(null)} />
+  }
 
   if (saleDay.isPending) {
     return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
@@ -59,10 +68,7 @@ export function SaleDayPage() {
       {day.phase === 'selling' && <Selling saleDay={day} />}
 
       {day.phase === 'counting' && (
-        <p className="text-muted-foreground text-sm">
-          The count up is open. Counting what&apos;s left, the cash and the
-          two-person sign-off come next.
-        </p>
+        <CountUp saleDay={day} onFinished={setFinishedId} />
       )}
     </div>
   )
