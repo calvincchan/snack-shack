@@ -7,6 +7,8 @@ import { TypeDot } from '@/components/item-bits'
 import { Dock } from '@/app/sale-day/lineup'
 import { useAuth } from '@/lib/auth'
 import { formatCents } from '@/lib/money'
+import { useLiveValue } from '@/lib/live-value'
+import { outMax, type Activity } from '@/lib/presence'
 import {
   DENOMINATIONS,
   canFinish,
@@ -79,12 +81,13 @@ const showError = (error: Error) => toast.error(error.message)
 /** Step 4, Count up: check stock, count cash, two-person sign-off (HANDOFF §4.1). */
 export function CountUp({
   saleDay,
-  onFinished,
+  onActivity,
 }: {
   saleDay: SaleDay
-  onFinished: (saleDayId: string) => void
+  onActivity: (activity: Activity) => void
 }) {
   const [part, setPart] = useState<Part>('stock')
+  useEffect(() => onActivity(part), [part, onActivity])
   const totals = useTotals(saleDay.id)
   const thresholds = useThresholds()
 
@@ -135,7 +138,6 @@ export function CountUp({
           totals={totals.data}
           thresholds={thresholds.data}
           onBack={() => setPart('cash')}
-          onFinished={onFinished}
         />
       )}
     </>
@@ -189,8 +191,8 @@ function CountStock({
 function StockRow({ saleDayId, item }: { saleDayId: string; item: CountItem }) {
   const save = useSetLeftOut()
   const debounce = useDebouncedSave()
-  const [left, setLeft] = useState(item.leftCount)
-  const [out, setOut] = useState(item.outCount)
+  const [left, setLeft] = useLiveValue(item.leftCount)
+  const [out, setOut] = useLiveValue(item.outCount)
 
   const persist = (nextLeft: number, nextOut: number) =>
     debounce(item.itemId, () =>
@@ -232,6 +234,7 @@ function StockRow({ saleDayId, item }: { saleDayId: string; item: CountItem }) {
           <Stepper
             label={`${item.name} out`}
             value={out}
+            max={outMax(item.startCount, left)}
             onChange={(next) => {
               setOut(next)
               persist(left, next)
@@ -410,7 +413,7 @@ function CashStepper({
   initial: number
   onSave: (value: number) => void
 }) {
-  const [value, setValue] = useState(initial)
+  const [value, setValue] = useLiveValue(initial)
   return (
     <Stepper
       label={label}
@@ -428,13 +431,11 @@ function SignOff({
   totals,
   thresholds,
   onBack,
-  onFinished,
 }: {
   saleDay: SaleDay
   totals: Totals | undefined
   thresholds: Thresholds | undefined
   onBack: () => void
-  onFinished: (saleDayId: string) => void
 }) {
   const { profile } = useAuth()
   const notes = useSaleDayNotes(saleDay.id)
@@ -443,6 +444,14 @@ function SignOff({
   const signOff = useSignOff()
   const finish = useFinishCount()
   const [note, setLocalNote] = useState<string | null>(null)
+  // Sign-offs vanish when any count changes after someone signed; say so.
+  const [seen, setSeen] = useState(0)
+  const [cleared, setCleared] = useState(false)
+  const count = signoffs.data?.length
+  if (count !== undefined && count !== seen) {
+    setCleared(count < seen)
+    setSeen(count)
+  }
 
   if (!totals || !notes.data) {
     return <p className="text-muted-foreground text-sm">Loading…</p>
@@ -510,6 +519,11 @@ function SignOff({
             ? 'Nobody has confirmed yet.'
             : `Confirmed by ${signed.map((entry) => entry.name).join(' and ')}.`}
         </p>
+        {cleared && (
+          <p role="alert" className="text-warn text-sm font-semibold">
+            A count changed, so the confirmations were cleared. Confirm again.
+          </p>
+        )}
         <Button
           type="button"
           variant="outline"
@@ -547,7 +561,6 @@ function SignOff({
               await setNote.mutateAsync({ saleDayId: saleDay.id, note })
             }
             await finish.mutateAsync(saleDay.id)
-            onFinished(saleDay.id)
           } catch (error) {
             showError(error as Error)
           }

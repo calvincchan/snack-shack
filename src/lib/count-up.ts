@@ -10,6 +10,7 @@ import {
   saleDayQueryKey,
   lineupQueryKey,
   optionsQueryKey,
+  recentClosedQueryKey,
   type ItemType,
 } from '@/lib/sale-day'
 import { itemsQueryKey } from '@/lib/items'
@@ -263,6 +264,7 @@ function useCountMutation<TArgs, TResult = void>(
         signoffsKey,
         ['sale-day-notes'],
         saleDayQueryKey,
+        recentClosedQueryKey,
         lineupQueryKey,
         optionsQueryKey,
         itemsQueryKey,

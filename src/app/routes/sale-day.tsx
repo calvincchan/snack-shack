@@ -11,9 +11,12 @@ import {
   STEPS,
   stepIndex,
   useCreateSaleDay,
+  useRecentlyClosed,
   useSaleDay,
   type SaleDay,
 } from '@/lib/sale-day'
+import { useSaleDayLive } from '@/lib/live-sale-day'
+import { presenceLabels, type Activity } from '@/lib/presence'
 import { formatCents } from '@/lib/money'
 import { formatSaleDate } from '@/lib/time'
 
@@ -24,21 +27,39 @@ const TITLES = {
   counting: 'After-lunch count-up',
 } as const
 
+const DISMISSED_KEY = 'snack-shack:done-dismissed'
+
 export function SaleDayPage() {
   // Check stock is part of the lineup phase in the database (nothing is
   // written until Start sale), so which of the two is on screen lives here.
   const [checking, setChecking] = useState(false)
-  // The finished sale day is closed, so it is no longer "the open one": the
-  // page remembers it to show the deposit until the volunteer moves on.
-  const [finishedId, setFinishedId] = useState<string | null>(null)
+  // What this volunteer is counting, for the other phone's presence line.
+  const [activity, setActivity] = useState<Activity | null>(null)
+  // The Done screen shows the most recently closed sale day (from the
+  // database, so a reload or the other phone gets it too) until this phone
+  // moves on.
+  const [dismissedId, setDismissedId] = useState(() =>
+    localStorage.getItem(DISMISSED_KEY),
+  )
   const saleDay = useSaleDay()
+  const recentlyClosed = useRecentlyClosed()
+  const peers = useSaleDayLive(saleDay.data ? activity : null)
 
-  if (finishedId) {
-    return <Done saleDayId={finishedId} onClose={() => setFinishedId(null)} />
+  if (saleDay.isPending || recentlyClosed.isPending) {
+    return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
   }
 
-  if (saleDay.isPending) {
-    return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
+  const closedId = recentlyClosed.data
+  if (!saleDay.data && closedId && closedId !== dismissedId) {
+    return (
+      <Done
+        saleDayId={closedId}
+        onClose={() => {
+          localStorage.setItem(DISMISSED_KEY, closedId)
+          setDismissedId(closedId)
+        }}
+      />
+    )
   }
 
   if (!saleDay.data) return <NoSaleDay />
@@ -58,6 +79,16 @@ export function SaleDayPage() {
       <h1 className="sr-only">Sale day</h1>
       <Header day={day} title={title} step={stepIndex(day.phase, checking)} />
 
+      {presenceLabels(peers).map((label) => (
+        <p
+          key={label}
+          role="status"
+          className="bg-accent text-accent-foreground rounded-xl px-3 py-2 text-sm"
+        >
+          {label}
+        </p>
+      ))}
+
       {onLineup &&
         (checking ? (
           <CheckStock saleDay={day} onBack={() => setChecking(false)} />
@@ -68,7 +99,7 @@ export function SaleDayPage() {
       {day.phase === 'selling' && <Selling saleDay={day} />}
 
       {day.phase === 'counting' && (
-        <CountUp saleDay={day} onFinished={setFinishedId} />
+        <CountUp saleDay={day} onActivity={setActivity} />
       )}
     </div>
   )
