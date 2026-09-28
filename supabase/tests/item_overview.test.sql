@@ -6,7 +6,7 @@ select plan(8);
 -- The seed fills the database for local development. These tests describe
 -- behaviour from an empty start, so clear it inside the transaction.
 set local client_min_messages = warning;
-truncate table auth.users, public.items cascade;
+truncate table auth.users, public.items, public.sale_days cascade;
 alter table public.purchases alter column claim_no restart with 1;
 update public.settings
    set float_cents = 3000, target_sale_days = 2,

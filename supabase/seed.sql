@@ -108,6 +108,68 @@ update public.purchases
        paid_by = '00000000-0000-0000-0000-00000000000d', payment_ref = 'E-transfer'
  where claim_no in (1, 2);
 
+-- One finished sale day -------------------------------------------------------
+-- Enough history for the averages that What to buy and Insights need: pieces
+-- sold per sale day, an item that closed at 0, and a count-up note.
+do $$
+declare
+  v_day  uuid;
+  v_item record;
+  v_left int;
+begin
+  v_day := public.create_sale_day('2026-09-24');
+
+  -- create_sale_day() suggests a lineup; use the prototype's instead.
+  delete from public.sale_day_items where sale_day_id = v_day;
+  insert into public.sale_day_items (sale_day_id, item_id)
+  select v_day, id from public.items
+   where name in ('Popcorn, lightly salted', 'Chips, assorted', 'Pretzel twists',
+                  'Fruit gummies', 'Chocolate bar');
+
+  perform public.start_sale(v_day);
+  perform public.begin_count(v_day);
+
+  -- What was left at the end. The gummies sold out.
+  for v_item in
+    select sdi.item_id, i.name, sdi.start_count
+      from public.sale_day_items sdi
+      join public.items i on i.id = sdi.item_id
+     where sdi.sale_day_id = v_day
+  loop
+    v_left := case v_item.name
+                when 'Popcorn, lightly salted' then v_item.start_count - 14
+                when 'Chips, assorted'         then v_item.start_count - 26
+                when 'Pretzel twists'          then v_item.start_count - 18
+                when 'Fruit gummies'           then 0
+                else v_item.start_count - 9
+              end;
+    update public.sale_day_items
+       set left_count = v_left,
+           out_count = case when v_item.name = 'Chocolate bar' then 1 else 0 end
+     where sale_day_id = v_day and item_id = v_item.item_id;
+  end loop;
+
+  update public.sale_days
+     set helper_credits = 1,
+         note = 'Gummies went first. A few kids asked for popcorn after it ran out last time.'
+   where id = v_day;
+
+  -- $30 float plus $114 of sales, less the $1 helper credit, is $143 expected.
+  -- The box counted $142, a dollar short, which is a good count up.
+  update public.cash_counts set qty = 2  where sale_day_id = v_day and denom_cents = 2000;
+  update public.cash_counts set qty = 3  where sale_day_id = v_day and denom_cents = 1000;
+  update public.cash_counts set qty = 5  where sale_day_id = v_day and denom_cents = 500;
+  update public.cash_counts set qty = 20 where sale_day_id = v_day and denom_cents = 200;
+  update public.cash_counts set qty = 7  where sale_day_id = v_day and denom_cents = 100;
+
+  perform public.sign_off(v_day);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '00000000-0000-0000-0000-00000000000b', 'role', 'authenticated')::text,
+    true);
+  perform public.sign_off(v_day);
+  perform public.close_sale_day(v_day);
+end $$;
+
 select set_config('request.jwt.claims', '', true);
 
 commit;

@@ -1164,6 +1164,52 @@ CREATE TABLE IF NOT EXISTS "public"."shopping_trips" (
 ALTER TABLE "public"."shopping_trips" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."stock_by_type" WITH ("security_invoker"='true') AS
+ WITH "days" AS (
+         SELECT ("count"(*))::integer AS "n"
+           FROM "public"."sale_days"
+          WHERE ("sale_days"."phase" = 'closed'::"public"."sale_phase")
+        ), "sold" AS (
+         SELECT "r"."locked_type" AS "type",
+            ("sum"(GREATEST("r"."sold_pieces", 0)))::integer AS "pieces"
+           FROM ("public"."sale_day_item_results" "r"
+             JOIN "public"."sale_days" "d" ON (("d"."id" = "r"."sale_day_id")))
+          WHERE ("d"."phase" = 'closed'::"public"."sale_phase")
+          GROUP BY "r"."locked_type"
+        ), "held" AS (
+         SELECT "i"."type",
+            (COALESCE("sum"("i"."on_hand"), (0)::bigint))::integer AS "on_hand"
+           FROM "public"."item_stock" "i"
+          WHERE (NOT "i"."archived")
+          GROUP BY "i"."type"
+        ), "rate" AS (
+         SELECT "t"."type",
+            COALESCE("h"."on_hand", 0) AS "on_hand",
+                CASE
+                    WHEN ("days"."n" > 0) THEN ((COALESCE("s"."pieces", 0))::numeric / ("days"."n")::numeric)
+                    ELSE NULL::numeric
+                END AS "sold_per_sale_day"
+           FROM (((( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type")
+             CROSS JOIN "days")
+             LEFT JOIN "sold" "s" ON (("s"."type" = "t"."type")))
+             LEFT JOIN "held" "h" ON (("h"."type" = "t"."type")))
+        )
+ SELECT "rate"."type",
+    "rate"."on_hand",
+    "rate"."sold_per_sale_day",
+    ("ceil"(("rate"."sold_per_sale_day" * ("settings"."target_sale_days")::numeric)))::integer AS "target_pieces",
+    GREATEST((("ceil"(("rate"."sold_per_sale_day" * ("settings"."target_sale_days")::numeric)))::integer - "rate"."on_hand"), 0) AS "buy_pieces",
+        CASE
+            WHEN ("rate"."sold_per_sale_day" > (0)::numeric) THEN (("rate"."on_hand")::numeric / "rate"."sold_per_sale_day")
+            ELSE NULL::numeric
+        END AS "sale_days_left"
+   FROM ("rate"
+     CROSS JOIN "public"."settings");
+
+
+ALTER VIEW "public"."stock_by_type" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "item_id" "uuid" NOT NULL,
@@ -2117,6 +2163,12 @@ GRANT ALL ON TABLE "public"."settings" TO "service_role";
 GRANT ALL ON TABLE "public"."shopping_trips" TO "anon";
 GRANT ALL ON TABLE "public"."shopping_trips" TO "authenticated";
 GRANT ALL ON TABLE "public"."shopping_trips" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."stock_by_type" TO "anon";
+GRANT ALL ON TABLE "public"."stock_by_type" TO "authenticated";
+GRANT ALL ON TABLE "public"."stock_by_type" TO "service_role";
 
 
 

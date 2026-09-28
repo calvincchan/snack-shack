@@ -161,7 +161,8 @@ test('a second receipt line tops up an item that is already stocked', async ({
   ).toBeVisible()
 
   await page.getByRole('link', { name: /^Items/ }).click()
+  // 42 left after the seeded sale day, plus this box of 60.
   const row = allItems(page).filter({ hasText: 'Pretzel twists' })
-  await expect(row).toContainText('120 on hand')
+  await expect(row).toContainText('102 on hand')
   await expect(row).toContainText('$0.38 a piece')
 })

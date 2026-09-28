@@ -48,7 +48,7 @@ erDiagram
 
 Storage: private bucket **`receipts`** (second migration). Members can read and upload.
 
-Local development data lives in [`supabase/seed.sql`](../supabase/seed.sql) and loads on `supabase db reset`: the prototype's team and its five receipts, logged through `log_purchase()` so stock, weighted-average costs and claim numbers come out the way they would in production. No sale days yet, so stock is what was bought. The pgTAP tests clear the seed inside their transaction and start from an empty database.
+Local development data lives in [`supabase/seed.sql`](../supabase/seed.sql) and loads on `supabase db reset`: the prototype's team, its five receipts and one finished sale day, all put in through the real functions so stock, weighted-average costs, claim numbers and the sale day maths come out the way they would in production. The seeded claims have a `receipt_path` but no uploaded photo, so their receipt links do not open. The pgTAP tests clear the seed inside their transaction and start from an empty database.
 
 ## Views
 
@@ -61,6 +61,8 @@ All views use `security_invoker = true`, so row level security still applies.
 | `claims` | Purchases plus `claim_label` (SS-001), `total_cents`, `buyer_name` |
 | `sale_day_item_results` | Per lineup item: `sold_pieces = start − left − out`, `sales_cents = round(sold × locked price ÷ locked bundle)` |
 | `sale_day_totals` | Per sale day: `pieces_sold`, `treat_pieces_sold`, `sales_cents`, `expected_cents = float + sales − helper credits × 100`, `counted_cents`, `over_short_cents`, `deposit_cents = counted − float`, `signoffs`, `items_over_start`, `items_uncounted` |
+| `type_benchmarks` | Per type: what a piece usually costs and how fast one item of that type sells, for Deal check (HANDOFF §5.4) |
+| `stock_by_type` | Per type: pieces on hand, pieces sold on an average sale day, target stock, "buy about N" and sale days left |
 | `item_sale_stats` | Per item across closed sale days: `days_out`, `pieces_sold`, `pieces_per_day_out`, `sales_since_out` (0 = out at the last sale, null = never), `sold_out_recently` (closed at 0 in the last 2), `sold_out_days` |
 
 ## Functions (the only way to do the important things)

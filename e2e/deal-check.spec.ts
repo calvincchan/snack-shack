@@ -25,10 +25,11 @@ test('deal check works out the box and carries it into Log purchase', async ({
   await expect(result).toContainText('$65.00')
   await expect(result).toContainText('$47.01')
 
-  // Nothing has been sold yet, so there is nothing to say about sale days,
-  // but treats do have a usual cost from the seeded receipts.
+  // The seeded sale day gives treats a rate of 24 pieces a day, so 65 deals
+  // last about 2.7 sale days: not a box to worry about fitting.
   await expect(result).toContainText('than our usual treats')
-  await expect(result).not.toContainText('Lasts about')
+  await expect(result).toContainText('Lasts about 2.7 sale days')
+  await expect(result).not.toContainText('make sure it fits')
 
   await page.getByRole('button', { name: 'Bought it' }).click()
 

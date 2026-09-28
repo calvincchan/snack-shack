@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LogPurchase, type PrefilledLine } from '@/app/buy/log-purchase'
 import { DealCheck } from '@/app/buy/deal-check'
+import { WhatToBuy } from '@/app/buy/what-to-buy'
 import { Claims } from '@/app/buy/claims'
 
 export function BuyPage() {
@@ -29,7 +30,8 @@ export function BuyPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="what" className="mt-4">
+        <TabsContent value="what" className="mt-4 flex flex-col gap-4">
+          <WhatToBuy />
           <DealCheck
             onBoughtIt={(bought) => {
               setPrefill(bought)

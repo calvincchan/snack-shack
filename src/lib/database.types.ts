@@ -907,6 +907,17 @@ export type Database = {
         }
         Relationships: []
       }
+      stock_by_type: {
+        Row: {
+          buy_pieces: number | null
+          on_hand: number | null
+          sale_days_left: number | null
+          sold_per_sale_day: number | null
+          target_pieces: number | null
+          type: Database['public']['Enums']['item_type'] | null
+        }
+        Relationships: []
+      }
       type_benchmarks: {
         Row: {
           pieces_per_day_out: number | null
