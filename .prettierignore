@@ -1,0 +1,8 @@
+dist
+dev-dist
+coverage
+playwright-report
+pnpm-lock.yaml
+supabase/.branches
+supabase/.temp
+docs/

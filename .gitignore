@@ -1,8 +1,13 @@
 node_modules/
 dist/
+dev-dist/
 .env
 .env.*
 !.env.example
 .DS_Store
 supabase/.branches
 supabase/.temp
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
