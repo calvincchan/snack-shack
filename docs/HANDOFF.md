@@ -7,8 +7,7 @@ This document is the source of truth for what Snack Shack does and why. Read it 
 | [`../CONTEXT.md`](../CONTEXT.md) | Glossary: the words to use, and the ones to avoid |
 | [`adr/`](adr/) | Every product and technical decision, with the reason, including ideas that were tried and rejected |
 | [`DATA_MODEL.md`](DATA_MODEL.md) | Tables, views, database functions, access rules, audit trail |
-| [`BUILD_PLAN.md`](BUILD_PLAN.md) | Milestones and how to check each one is done |
-| [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) | What is still undecided, and what to learn from the first real sale |
+| [GitHub issues](https://github.com/calvincchan/snack-shack/issues) | Build tickets (`ready-for-agent`) and open questions (`needs-info`) |
 | [`prototype/`](prototype/) | The clickable prototype (`snack-shack-prototype.html`) and phone-size screenshots |
 
 The prototype is a single-file vanilla JS mock with fake data. It shows the agreed flows and wording, not the code structure to copy. Rebuild it properly; match its behaviour and copy.
@@ -172,7 +171,7 @@ Money is stored as **integer cents**. Stock is stored as **pieces** (single bars
 ### 5.2 Cost per piece
 
 - Receipt line cost is entered **including tax**. Cost per piece = line cost ÷ pieces.
-- Item cost used for margins and Insights: **weighted average** across stock on hand when a new purchase arrives (see `DATA_MODEL.md`). The prototype used the latest purchase cost; weighted average is the recommended rule for the build and is listed in `OPEN_QUESTIONS.md`.
+- Item cost used for margins and Insights: **weighted average** across stock on hand when a new purchase arrives (see `DATA_MODEL.md`). The prototype used the latest purchase cost; weighted average is the decided rule (ADR-0008).
 
 ### 5.3 Margin bands
 
@@ -253,7 +252,7 @@ deposit       = counted − float
 - Over/short status: within **±$3** ok (green); within **±$10** warn (amber, "recount once, then add a note"); beyond that bad (red).
 - **Locks:** at *Start sale*, each lineup item's price, deal size and type are copied onto the sale day. Edits to the item during the sale affect only later sale days.
 - A **closed** sale day can't be edited. Mistakes are fixed with a correction stock movement, which keeps the original numbers.
-- Deal items where sold pieces aren't a multiple of the deal size produce fractional deals. Sales are rounded to the cent. See `OPEN_QUESTIONS.md`.
+- Deal items where sold pieces aren't a multiple of the deal size produce fractional deals. Sales are rounded to the cent. See issue #25.
 
 ### 5.8 Insights rules
 

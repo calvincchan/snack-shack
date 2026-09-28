@@ -2,7 +2,7 @@
 
 `snack-shack-prototype.html` is the clickable prototype agreed with the coordinator (September 2026). Open it in a browser at phone width. It uses mock data and saves nothing; refresh to reset. Each flow has "Fill sample … (demo)" buttons.
 
-It is a reference for **flows, wording and layout**, not code to reuse: it's one vanilla JS file with in-memory state. The real app follows `docs/HANDOFF.md` and `docs/BUILD_PLAN.md`.
+It is a reference for **flows, wording and layout**, not code to reuse: it's one vanilla JS file with in-memory state. The real app follows `docs/HANDOFF.md` and the GitHub issues.
 
 Fonts (Bricolage Grotesque, Figtree) load from Google Fonts, so the screenshots below, captured offline, show a fallback font.
 

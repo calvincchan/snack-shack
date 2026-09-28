@@ -8,7 +8,7 @@ Mobile web app for the parent volunteers who run an after-lunch snack table at o
 |---|---|
 | What and why | [`docs/HANDOFF.md`](docs/HANDOFF.md), [`CONTEXT.md`](CONTEXT.md) (glossary), [`docs/adr/`](docs/adr/) (decisions) |
 | Database | [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md), [`supabase/`](supabase/) |
-| Plan | [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md), [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) |
+| Plan | [GitHub issues](https://github.com/calvincchan/snack-shack/issues): `ready-for-agent` tickets, `needs-info` open questions |
 | Prototype | [`docs/prototype/`](docs/prototype/) |
 
 Stack: Vite, React, TypeScript, shadcn/ui, Tailwind, TanStack Query, Supabase.

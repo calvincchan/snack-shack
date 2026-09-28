@@ -7,14 +7,13 @@ A mobile web app for parent volunteers who run an after-lunch snack table at an 
 1. `docs/HANDOFF.md`: background, every screen, every business rule. **Source of truth.**
 2. `CONTEXT.md`: the glossary. Use its words; avoid the ones it lists under _Avoid_.
 3. `docs/adr/`: why things are the way they are, and ideas that were rejected. Don't reintroduce rejected ideas without asking.
-4. `docs/BUILD_PLAN.md`: milestones in order. Work milestone by milestone.
-5. `docs/DATA_MODEL.md` + `supabase/migrations/`: the schema (tested draft).
-6. `docs/prototype/`: clickable prototype and screenshots. Match its flows and wording, not its code.
-7. `docs/OPEN_QUESTIONS.md`: undecided items and working assumptions.
+4. `docs/DATA_MODEL.md` + `supabase/migrations/`: the schema (tested draft).
+5. `docs/prototype/`: clickable prototype and screenshots. Match its flows and wording, not its code.
+6. GitHub issues: the build is broken into `ready-for-agent` tickets with native blocking; take any ticket whose blockers are closed. Open questions are `needs-info` issues with working assumptions.
 
 ## Stack
 
-Vite + React + TypeScript (strict), shadcn/ui + Tailwind, TanStack Query, Supabase (Postgres, Auth, Realtime, Storage, Edge Functions), pnpm.
+Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanStack Query, TanStack Router or React Router, react-hook-form + zod, Supabase (Postgres, Auth, Realtime, Storage, Edge Functions, Cron), Resend (or similar) for email, vite-plugin-pwa with persisted TanStack Query mutations for the offline count up, pnpm. Tests: pgTAP, Vitest, Playwright. Check current versions when scaffolding; don't pin from docs.
 
 ## Rules
 
@@ -28,7 +27,7 @@ Vite + React + TypeScript (strict), shadcn/ui + Tailwind, TanStack Query, Supaba
 - Every button sets its own text colour (a dark-panel inheritance bug happened in the prototype).
 - Don't commit secrets. Only `.env.example` is tracked.
 
-## Commands (after M0)
+## Commands (after the scaffold ticket)
 
 ```bash
 pnpm dev                 # app
