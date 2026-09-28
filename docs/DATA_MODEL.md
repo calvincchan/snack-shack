@@ -32,7 +32,8 @@ erDiagram
 | Table | Purpose | Key columns / rules |
 |---|---|---|
 | `settings` | One row of app settings (admin) | `float_cents` 3000, `target_sale_days` 2, `over_short_ok_cents` 300, `over_short_warn_cents` 1000, `gst_rate` 0.05, `max_items_per_kid` 3, `max_treats_per_kid` 1, `treasurer_email` |
-| `profiles` | One per signed-in person | `display_name`, `role` (volunteer / treasurer / admin), `active` |
+| `profiles` | One per signed-in person | `email`, `display_name`, `role` (volunteer / treasurer / admin), `active`. Volunteers are deactivated, never deleted. |
+| `volunteer_invites` | Someone the coordinator added who has not signed in yet | `email` (one open invite each), `display_name`, `role`, `accepted_at`. Admin only. See ADR-0011. |
 | `items` | What we sell | `name`, `type` (snack / treat), `storage` (shelf / freezer), `price_cents` (null = needs a price), `bundle_size` (pieces per deal), `unit_cost_cents` (weighted average), `archived`, `version`. Price options limited by a check constraint to $1 × 1/2/3 and $2 × 1. |
 | `purchases` | A receipt = a reimbursement claim | `claim_no` (SS-001…), `purchased_on`, `store`, `buyer_id`, `receipt_path`, `status` (to_pay / paid), `paid_at`, `paid_by`, `payment_ref` |
 | `purchase_lines` | Receipt lines | `item_id`, `pieces`, `cost_cents` (incl. tax) |
@@ -65,6 +66,7 @@ All are `security definer`, check that the caller is an active member, and keep 
 
 | Function | What it does | Guards |
 |---|---|---|
+| `add_volunteer(email, name, role)` | Writes the profile if that email already has an account, otherwise an invite. Returns `{"status": "added" \| "invited"}` | Admin only |
 | `suggest_lineup()` | Scores items (HANDOFF §5.6); returns `item_id, type, score, reason, suggested` | Priced, active, stock > 0 |
 | `create_sale_day(date)` | Creates the sale day with the float from settings and the suggested lineup | One open sale day |
 | `start_sale(sale_day)` | Records Check stock differences as missing / damaged / found movements, sets `start_count`, **locks price, bundle and type**, phase → selling | Only from lineup; every item priced; ≥ 1 item |
@@ -82,6 +84,8 @@ The `log_purchase` payload shape is documented in the migration above the functi
 - **Phase rules** on `sale_days`, `sale_day_items` and `cash_counts`: lineup rows only change during lineup; Check stock only during lineup; leftover counts and cash only during counting; locked columns only via `start_sale`; **nothing once closed**. Functions bypass this by setting `snack.fn = on` for their own transaction.
 - **Sign-offs reset** when any count, cash row or helper credit changes, so both volunteers always confirm the final numbers.
 - **Ledger is append-only**: update and delete raise an error, even for the service role. Fix mistakes with a `correction` movement.
+- **Sign-in** (`on_auth_user_created` on `auth.users`): the first account on an empty database becomes the coordinator; otherwise an open invite for that email becomes a profile. No invite means no profile, and the app says "Ask the coordinator to add you". See ADR-0011.
+- **The team keeps a coordinator**: you cannot deactivate yourself, and the last active admin cannot be demoted or deactivated.
 - **Items**: `updated_at/by` stamped and `version` bumped on every update. Clients do optimistic concurrency with `.update({...}).eq('id', id).eq('version', loadedVersion)`; zero rows updated means someone else changed it, so show the conflict prompt.
 
 ## Row level security
@@ -89,7 +93,7 @@ The `log_purchase` payload shape is documented in the migration above the functi
 | Who | Can |
 |---|---|
 | Any active member | Read everything except `action_tokens`. Edit items. Add/remove lineup items and enter counts (phase rules apply). Add `donated` and `correction` stock movements. Claim and release their own shopping trip. Call the functions above. |
-| Admin | Also manage `profiles` and `settings`. |
+| Admin | Also add and update `profiles` (no deletes), read and cancel `volunteer_invites`, and edit `settings`. |
 | Treasurer | Same as a member if they ever sign in. Payments come through `redeem_action_token` via the Edge Function. |
 | Nobody (clients) | Insert purchases, lines or sale days directly, post sold/out/missing movements, or touch `action_tokens`. Those go through functions. |
 

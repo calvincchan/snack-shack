@@ -33,6 +33,14 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      # The end-to-end tests sign in for real: magic links go to the local
+      # Supabase and are read back out of Mailpit.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - run: supabase start
+
       - run: pnpm test:e2e
 
       - uses: actions/upload-artifact@v4

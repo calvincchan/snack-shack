@@ -1,8 +1,12 @@
 import { defineConfig, devices } from '@playwright/test'
+import { LOCAL_ANON_KEY, LOCAL_API_URL } from './e2e/helpers/local-supabase'
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  // The tests share one local Supabase, so they run one after another.
+  fullyParallel: false,
+  workers: 1,
+  globalSetup: './e2e/global-setup.ts',
   reporter: 'html',
   use: {
     baseURL: 'http://localhost:4173',
@@ -14,8 +18,8 @@ export default defineConfig({
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
     env: {
-      VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
-      VITE_SUPABASE_ANON_KEY: 'e2e-placeholder-anon-key',
+      VITE_SUPABASE_URL: LOCAL_API_URL,
+      VITE_SUPABASE_ANON_KEY: LOCAL_ANON_KEY,
     },
   },
 })

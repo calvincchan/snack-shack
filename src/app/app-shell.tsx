@@ -13,6 +13,11 @@ import { SellPage } from '@/app/routes/sell'
 import { BuyPage } from '@/app/routes/buy'
 import { ItemsPage } from '@/app/routes/items'
 import { InsightsPage } from '@/app/routes/insights'
+import { AdminPage } from '@/app/routes/admin'
+import { SignInPage } from '@/app/routes/sign-in'
+import { NoProfilePage } from '@/app/routes/no-profile'
+import { AccountMenu } from '@/app/account-menu'
+import { useAuth } from '@/lib/auth'
 
 const tabs = [
   { to: '/', label: 'Sale day', icon: CalendarCheck2 },
@@ -23,12 +28,34 @@ const tabs = [
 ]
 
 export function AppShell() {
+  const { state } = useAuth()
+
+  if (state.status === 'loading') {
+    return (
+      <main
+        className="bg-background text-foreground flex min-h-dvh items-center justify-center"
+        aria-busy="true"
+      >
+        <p className="text-muted-foreground">Loading…</p>
+      </main>
+    )
+  }
+
+  if (state.status === 'signed-out') return <SignInPage />
+  if (state.status === 'no-profile')
+    return <NoProfilePage email={state.email} />
+
   return (
     <BrowserRouter>
       <div className="bg-background text-foreground mx-auto flex min-h-dvh max-w-md flex-col">
-        <header className="border-border flex flex-col gap-0.5 border-b px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3">
-          <h1 className="font-heading text-lg font-semibold">Snack Shack</h1>
-          <p className="text-muted-foreground text-sm">No sale day scheduled</p>
+        <header className="border-border flex items-center gap-3 border-b px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <h1 className="font-heading text-lg font-semibold">Snack Shack</h1>
+            <p className="text-muted-foreground truncate text-sm">
+              No sale day scheduled
+            </p>
+          </div>
+          <AccountMenu />
         </header>
 
         <main className="flex-1 overflow-y-auto">
@@ -38,6 +65,7 @@ export function AppShell() {
             <Route path="/buy" element={<BuyPage />} />
             <Route path="/items" element={<ItemsPage />} />
             <Route path="/insights" element={<InsightsPage />} />
+            <Route path="/admin" element={<AdminPage />} />
           </Routes>
         </main>
 

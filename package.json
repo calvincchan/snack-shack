@@ -12,7 +12,11 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:db": "supabase test db",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts && prettier --write src/lib/database.types.ts",
+    "db:dump": "supabase db dump --local -f supabase/schema.sql"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

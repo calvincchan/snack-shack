@@ -155,6 +155,21 @@ Read-only, term to date.
 - **Items by sales per day out:** days in a lineup, pieces per day out, sales. Only counts days the item was in the lineup, so items offered less often compare fairly.
 - Cash check history: date, volunteers, items out, counted, over/short pill.
 
+### 4.6 Signing in
+
+- One screen: an email box and **Send me a link**. Following the link signs the volunteer in and keeps them signed in, on that phone, all term.
+- Signed in but not on the team: **"Ask the coordinator to add you"** and nothing else. Same screen for a volunteer who has been taken off the team.
+- The header has the signed-in volunteer's name, a way to sign out, and, for the coordinator, **Team and settings**.
+
+### 4.7 Team and settings (coordinator only)
+
+Reached from the header, not the tab bar, because it is rarely used. Two segments:
+
+- **Team.** Add a volunteer with email, name and role (Volunteer / Coordinator / Treasurer). Someone who has never signed in shows under **Waiting to sign in** until they do; the coordinator can cancel that invite. **Remove** takes a volunteer off the team; they stay in the list under **Off the team** so the audit trail keeps their name, and **Add back** returns them. The coordinator cannot remove themselves, and the team always keeps one coordinator.
+- **Settings.** Change float, target stock in sale days, the two over/short thresholds, GST rate, kid limits and the treasurer email (§5.10).
+
+Everyone else who opens the screen is told only the coordinator can change these, and row level security refuses the writes anyway.
+
 ---
 
 ## 5. Business rules and formulas

@@ -200,6 +200,7 @@ export type Database = {
           active: boolean
           created_at: string
           display_name: string
+          email: string | null
           id: string
           role: Database['public']['Enums']['user_role']
         }
@@ -207,6 +208,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           display_name: string
+          email?: string | null
           id: string
           role?: Database['public']['Enums']['user_role']
         }
@@ -214,6 +216,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           display_name?: string
+          email?: string | null
           id?: string
           role?: Database['public']['Enums']['user_role']
         }
@@ -664,6 +667,47 @@ export type Database = {
           },
         ]
       }
+      volunteer_invites: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          created_at: string
+          created_by: string | null
+          display_name: string
+          email: string
+          id: string
+          role: Database['public']['Enums']['user_role']
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          display_name: string
+          email: string
+          id?: string
+          role?: Database['public']['Enums']['user_role']
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          display_name?: string
+          email?: string
+          id?: string
+          role?: Database['public']['Enums']['user_role']
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'volunteer_invites_accepted_by_fkey'
+            columns: ['accepted_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: {
       claims: {
@@ -813,6 +857,14 @@ export type Database = {
     }
     Functions: {
       actor: { Args: Record<PropertyKey, never>; Returns: string }
+      add_volunteer: {
+        Args: {
+          p_email: string
+          p_name: string
+          p_role?: Database['public']['Enums']['user_role']
+        }
+        Returns: Json
+      }
       begin_count: { Args: { p_sale_day: string }; Returns: undefined }
       close_sale_day: { Args: { p_sale_day: string }; Returns: undefined }
       create_sale_day: { Args: { p_date?: string }; Returns: string }

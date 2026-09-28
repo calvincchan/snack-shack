@@ -128,6 +128,50 @@ $$;
 ALTER FUNCTION "public"."actor"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role" DEFAULT 'volunteer'::"public"."user_role") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_email text := lower(trim(p_email));
+  v_name  text := trim(p_name);
+  v_uid   uuid;
+begin
+  if not public.has_role('admin') then
+    raise exception 'Only the coordinator can add volunteers.';
+  end if;
+  if position('@' in v_email) < 2 then
+    raise exception 'Enter an email address.';
+  end if;
+  if v_name = '' then
+    raise exception 'Enter a name.';
+  end if;
+
+  select id into v_uid from auth.users where lower(email) = v_email;
+
+  if v_uid is not null then
+    insert into public.profiles (id, email, display_name, role, active)
+    values (v_uid, v_email, v_name, p_role, true)
+    on conflict (id) do update
+      set email        = excluded.email,
+          display_name = excluded.display_name,
+          role         = excluded.role,
+          active       = true;
+    return jsonb_build_object('status', 'added', 'profile_id', v_uid);
+  end if;
+
+  insert into public.volunteer_invites (email, display_name, role)
+  values (v_email, v_name, p_role)
+  on conflict (lower(email)) where accepted_at is null do update
+    set display_name = excluded.display_name,
+        role         = excluded.role;
+  return jsonb_build_object('status', 'invited');
+end $$;
+
+
+ALTER FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."audit_row"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -271,6 +315,49 @@ end $$;
 ALTER FUNCTION "public"."forbid_change"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."handle_new_auth_user"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_email  text := lower(new.email);
+  v_invite public.volunteer_invites;
+begin
+  -- Empty team: whoever signs in first is the coordinator.
+  if not exists (select 1 from public.profiles) then
+    insert into public.profiles (id, email, display_name, role, active)
+    values (new.id, v_email,
+            coalesce(nullif(split_part(coalesce(v_email, ''), '@', 1), ''), 'Coordinator'),
+            'admin', true)
+    on conflict (id) do nothing;
+    return new;
+  end if;
+
+  select * into v_invite
+    from public.volunteer_invites
+   where lower(email) = v_email and accepted_at is null
+   order by created_at
+   limit 1;
+
+  -- No invite: they sign in but see "Ask the coordinator to add you".
+  if v_invite.id is null then
+    return new;
+  end if;
+
+  insert into public.profiles (id, email, display_name, role, active)
+  values (new.id, v_email, v_invite.display_name, v_invite.role, true)
+  on conflict (id) do nothing;
+
+  update public.volunteer_invites
+     set accepted_at = now(), accepted_by = new.id
+   where id = v_invite.id;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."handle_new_auth_user"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."has_role"("r" "public"."user_role") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -403,6 +490,27 @@ end $$;
 ALTER FUNCTION "public"."log_purchase"("p" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."profiles_guard"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+begin
+  if old.active and not new.active and new.id = auth.uid() then
+    raise exception 'You cannot remove yourself from the team.';
+  end if;
+  if old.role = 'admin' and old.active
+     and (new.role <> 'admin' or not new.active)
+     and not exists (select 1 from public.profiles
+                      where role = 'admin' and active and id <> old.id) then
+    raise exception 'The team needs at least one coordinator.';
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."profiles_guard"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -522,6 +630,20 @@ end $$;
 
 
 ALTER FUNCTION "public"."sale_days_guard"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."settings_touch"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+begin
+  new.updated_at := now();
+  new.updated_by := public.actor();
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."settings_touch"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."sign_off"("p_sale_day" "uuid") RETURNS "void"
@@ -696,6 +818,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "role" "public"."user_role" DEFAULT 'volunteer'::"public"."user_role" NOT NULL,
     "active" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "email" "text",
     CONSTRAINT "profiles_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0))
 );
 
@@ -1022,6 +1145,23 @@ CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
 ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."volunteer_invites" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "email" "text" NOT NULL,
+    "display_name" "text" NOT NULL,
+    "role" "public"."user_role" DEFAULT 'volunteer'::"public"."user_role" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    "accepted_at" timestamp with time zone,
+    "accepted_by" "uuid",
+    CONSTRAINT "volunteer_invites_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0)),
+    CONSTRAINT "volunteer_invites_email_check" CHECK ((POSITION(('@'::"text") IN ("email")) > 1))
+);
+
+
+ALTER TABLE "public"."volunteer_invites" OWNER TO "postgres";
+
+
 ALTER TABLE ONLY "public"."action_tokens"
     ADD CONSTRAINT "action_tokens_pkey" PRIMARY KEY ("id");
 
@@ -1102,7 +1242,16 @@ ALTER TABLE ONLY "public"."stock_movements"
 
 
 
+ALTER TABLE ONLY "public"."volunteer_invites"
+    ADD CONSTRAINT "volunteer_invites_pkey" PRIMARY KEY ("id");
+
+
+
 CREATE INDEX "audit_log_table_name_row_pk_idx" ON "public"."audit_log" USING "btree" ("table_name", "row_pk");
+
+
+
+CREATE UNIQUE INDEX "profiles_email_key" ON "public"."profiles" USING "btree" ("lower"("email"));
 
 
 
@@ -1119,6 +1268,10 @@ CREATE INDEX "stock_movements_item_id_idx" ON "public"."stock_movements" USING "
 
 
 CREATE INDEX "stock_movements_sale_day_id_idx" ON "public"."stock_movements" USING "btree" ("sale_day_id");
+
+
+
+CREATE UNIQUE INDEX "volunteer_invites_open" ON "public"."volunteer_invites" USING "btree" ("lower"("email")) WHERE ("accepted_at" IS NULL);
 
 
 
@@ -1183,6 +1336,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT ON "public"."stock_movements" FOR
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."volunteer_invites" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
+
+
+
 CREATE OR REPLACE TRIGGER "cash_counts_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."cash_counts_guard"();
 
 
@@ -1203,11 +1360,19 @@ CREATE OR REPLACE TRIGGER "items_touch" BEFORE UPDATE ON "public"."items" FOR EA
 
 
 
+CREATE OR REPLACE TRIGGER "profiles_guard" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."profiles_guard"();
+
+
+
 CREATE OR REPLACE TRIGGER "sale_day_items_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."sale_day_items" FOR EACH ROW EXECUTE FUNCTION "public"."sale_day_items_guard"();
 
 
 
 CREATE OR REPLACE TRIGGER "sale_days_guard" BEFORE UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."sale_days_guard"();
+
+
+
+CREATE OR REPLACE TRIGGER "settings_touch" BEFORE UPDATE ON "public"."settings" FOR EACH ROW EXECUTE FUNCTION "public"."settings_touch"();
 
 
 
@@ -1290,10 +1455,27 @@ ALTER TABLE ONLY "public"."stock_movements"
 
 
 
+ALTER TABLE ONLY "public"."volunteer_invites"
+    ADD CONSTRAINT "volunteer_invites_accepted_by_fkey" FOREIGN KEY ("accepted_by") REFERENCES "public"."profiles"("id");
+
+
+
 ALTER TABLE "public"."action_tokens" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "admin_write" ON "public"."profiles" TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role")) WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
+CREATE POLICY "admin_delete" ON "public"."volunteer_invites" FOR DELETE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role"));
+
+
+
+CREATE POLICY "admin_insert" ON "public"."profiles" FOR INSERT TO "authenticated" WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
+
+
+
+CREATE POLICY "admin_read" ON "public"."volunteer_invites" FOR SELECT TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role"));
+
+
+
+CREATE POLICY "admin_update" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role")) WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
 
 
 
@@ -1415,6 +1597,9 @@ ALTER TABLE "public"."shopping_trips" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."stock_movements" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."volunteer_invites" ENABLE ROW LEVEL SECURITY;
 
 
 
@@ -1598,6 +1783,12 @@ GRANT ALL ON FUNCTION "public"."actor"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "anon";
+GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "anon";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "service_role";
@@ -1640,6 +1831,12 @@ GRANT ALL ON FUNCTION "public"."forbid_change"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "anon";
+GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."has_role"("r" "public"."user_role") TO "anon";
 GRANT ALL ON FUNCTION "public"."has_role"("r" "public"."user_role") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."has_role"("r" "public"."user_role") TO "service_role";
@@ -1675,6 +1872,12 @@ GRANT ALL ON FUNCTION "public"."log_purchase"("p" "jsonb") TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "anon";
+GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") TO "service_role";
 
@@ -1701,6 +1904,12 @@ GRANT ALL ON FUNCTION "public"."sale_days_clear_signoffs"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."settings_touch"() TO "anon";
+GRANT ALL ON FUNCTION "public"."settings_touch"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."settings_touch"() TO "service_role";
 
 
 
@@ -1854,6 +2063,12 @@ GRANT ALL ON TABLE "public"."shopping_trips" TO "service_role";
 GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
 GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
 GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."volunteer_invites" TO "anon";
+GRANT ALL ON TABLE "public"."volunteer_invites" TO "authenticated";
+GRANT ALL ON TABLE "public"."volunteer_invites" TO "service_role";
 
 
 

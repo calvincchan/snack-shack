@@ -3,16 +3,24 @@
 begin;
 select plan(40);
 
+-- Claim numbers are asserted below, and identity sequences survive the rollback
+-- of an earlier test file, so start this file from SS-001 every time.
+alter table public.purchases alter column claim_no restart with 1;
+
 -- People ----------------------------------------------------------------------
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'calvin@example.com'),
   ('00000000-0000-0000-0000-00000000000b', 'yuki@example.com'),
   ('00000000-0000-0000-0000-00000000000c', 'treasurer@example.com'),
   ('00000000-0000-0000-0000-00000000000d', 'stranger@example.com');
+-- The first sign-in on an empty database becomes the coordinator (ADR-0011),
+-- so Calvin already has a profile by the time we get here.
 insert into public.profiles (id, display_name, role) values
   ('00000000-0000-0000-0000-00000000000a', 'Calvin', 'admin'),
   ('00000000-0000-0000-0000-00000000000b', 'Yuki', 'volunteer'),
-  ('00000000-0000-0000-0000-00000000000c', 'Treasurer', 'treasurer');
+  ('00000000-0000-0000-0000-00000000000c', 'Treasurer', 'treasurer')
+on conflict (id) do update
+  set display_name = excluded.display_name, role = excluded.role;
 
 create function pg_temp.as_user(p uuid) returns void language sql as $$
   select set_config('request.jwt.claims', json_build_object('sub', p, 'role', 'authenticated')::text, true);
