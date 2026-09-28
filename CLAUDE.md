@@ -29,6 +29,7 @@ Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanSta
 - **Stock is an append-only ledger** (`stock_movements`). Never update or delete a movement; add a correction.
 - **Sale day phase changes only through the functions** (`start_sale`, `begin_count`, `sign_off`, `close_sale_day`). Show their error messages to the user as-is.
 - **Client-generated UUIDs** for anything created offline (purchases, count-up writes).
+- **Database types are generated, never hand-written.** Every migration ships in the same commit as the `pnpm db:sync` output (`src/lib/database.types.ts` and `supabase/schema.sql`); `pnpm db:reset` runs it for you, and CI fails if either file is stale. In TypeScript, derive from `Tables<'…'>`, `TablesInsert<'…'>` and `Enums<'…'>`; a view model may narrow a view's nullable columns, but its field types must still come from the generated row type.
 - **UI copy:** Canadian English (colour, centre, cheque) with "-ize" endings. Use the `CONTEXT.md` words (sale day, lineup, check stock, count up, change float, over/short, out, target stock). Keep copy short and plain.
 - **Mobile first:** touch targets 44–48 px, one-handed use, light and dark mode, tabular numbers.
 - Every button sets its own text colour (a dark-panel inheritance bug happened in the prototype).
@@ -39,9 +40,9 @@ Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanSta
 ```bash
 pnpm dev                 # app
 supabase start           # local Supabase
-supabase db reset        # apply migrations + seed
+pnpm db:reset            # apply migrations + seed, then db:sync
+pnpm db:sync             # regenerate database.types.ts + schema.sql (run after any migration)
 supabase test db         # pgTAP tests (money and stock rules)
-supabase gen types typescript --local > src/lib/database.types.ts
 pnpm test                # Vitest
 pnpm test:e2e            # Playwright
 pnpm lint && pnpm typecheck

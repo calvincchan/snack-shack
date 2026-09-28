@@ -18,9 +18,9 @@ Stack: Vite, React, TypeScript, shadcn/ui, Tailwind, TanStack Query, Supabase.
 ```bash
 pnpm dev                 # app
 supabase start           # local Supabase
-supabase db reset        # apply migrations + seed
+pnpm db:reset            # apply migrations + seed, then db:sync
+pnpm db:sync             # regenerate src/lib/database.types.ts + supabase/schema.sql
 supabase test db         # pgTAP tests
-supabase gen types typescript --local > src/lib/database.types.ts
 pnpm test                # Vitest
 pnpm test:e2e            # Playwright
 pnpm lint && pnpm typecheck
