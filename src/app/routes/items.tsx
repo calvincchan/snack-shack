@@ -256,7 +256,7 @@ function NeedsPriceCard({ item }: { item: Item }) {
               )
             }
             className={cn(
-              'border-border text-foreground bg-background flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
+              'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
               'hover:bg-accent disabled:opacity-60',
               option.suggested && 'border-primary',
             )}

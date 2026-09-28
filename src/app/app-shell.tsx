@@ -57,8 +57,8 @@ function MemberShell() {
 
   return (
     <BrowserRouter>
-      <div className="bg-background text-foreground mx-auto flex min-h-dvh max-w-md flex-col">
-        <header className="border-border flex items-center gap-3 border-b px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3">
+      <div className="bg-background text-foreground mx-auto flex h-dvh max-w-md flex-col overflow-hidden">
+        <header className="border-border flex shrink-0 items-center gap-3 border-b px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <h1 className="font-heading text-lg font-semibold">Snack Shack</h1>
             <p className="text-muted-foreground truncate text-sm">
@@ -68,7 +68,7 @@ function MemberShell() {
           <AccountMenu />
         </header>
 
-        <main className="flex-1 overflow-y-auto">
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <Routes>
             <Route path="/" element={<SaleDayPage />} />
             <Route path="/sell" element={<SellPage />} />
@@ -79,7 +79,7 @@ function MemberShell() {
           </Routes>
         </main>
 
-        <nav className="border-border bg-card grid grid-cols-5 border-t pb-[calc(env(safe-area-inset-bottom)+0.25rem)]">
+        <nav className="border-border bg-card grid shrink-0 grid-cols-5 border-t pb-[calc(env(safe-area-inset-bottom)+0.25rem)]">
           {tabs.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}

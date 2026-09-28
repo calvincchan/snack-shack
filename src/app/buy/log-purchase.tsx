@@ -211,7 +211,7 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
             <Label htmlFor="store">Store</Label>
             <select
               id="store"
-              className="border-input bg-background text-foreground min-h-12 rounded-md border px-3"
+              className="border-input bg-card text-foreground min-h-12 rounded-md border px-3"
               value={store}
               onChange={(event) => setStore(event.target.value)}
             >
@@ -228,7 +228,7 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
           <Label htmlFor="buyer">Bought by (reimbursed later)</Label>
           <select
             id="buyer"
-            className="border-input bg-background text-foreground min-h-12 rounded-md border px-3"
+            className="border-input bg-card text-foreground min-h-12 rounded-md border px-3"
             value={buyerId}
             onChange={(event) => setBuyerId(event.target.value)}
           >
@@ -371,7 +371,7 @@ function ReceiptLine({
         <Label htmlFor={`item-${line.key}`}>Item</Label>
         <select
           id={`item-${line.key}`}
-          className="border-input bg-background text-foreground min-h-12 rounded-md border px-3"
+          className="border-input bg-card text-foreground min-h-12 rounded-md border px-3"
           value={line.itemId}
           onChange={(event) =>
             onChange({ itemId: event.target.value, price: null })
@@ -536,7 +536,7 @@ function PriceChoice({
                 })
               }
               className={cn(
-                'border-border text-foreground bg-background flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
+                'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
                 chosen && 'border-primary ring-primary ring-2',
               )}
             >
@@ -562,7 +562,7 @@ function PriceChoice({
           aria-pressed={line.price === null}
           onClick={() => onChange({ price: null })}
           className={cn(
-            'border-border text-foreground bg-background flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
+            'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
             line.price === null && 'border-primary ring-primary ring-2',
           )}
         >
