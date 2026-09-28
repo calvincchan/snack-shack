@@ -62,6 +62,24 @@ test('logging a receipt adds the stock, the cost and the claim', async ({
   await expect(row).toContainText('Great deal')
 })
 
+test('the claim it created links to the receipt photo', async ({
+  page,
+  context,
+}) => {
+  await signIn(page, COORDINATOR_EMAIL)
+  await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Claims' }).click()
+
+  // SS-006 is the receipt the first test logged, photo and all.
+  const opened = context.waitForEvent('page')
+  await page.getByRole('button', { name: /SS-006/ }).click()
+  const receipt = await opened
+  await receipt.waitForURL(/\/storage\/v1\/object\/sign\/receipts\//)
+
+  expect(receipt.url()).toContain('/storage/v1/object/sign/receipts/')
+  await receipt.close()
+})
+
 test('a receipt line cannot be saved without the numbers or the photo', async ({
   page,
 }) => {

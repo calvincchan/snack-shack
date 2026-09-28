@@ -40,6 +40,9 @@ insert into public.profiles (id, email, display_name, role) values
 update public.settings set treasurer_email = 'treasurer@example.com';
 
 -- Receipts -------------------------------------------------------------------
+-- The receipt_path values below point at the private `receipts` bucket, but no
+-- photo is uploaded, so the receipt links on seeded claims will not open. Log a
+-- receipt through the app to get one with a real photo.
 -- log_purchase() needs a signed-in volunteer; pretend to be Calvin.
 select set_config(
   'request.jwt.claims',

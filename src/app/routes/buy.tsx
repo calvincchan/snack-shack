@@ -1,5 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LogPurchase } from '@/app/buy/log-purchase'
+import { Claims } from '@/app/buy/claims'
 
 export function BuyPage() {
   return (
@@ -26,7 +27,7 @@ export function BuyPage() {
           <LogPurchase />
         </TabsContent>
         <TabsContent value="claims" className="mt-4">
-          <p className="text-muted-foreground text-sm">Not built yet.</p>
+          <Claims />
         </TabsContent>
       </Tabs>
     </div>
