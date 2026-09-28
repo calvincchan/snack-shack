@@ -198,7 +198,15 @@ function StockRow({ saleDayId, item }: { saleDayId: string; item: CountItem }) {
     debounce(item.itemId, () =>
       save.mutate(
         { saleDayId, itemId: item.itemId, left: nextLeft, out: nextOut },
-        { onError: showError },
+        {
+          onError: (error) => {
+            // Let the stepper follow the server again instead of pinning to a
+            // value that never saved.
+            setLeft(null)
+            setOut(null)
+            showError(error)
+          },
+        },
       ),
     )
 
@@ -224,8 +232,11 @@ function StockRow({ saleDayId, item }: { saleDayId: string; item: CountItem }) {
             value={left}
             max={item.startCount + 99}
             onChange={(next) => {
+              // Raising Left must not leave Out above the starting count.
+              const nextOut = Math.min(out, outMax(item.startCount, next))
               setLeft(next)
-              persist(next, out)
+              if (nextOut !== out) setOut(nextOut)
+              persist(next, nextOut)
             }}
           />
         </div>

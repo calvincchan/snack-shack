@@ -9,7 +9,7 @@ const DOING: Record<Activity, string> = {
   sign: 'signing off',
 }
 
-/** "Yuki is counting cash", "Yuki and Sam are counting stock"; null if nobody is busy. */
+/** "Yuki is counting cash", "Yuki and Sam are counting stock"; empty if nobody is busy. */
 export function presenceLabels(peers: Peer[]): string[] {
   const byActivity = new Map<Activity, string[]>()
   for (const peer of peers) {

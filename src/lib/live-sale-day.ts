@@ -73,12 +73,7 @@ export function useSaleDayLive(activity: Activity | null): Peer[] {
       setPeers(
         Object.values(state)
           .flatMap((metas) => metas.slice(-1))
-          .filter((meta) => meta.userId !== userId)
-          .map(({ userId: id, name: who, activity: doing }) => ({
-            userId: id,
-            name: who,
-            activity: doing,
-          })),
+          .filter((meta) => meta.userId !== userId),
       )
     })
 
