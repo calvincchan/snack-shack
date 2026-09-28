@@ -18,6 +18,7 @@ import { SignInPage } from '@/app/routes/sign-in'
 import { NoProfilePage } from '@/app/routes/no-profile'
 import { AccountMenu } from '@/app/account-menu'
 import { useAuth } from '@/lib/auth'
+import { useItems } from '@/lib/items'
 
 const tabs = [
   { to: '/', label: 'Sale day', icon: CalendarCheck2 },
@@ -44,6 +45,15 @@ export function AppShell() {
   if (state.status === 'signed-out') return <SignInPage />
   if (state.status === 'no-profile')
     return <NoProfilePage email={state.email} />
+
+  return <MemberShell />
+}
+
+function MemberShell() {
+  const items = useItems()
+  const needPrice = (items.data ?? []).filter(
+    (item) => item.priceCents === null,
+  ).length
 
   return (
     <BrowserRouter>
@@ -85,7 +95,12 @@ export function AppShell() {
               }
             >
               <Icon className="size-5" aria-hidden="true" />
-              {label}
+              <span>
+                {label}
+                {to === '/items' && needPrice > 0 && (
+                  <span className="text-primary"> ({needPrice})</span>
+                )}
+              </span>
             </NavLink>
           ))}
         </nav>

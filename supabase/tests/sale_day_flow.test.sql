@@ -3,8 +3,10 @@
 begin;
 select plan(40);
 
--- Claim numbers are asserted below, and identity sequences survive the rollback
--- of an earlier test file, so start this file from SS-001 every time.
+-- The seed fills the database for local development. These tests describe
+-- behaviour from an empty start, so clear it inside the transaction.
+set local client_min_messages = warning;
+truncate table auth.users, public.items cascade;
 alter table public.purchases alter column claim_no restart with 1;
 
 -- People ----------------------------------------------------------------------

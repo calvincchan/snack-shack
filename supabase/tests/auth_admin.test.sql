@@ -3,6 +3,12 @@
 begin;
 select plan(25);
 
+-- The seed fills the database for local development. These tests describe
+-- behaviour from an empty start, so clear it inside the transaction.
+set local client_min_messages = warning;
+truncate table auth.users, public.items cascade;
+alter table public.purchases alter column claim_no restart with 1;
+
 create function pg_temp.as_user(p uuid) returns void language sql as $$
   select set_config('request.jwt.claims', json_build_object('sub', p, 'role', 'authenticated')::text, true);
 $$;

@@ -8,26 +8,6 @@ export const LOCAL_API_URL = 'http://127.0.0.1:54321'
 export const LOCAL_MAILPIT_URL = 'http://127.0.0.1:54324'
 export const LOCAL_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
-export const LOCAL_SERVICE_ROLE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
-
-/** Create an auth user without going through the email, for test setup. */
-export async function createAuthUser(email: string) {
-  const response = await fetch(`${LOCAL_API_URL}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: LOCAL_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${LOCAL_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, email_confirm: true }),
-  })
-  if (!response.ok) {
-    throw new Error(
-      `Could not create ${email}: ${response.status} ${await response.text()}`,
-    )
-  }
-}
 
 export async function clearMailbox() {
   await fetch(`${LOCAL_MAILPIT_URL}/api/v1/messages`, { method: 'DELETE' })

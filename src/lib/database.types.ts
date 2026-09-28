@@ -252,6 +252,13 @@ export type Database = {
             foreignKeyName: 'purchase_lines_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'item_overview'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_sale_stats'
             referencedColumns: ['item_id']
           },
@@ -389,6 +396,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'item_overview'
+            referencedColumns: ['id']
+          },
           {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']
@@ -627,6 +641,13 @@ export type Database = {
             foreignKeyName: 'stock_movements_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'item_overview'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_sale_stats'
             referencedColumns: ['item_id']
           },
@@ -745,6 +766,30 @@ export type Database = {
           },
         ]
       }
+      item_overview: {
+        Row: {
+          archived: boolean | null
+          bundle_size: number | null
+          created_at: string | null
+          created_by: string | null
+          days_out: number | null
+          id: string | null
+          is_new: boolean | null
+          last_bought_by: string | null
+          last_bought_on: string | null
+          name: string | null
+          on_hand: number | null
+          pieces_per_day_out: number | null
+          price_cents: number | null
+          storage: Database['public']['Enums']['storage_kind'] | null
+          type: Database['public']['Enums']['item_type'] | null
+          unit_cost_cents: number | null
+          updated_at: string | null
+          updated_by: string | null
+          version: number | null
+        }
+        Relationships: []
+      }
       item_sale_stats: {
         Row: {
           days_out: number | null
@@ -797,6 +842,13 @@ export type Database = {
           updated_by: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'item_overview'
+            referencedColumns: ['id']
+          },
           {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']

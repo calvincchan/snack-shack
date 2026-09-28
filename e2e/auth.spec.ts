@@ -1,12 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { signIn } from './helpers/local-supabase'
-import { COORDINATOR_EMAIL } from './global-setup'
+import { COORDINATOR_EMAIL, VOLUNTEER_EMAIL } from './global-setup'
 
-const VOLUNTEER_EMAIL = 'yuki@example.com'
+const NEW_VOLUNTEER_EMAIL = 'dan@example.com'
 const STRANGER_EMAIL = 'stranger@example.com'
 
-// One local database, one story: the coordinator signs in, adds Yuki, and Yuki
-// signs in on her own phone.
+// One local database, one story, so these run in order.
 test.describe.configure({ mode: 'serial' })
 
 test('the coordinator signs in and adds a volunteer', async ({ page }) => {
@@ -17,14 +16,23 @@ test('the coordinator signs in and adds a volunteer', async ({ page }) => {
   await page.getByRole('button', { name: /^Signed in as / }).click()
   await page.getByRole('link', { name: 'Team and settings' }).click()
 
-  await page.getByLabel('Email').fill(VOLUNTEER_EMAIL)
-  await page.getByLabel('Name').fill('Yuki')
+  await page.getByLabel('Email').fill(NEW_VOLUNTEER_EMAIL)
+  await page.getByLabel('Name').fill('Dan')
   await page.getByRole('button', { name: 'Add to the team' }).click()
 
   await expect(
     page.getByRole('heading', { name: 'Waiting to sign in' }),
   ).toBeVisible()
-  await expect(page.getByText(VOLUNTEER_EMAIL)).toBeVisible()
+  await expect(page.getByText(NEW_VOLUNTEER_EMAIL)).toBeVisible()
+})
+
+test('an invited volunteer joins the team by signing in', async ({ page }) => {
+  await signIn(page, NEW_VOLUNTEER_EMAIL)
+
+  await expect(
+    page.getByRole('button', { name: 'Signed in as Dan' }),
+  ).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Sale day' })).toBeVisible()
 })
 
 test('the coordinator changes a setting', async ({ page }) => {
@@ -52,7 +60,7 @@ test('two phones sign in as two different volunteers', async ({ browser }) => {
   await signIn(volunteer, VOLUNTEER_EMAIL)
 
   await expect(
-    coordinator.getByRole('button', { name: 'Signed in as coordinator' }),
+    coordinator.getByRole('button', { name: 'Signed in as Calvin' }),
   ).toBeVisible()
   await expect(
     volunteer.getByRole('button', { name: 'Signed in as Yuki' }),

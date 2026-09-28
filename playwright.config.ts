@@ -14,9 +14,13 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'pnpm build && pnpm preview --port 4173',
+    command: 'pnpm build && pnpm exec vite preview --port 4173 --strictPort',
     url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI,
+    // Always rebuild: reusing a server left over from the last run serves the
+    // previous bundle, and the failures make no sense.
+    reuseExistingServer: false,
+    // Vite's preview server ignores the polite signal, so don't wait long.
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 2000 },
     env: {
       VITE_SUPABASE_URL: LOCAL_API_URL,
       VITE_SUPABASE_ANON_KEY: LOCAL_ANON_KEY,

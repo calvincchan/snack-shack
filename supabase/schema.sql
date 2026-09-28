@@ -1032,6 +1032,41 @@ SELECT
 ALTER VIEW "public"."item_stock" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true') AS
+ SELECT "s"."id",
+    "s"."name",
+    "s"."type",
+    "s"."storage",
+    "s"."price_cents",
+    "s"."bundle_size",
+    "s"."unit_cost_cents",
+    "s"."archived",
+    "s"."version",
+    "s"."created_at",
+    "s"."created_by",
+    "s"."updated_at",
+    "s"."updated_by",
+    "s"."on_hand",
+    COALESCE("st"."days_out", 0) AS "days_out",
+    (COALESCE("st"."days_out", 0) = 0) AS "is_new",
+    "st"."pieces_per_day_out",
+    "last_buy"."buyer_name" AS "last_bought_by",
+    "last_buy"."purchased_on" AS "last_bought_on"
+   FROM (("public"."item_stock" "s"
+     LEFT JOIN "public"."item_sale_stats" "st" ON (("st"."item_id" = "s"."id")))
+     LEFT JOIN LATERAL ( SELECT "pr"."display_name" AS "buyer_name",
+            "p"."purchased_on"
+           FROM (("public"."purchase_lines" "l"
+             JOIN "public"."purchases" "p" ON (("p"."id" = "l"."purchase_id")))
+             JOIN "public"."profiles" "pr" ON (("pr"."id" = "p"."buyer_id")))
+          WHERE ("l"."item_id" = "s"."id")
+          ORDER BY "p"."purchased_on" DESC, "p"."claim_no" DESC
+         LIMIT 1) "last_buy" ON (true));
+
+
+ALTER VIEW "public"."item_overview" OWNER TO "postgres";
+
+
 ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME "public"."purchases_claim_no_seq"
     START WITH 1
@@ -2027,6 +2062,12 @@ GRANT ALL ON TABLE "public"."item_sale_stats" TO "service_role";
 GRANT ALL ON TABLE "public"."item_stock" TO "anon";
 GRANT ALL ON TABLE "public"."item_stock" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_stock" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."item_overview" TO "anon";
+GRANT ALL ON TABLE "public"."item_overview" TO "authenticated";
+GRANT ALL ON TABLE "public"."item_overview" TO "service_role";
 
 
 
