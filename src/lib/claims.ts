@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCents } from '@/lib/money'
+import type { Enums, Tables } from '@/lib/database.types'
 
+type ClaimRow = Tables<'claims'>
+
+/** A row of the `claims` view, with the columns a view makes nullable narrowed. */
 export type Claim = {
   id: string
   label: string
@@ -10,10 +14,26 @@ export type Claim = {
   buyerId: string
   buyerName: string
   totalCents: number
-  status: 'to_pay' | 'paid'
+  status: Enums<'claim_status'>
   paidAt: string | null
   paymentRef: string | null
   receiptPath: string
+}
+
+function toClaim(row: ClaimRow): Claim {
+  return {
+    id: row.id!,
+    label: row.claim_label!,
+    purchasedOn: row.purchased_on!,
+    store: row.store!,
+    buyerId: row.buyer_id!,
+    buyerName: row.buyer_name!,
+    totalCents: row.total_cents!,
+    status: row.status!,
+    paidAt: row.paid_at,
+    paymentRef: row.payment_ref,
+    receiptPath: row.receipt_path!,
+  }
 }
 
 export function useClaims() {
@@ -26,19 +46,7 @@ export function useClaims() {
         .order('claim_no', { ascending: false })
       if (error) throw error
 
-      return data.map((row) => ({
-        id: row.id!,
-        label: row.claim_label!,
-        purchasedOn: row.purchased_on!,
-        store: row.store!,
-        buyerId: row.buyer_id!,
-        buyerName: row.buyer_name!,
-        totalCents: row.total_cents!,
-        status: row.status!,
-        paidAt: row.paid_at,
-        paymentRef: row.payment_ref,
-        receiptPath: row.receipt_path!,
-      }))
+      return data.map(toClaim)
     },
   })
 }

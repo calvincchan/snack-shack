@@ -55,6 +55,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
       - uses: supabase/setup-cli@v1
         with:
           version: latest
@@ -62,3 +73,10 @@ jobs:
       - run: supabase start
 
       - run: supabase test db
+
+      # A migration must ship with the types and the schema dump it produces.
+      - name: Types and schema dump are up to date
+        run: |
+          pnpm db:sync
+          git diff --exit-code -- src/lib/database.types.ts supabase/schema.sql \
+            || { echo "::error::Run 'pnpm db:sync' and commit src/lib/database.types.ts and supabase/schema.sql."; exit 1; }
