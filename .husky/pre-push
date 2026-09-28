@@ -1,0 +1,7 @@
+set -e
+
+# Same fast gates as the CI "app" job, minus Playwright and Supabase.
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
