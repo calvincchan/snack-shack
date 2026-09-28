@@ -907,6 +907,14 @@ export type Database = {
         }
         Relationships: []
       }
+      type_benchmarks: {
+        Row: {
+          pieces_per_day_out: number | null
+          type: Database['public']['Enums']['item_type'] | null
+          usual_cost_cents: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       actor: { Args: Record<PropertyKey, never>; Returns: string }

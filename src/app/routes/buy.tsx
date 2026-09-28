@@ -1,13 +1,22 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { LogPurchase } from '@/app/buy/log-purchase'
+import { LogPurchase, type PrefilledLine } from '@/app/buy/log-purchase'
+import { DealCheck } from '@/app/buy/deal-check'
 import { Claims } from '@/app/buy/claims'
 
 export function BuyPage() {
+  const [segment, setSegment] = useState('what')
+  // "Bought it" carries the Deal check numbers into Log purchase. The key
+  // remounts the form so it starts from them.
+  const [prefill, setPrefill] = useState<PrefilledLine | null>(null)
+  const [prefillKey, setPrefillKey] = useState(0)
+
   return (
     <div className="flex flex-col gap-4 p-4 pb-8">
       <h1 className="sr-only">Buy</h1>
 
-      <Tabs defaultValue="log">
+      <Tabs value={segment} onValueChange={setSegment}>
         <TabsList className="w-full">
           <TabsTrigger value="what" className="min-h-11 flex-1">
             What to buy
@@ -21,10 +30,19 @@ export function BuyPage() {
         </TabsList>
 
         <TabsContent value="what" className="mt-4">
-          <p className="text-muted-foreground text-sm">Not built yet.</p>
+          <DealCheck
+            onBoughtIt={(bought) => {
+              setPrefill(bought)
+              setPrefillKey((key) => key + 1)
+              setSegment('log')
+              toast.success(
+                'Numbers carried over. Add a name and the receipt photo.',
+              )
+            }}
+          />
         </TabsContent>
         <TabsContent value="log" className="mt-4">
-          <LogPurchase />
+          <LogPurchase key={prefillKey} prefill={prefill} />
         </TabsContent>
         <TabsContent value="claims" className="mt-4">
           <Claims />

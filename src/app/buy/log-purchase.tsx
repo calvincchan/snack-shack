@@ -14,7 +14,11 @@ import {
   useVolunteers,
   type PurchaseLine,
 } from '@/lib/purchases'
-import { dollarStringToCents, formatCents } from '@/lib/money'
+import {
+  centsToDollarString,
+  dollarStringToCents,
+  formatCents,
+} from '@/lib/money'
 import {
   formatMargin,
   marginBand,
@@ -73,7 +77,26 @@ function costPerPiece(line: LineDraft): number | null {
   return cents / pieces
 }
 
-export function LogPurchase() {
+export type PrefilledLine = {
+  type: Enums<'item_type'>
+  pieces: number
+  costCents: number
+  priceCents: number
+  bundleSize: number
+}
+
+/** Deal check hands its numbers over; the buyer still needs to name the item. */
+function prefilled(line: PrefilledLine): LineDraft {
+  return {
+    ...emptyLine(),
+    type: line.type,
+    pieces: String(line.pieces),
+    cost: centsToDollarString(line.costCents),
+    price: { priceCents: line.priceCents, bundleSize: line.bundleSize },
+  }
+}
+
+export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
   // Kept across retries so a save that failed halfway cannot create a second
   // claim (the database function is idempotent on this id).
   const [purchaseId, setPurchaseId] = useState(() => crypto.randomUUID())
@@ -81,7 +104,9 @@ export function LogPurchase() {
   const [store, setStore] = useState<string>(STORES[0])
   const [buyerId, setBuyerId] = useState('')
   const [receipt, setReceipt] = useState<File | null>(null)
-  const [lines, setLines] = useState<LineDraft[]>(() => [emptyLine()])
+  const [lines, setLines] = useState<LineDraft[]>(() => [
+    prefill ? prefilled(prefill) : emptyLine(),
+  ])
   const [problem, setProblem] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
 

@@ -1182,6 +1182,23 @@ CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
 ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true') AS
+ SELECT "type",
+    COALESCE(( SELECT "avg"("i"."unit_cost_cents") AS "avg"
+           FROM "public"."item_overview" "i"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."is_new") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
+           FROM "public"."item_overview" "i"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents",
+    ( SELECT "avg"("s"."pieces_per_day_out") AS "avg"
+           FROM ("public"."item_sale_stats" "s"
+             JOIN "public"."items" "i" ON (("i"."id" = "s"."item_id")))
+          WHERE (("i"."type" = "t"."type") AND ("s"."pieces_per_day_out" IS NOT NULL))) AS "pieces_per_day_out"
+   FROM ( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type");
+
+
+ALTER VIEW "public"."type_benchmarks" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."volunteer_invites" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "email" "text" NOT NULL,
@@ -2106,6 +2123,12 @@ GRANT ALL ON TABLE "public"."shopping_trips" TO "service_role";
 GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
 GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
 GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."type_benchmarks" TO "anon";
+GRANT ALL ON TABLE "public"."type_benchmarks" TO "authenticated";
+GRANT ALL ON TABLE "public"."type_benchmarks" TO "service_role";
 
 
 
