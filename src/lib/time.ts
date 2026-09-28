@@ -20,3 +20,25 @@ export function timeAgo(when: string | Date, now: Date = new Date()): string {
 
   return `on ${then.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}`
 }
+
+/**
+ * "Tue, Sep 29" from a database date.
+ *
+ * A date column has no time zone, so it is read piece by piece. Handing
+ * "2026-09-29" to `new Date` means UTC midnight, which is still the 28th on a
+ * BC phone.
+ */
+export function formatSaleDate(date: string): string {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString('en-CA', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+/** Today where the volunteer is standing, as the database writes dates. */
+export function todayDate(now: Date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
