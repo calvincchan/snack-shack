@@ -24,8 +24,8 @@ export function Done({
             : 'Count up finished'}
         </h1>
         <p className="text-muted-foreground text-sm">
-          Write the date and both names on the bag. Leave the change float in
-          the box.
+          Write the date and your name on the bag. Leave the change float in the
+          box.
         </p>
       </section>
 

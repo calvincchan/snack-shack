@@ -77,6 +77,34 @@ export function useSaleDay() {
   })
 }
 
+/** How long the Done screen stays up after Finish. */
+const DONE_HOURS = 4
+
+export const recentClosedQueryKey = ['recent-closed'] as const
+
+/**
+ * The sale day closed in the last few hours, if any, so both phones land on
+ * Done after Finish and a reload does not lose it.
+ */
+export function useRecentlyClosed() {
+  return useQuery({
+    queryKey: recentClosedQueryKey,
+    queryFn: async (): Promise<string | null> => {
+      const since = new Date(Date.now() - DONE_HOURS * 3_600_000).toISOString()
+      const { data, error } = await supabase
+        .from('sale_days')
+        .select('id')
+        .eq('phase', 'closed')
+        .gte('closed_at', since)
+        .order('closed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      return data?.id ?? null
+    },
+  })
+}
+
 export type LineupOption = {
   itemId: string
   name: string
@@ -214,6 +242,7 @@ function useSaleDayMutation<TArgs>(run: (args: TArgs) => Promise<void>) {
         itemsQueryKey,
         ['open-sale-day'],
         ['check-differences'],
+        recentClosedQueryKey,
       ]) {
         void queryClient.invalidateQueries({ queryKey: key })
       }

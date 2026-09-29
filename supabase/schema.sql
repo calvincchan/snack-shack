@@ -1,6 +1,5 @@
 
 
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -12,65 +11,36 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
-
 COMMENT ON SCHEMA "public" IS 'standard public schema';
-
-
 
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
 
-
-
-
-
-
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
-
-
-
-
-
 
 CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
 
-
-
-
-
-
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
-
-
-
-
-
 
 CREATE TYPE "public"."check_reason" AS ENUM (
     'missing',
     'damaged'
 );
 
-
 ALTER TYPE "public"."check_reason" OWNER TO "postgres";
-
 
 CREATE TYPE "public"."claim_status" AS ENUM (
     'to_pay',
     'paid'
 );
 
-
 ALTER TYPE "public"."claim_status" OWNER TO "postgres";
-
 
 CREATE TYPE "public"."item_type" AS ENUM (
     'snack',
     'treat'
 );
 
-
 ALTER TYPE "public"."item_type" OWNER TO "postgres";
-
 
 CREATE TYPE "public"."movement_reason" AS ENUM (
     'purchase',
@@ -83,9 +53,7 @@ CREATE TYPE "public"."movement_reason" AS ENUM (
     'correction'
 );
 
-
 ALTER TYPE "public"."movement_reason" OWNER TO "postgres";
-
 
 CREATE TYPE "public"."sale_phase" AS ENUM (
     'lineup',
@@ -94,18 +62,14 @@ CREATE TYPE "public"."sale_phase" AS ENUM (
     'closed'
 );
 
-
 ALTER TYPE "public"."sale_phase" OWNER TO "postgres";
-
 
 CREATE TYPE "public"."storage_kind" AS ENUM (
     'shelf',
     'freezer'
 );
 
-
 ALTER TYPE "public"."storage_kind" OWNER TO "postgres";
-
 
 CREATE TYPE "public"."user_role" AS ENUM (
     'volunteer',
@@ -113,9 +77,7 @@ CREATE TYPE "public"."user_role" AS ENUM (
     'admin'
 );
 
-
 ALTER TYPE "public"."user_role" OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."actor"() RETURNS "uuid"
     LANGUAGE "sql" STABLE
@@ -124,9 +86,7 @@ CREATE OR REPLACE FUNCTION "public"."actor"() RETURNS "uuid"
   select coalesce(auth.uid(), nullif(current_setting('app.actor', true), '')::uuid)
 $$;
 
-
 ALTER FUNCTION "public"."actor"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role" DEFAULT 'volunteer'::"public"."user_role") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -168,9 +128,7 @@ begin
   return jsonb_build_object('status', 'invited');
 end $$;
 
-
 ALTER FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."audit_row"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -190,9 +148,7 @@ begin
   return coalesce(new, old);
 end $$;
 
-
 ALTER FUNCTION "public"."audit_row"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."begin_count"("p_sale_day" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -212,9 +168,7 @@ begin
   perform set_config('snack.fn', '', true);
 end $$;
 
-
 ALTER FUNCTION "public"."begin_count"("p_sale_day" "uuid") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."cash_counts_guard"() RETURNS "trigger"
     LANGUAGE "plpgsql"
@@ -232,9 +186,7 @@ begin
   return coalesce(new, old);
 end $$;
 
-
 ALTER FUNCTION "public"."cash_counts_guard"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."clear_signoffs"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -246,9 +198,7 @@ begin
   return null;
 end $$;
 
-
 ALTER FUNCTION "public"."clear_signoffs"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -260,7 +210,7 @@ begin
   perform public.require_member();
   select * into t from public.sale_day_totals where sale_day_id = p_sale_day;
   if t.phase is distinct from 'counting' then raise exception 'This sale day is not being counted.'; end if;
-  if t.signoffs < 2 then raise exception 'Two different volunteers need to sign off.'; end if;
+  if t.signoffs < 1 then raise exception 'A volunteer needs to confirm the count.'; end if;
   if t.items_over_start > 0 then raise exception 'Some items show more left than you started with. Recount them.'; end if;
   if t.items_uncounted > 0 then raise exception 'Some items have no leftover count.'; end if;
 
@@ -278,9 +228,7 @@ begin
   perform set_config('snack.fn', '', true);
 end $$;
 
-
 ALTER FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."create_sale_day"("p_date" "date" DEFAULT CURRENT_DATE) RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -300,9 +248,7 @@ begin
   return v_id;
 end $$;
 
-
 ALTER FUNCTION "public"."create_sale_day"("p_date" "date") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."forbid_change"() RETURNS "trigger"
     LANGUAGE "plpgsql"
@@ -311,9 +257,7 @@ begin
   raise exception '% rows cannot be changed. Add a correction instead.', tg_table_name;
 end $$;
 
-
 ALTER FUNCTION "public"."forbid_change"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."handle_new_auth_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -354,9 +298,7 @@ begin
   return new;
 end $$;
 
-
 ALTER FUNCTION "public"."handle_new_auth_user"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."has_role"("r" "public"."user_role") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
@@ -365,9 +307,7 @@ CREATE OR REPLACE FUNCTION "public"."has_role"("r" "public"."user_role") RETURNS
   select exists (select 1 from public.profiles where id = auth.uid() and active and role = r)
 $$;
 
-
 ALTER FUNCTION "public"."has_role"("r" "public"."user_role") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."in_fn"() RETURNS boolean
     LANGUAGE "sql" STABLE
@@ -375,9 +315,7 @@ CREATE OR REPLACE FUNCTION "public"."in_fn"() RETURNS boolean
   select coalesce(current_setting('snack.fn', true), '') = 'on'
 $$;
 
-
 ALTER FUNCTION "public"."in_fn"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."is_member"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
@@ -386,9 +324,7 @@ CREATE OR REPLACE FUNCTION "public"."is_member"() RETURNS boolean
   select exists (select 1 from public.profiles where id = auth.uid() and active)
 $$;
 
-
 ALTER FUNCTION "public"."is_member"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."issue_mark_paid_tokens"("p_valid" interval DEFAULT '7 days'::interval) RETURNS TABLE("buyer_id" "uuid", "buyer_name" "text", "total_cents" integer, "purchase_ids" "uuid"[], "token" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -417,9 +353,7 @@ begin
   end loop;
 end $$;
 
-
 ALTER FUNCTION "public"."issue_mark_paid_tokens"("p_valid" interval) OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."items_touch"() RETURNS "trigger"
     LANGUAGE "plpgsql"
@@ -431,9 +365,7 @@ begin
   return new;
 end $$;
 
-
 ALTER FUNCTION "public"."items_touch"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."log_purchase"("p" "jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -486,9 +418,7 @@ begin
   return v_id;
 end $$;
 
-
 ALTER FUNCTION "public"."log_purchase"("p" "jsonb") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."profiles_guard"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -507,9 +437,7 @@ begin
   return new;
 end $$;
 
-
 ALTER FUNCTION "public"."profiles_guard"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -537,9 +465,7 @@ begin
   return jsonb_build_object('purchases_paid', v_count, 'buyer_id', t.payload ->> 'buyer_id');
 end $$;
 
-
 ALTER FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."require_member"() RETURNS "void"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
@@ -549,9 +475,7 @@ begin
   if not public.is_member() then raise exception 'Not signed in as a Snack Shack volunteer.'; end if;
 end $$;
 
-
 ALTER FUNCTION "public"."require_member"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."sale_day_items_guard"() RETURNS "trigger"
     LANGUAGE "plpgsql"
@@ -586,9 +510,7 @@ begin
   return new;
 end $$;
 
-
 ALTER FUNCTION "public"."sale_day_items_guard"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."sale_days_clear_signoffs"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -602,9 +524,7 @@ begin
   return null;
 end $$;
 
-
 ALTER FUNCTION "public"."sale_days_clear_signoffs"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."sale_days_guard"() RETURNS "trigger"
     LANGUAGE "plpgsql"
@@ -628,9 +548,7 @@ begin
   return new;
 end $$;
 
-
 ALTER FUNCTION "public"."sale_days_guard"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."settings_touch"() RETURNS "trigger"
     LANGUAGE "plpgsql"
@@ -642,9 +560,7 @@ begin
   return new;
 end $$;
 
-
 ALTER FUNCTION "public"."settings_touch"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."sign_off"("p_sale_day" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -659,9 +575,7 @@ begin
   on conflict do nothing;
 end $$;
 
-
 ALTER FUNCTION "public"."sign_off"("p_sale_day" "uuid") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."start_sale"("p_sale_day" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -706,9 +620,7 @@ begin
   perform set_config('snack.fn', '', true);
 end $$;
 
-
 ALTER FUNCTION "public"."start_sale"("p_sale_day" "uuid") OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."suggest_lineup"() RETURNS TABLE("item_id" "uuid", "type" "public"."item_type", "score" integer, "reason" "text", "suggested" boolean)
     LANGUAGE "sql" STABLE
@@ -747,13 +659,11 @@ CREATE OR REPLACE FUNCTION "public"."suggest_lineup"() RETURNS TABLE("item_id" "
   order by type, score desc
 $$;
 
-
 ALTER FUNCTION "public"."suggest_lineup"() OWNER TO "postgres";
 
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
-
 
 CREATE TABLE IF NOT EXISTS "public"."action_tokens" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -767,9 +677,7 @@ CREATE TABLE IF NOT EXISTS "public"."action_tokens" (
     CONSTRAINT "action_tokens_purpose_check" CHECK (("purpose" = 'mark_paid'::"text"))
 );
 
-
 ALTER TABLE "public"."action_tokens" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "id" bigint NOT NULL,
@@ -783,9 +691,7 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     CONSTRAINT "audit_log_action_check" CHECK (("action" = ANY (ARRAY['INSERT'::"text", 'UPDATE'::"text", 'DELETE'::"text"])))
 );
 
-
 ALTER TABLE "public"."audit_log" OWNER TO "postgres";
-
 
 ALTER TABLE "public"."audit_log" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME "public"."audit_log_id_seq"
@@ -795,8 +701,6 @@ ALTER TABLE "public"."audit_log" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDENT
     NO MAXVALUE
     CACHE 1
 );
-
-
 
 CREATE TABLE IF NOT EXISTS "public"."cash_counts" (
     "sale_day_id" "uuid" NOT NULL,
@@ -808,9 +712,7 @@ CREATE TABLE IF NOT EXISTS "public"."cash_counts" (
     CONSTRAINT "cash_counts_qty_check" CHECK (("qty" >= 0))
 );
 
-
 ALTER TABLE "public"."cash_counts" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "id" "uuid" NOT NULL,
@@ -822,9 +724,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     CONSTRAINT "profiles_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0))
 );
 
-
 ALTER TABLE "public"."profiles" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."purchase_lines" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -837,9 +737,7 @@ CREATE TABLE IF NOT EXISTS "public"."purchase_lines" (
     CONSTRAINT "purchase_lines_pieces_check" CHECK (("pieces" > 0))
 );
 
-
 ALTER TABLE "public"."purchase_lines" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."purchases" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -857,9 +755,7 @@ CREATE TABLE IF NOT EXISTS "public"."purchases" (
     CONSTRAINT "purchases_paid_consistent" CHECK ((("status" = 'paid'::"public"."claim_status") = ("paid_at" IS NOT NULL)))
 );
 
-
 ALTER TABLE "public"."purchases" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."claims" WITH ("security_invoker"='true') AS
  SELECT "p"."id",
@@ -882,9 +778,7 @@ CREATE OR REPLACE VIEW "public"."claims" WITH ("security_invoker"='true') AS
    FROM ("public"."purchases" "p"
      JOIN "public"."profiles" "pr" ON (("pr"."id" = "p"."buyer_id")));
 
-
 ALTER VIEW "public"."claims" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."items" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -905,9 +799,7 @@ CREATE TABLE IF NOT EXISTS "public"."items" (
     CONSTRAINT "items_unit_cost_cents_check" CHECK (("unit_cost_cents" >= (0)::numeric))
 );
 
-
 ALTER TABLE "public"."items" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."sale_day_items" (
     "sale_day_id" "uuid" NOT NULL,
@@ -928,9 +820,7 @@ CREATE TABLE IF NOT EXISTS "public"."sale_day_items" (
     CONSTRAINT "sale_day_items_start_count_check" CHECK (("start_count" >= 0))
 );
 
-
 ALTER TABLE "public"."sale_day_items" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."sale_days" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -950,9 +840,7 @@ CREATE TABLE IF NOT EXISTS "public"."sale_days" (
     CONSTRAINT "sale_days_helper_credits_check" CHECK (("helper_credits" >= 0))
 );
 
-
 ALTER TABLE "public"."sale_days" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."sale_day_item_results" WITH ("security_invoker"='true') AS
  SELECT "sdi"."sale_day_id",
@@ -974,9 +862,7 @@ CREATE OR REPLACE VIEW "public"."sale_day_item_results" WITH ("security_invoker"
    FROM ("public"."sale_day_items" "sdi"
      JOIN "public"."sale_days" "sd" ON (("sd"."id" = "sdi"."sale_day_id")));
 
-
 ALTER VIEW "public"."sale_day_item_results" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."item_sale_stats" WITH ("security_invoker"='true') AS
  WITH "closed" AS (
@@ -1007,9 +893,7 @@ CREATE OR REPLACE VIEW "public"."item_sale_stats" WITH ("security_invoker"='true
      LEFT JOIN "r" ON (("r"."item_id" = "i"."id")))
   GROUP BY "i"."id", "i"."type";
 
-
 ALTER VIEW "public"."item_sale_stats" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."item_stock" AS
 SELECT
@@ -1028,9 +912,7 @@ SELECT
     NULL::"uuid" AS "updated_by",
     NULL::integer AS "on_hand";
 
-
 ALTER VIEW "public"."item_stock" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true') AS
  SELECT "s"."id",
@@ -1065,9 +947,7 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
          LIMIT 1) "last_buy" ON (true))
      LEFT JOIN "public"."profiles" "editor" ON (("editor"."id" = "s"."updated_by")));
 
-
 ALTER VIEW "public"."item_overview" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."lineup_options" WITH ("security_invoker"='true') AS
  SELECT "s"."item_id",
@@ -1084,9 +964,7 @@ CREATE OR REPLACE VIEW "public"."lineup_options" WITH ("security_invoker"='true'
    FROM ("public"."suggest_lineup"() "s"("item_id", "type", "score", "reason", "suggested")
      JOIN "public"."item_stock" "i" ON (("i"."id" = "s"."item_id")));
 
-
 ALTER VIEW "public"."lineup_options" OWNER TO "postgres";
-
 
 ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME "public"."purchases_claim_no_seq"
@@ -1096,8 +974,6 @@ ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS
     NO MAXVALUE
     CACHE 1
 );
-
-
 
 CREATE OR REPLACE VIEW "public"."sale_day_lineup" WITH ("security_invoker"='true') AS
  SELECT "sdi"."sale_day_id",
@@ -1117,9 +993,7 @@ CREATE OR REPLACE VIEW "public"."sale_day_lineup" WITH ("security_invoker"='true
      JOIN "public"."item_stock" "i" ON (("i"."id" = "sdi"."item_id")))
      LEFT JOIN "public"."item_sale_stats" "st" ON (("st"."item_id" = "sdi"."item_id")));
 
-
 ALTER VIEW "public"."sale_day_lineup" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."sale_day_lineup_totals" WITH ("security_invoker"='true') AS
  WITH "numbered" AS (
@@ -1154,9 +1028,7 @@ CREATE OR REPLACE VIEW "public"."sale_day_lineup_totals" WITH ("security_invoker
    FROM ("numbered" "n"
      LEFT JOIN "lineup" "l" ON (("l"."sale_day_id" = "n"."id")));
 
-
 ALTER VIEW "public"."sale_day_lineup_totals" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."sale_day_signoffs" (
     "sale_day_id" "uuid" NOT NULL,
@@ -1164,9 +1036,7 @@ CREATE TABLE IF NOT EXISTS "public"."sale_day_signoffs" (
     "signed_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
-
 ALTER TABLE "public"."sale_day_signoffs" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."sale_day_totals" WITH ("security_invoker"='true') AS
  WITH "r" AS (
@@ -1205,9 +1075,7 @@ CREATE OR REPLACE VIEW "public"."sale_day_totals" WITH ("security_invoker"='true
      LEFT JOIN "r" ON (("r"."sale_day_id" = "sd"."id")))
      LEFT JOIN "c" ON (("c"."sale_day_id" = "sd"."id")));
 
-
 ALTER VIEW "public"."sale_day_totals" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."settings" (
     "id" boolean DEFAULT true NOT NULL,
@@ -1226,9 +1094,7 @@ CREATE TABLE IF NOT EXISTS "public"."settings" (
     CONSTRAINT "settings_target_sale_days_check" CHECK (("target_sale_days" > 0))
 );
 
-
 ALTER TABLE "public"."settings" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."shopping_trips" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -1238,9 +1104,7 @@ CREATE TABLE IF NOT EXISTS "public"."shopping_trips" (
     "released_at" timestamp with time zone
 );
 
-
 ALTER TABLE "public"."shopping_trips" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."stock_by_type" WITH ("security_invoker"='true') AS
  WITH "days" AS (
@@ -1284,9 +1148,7 @@ CREATE OR REPLACE VIEW "public"."stock_by_type" WITH ("security_invoker"='true')
    FROM ("rate"
      CROSS JOIN "public"."settings");
 
-
 ALTER VIEW "public"."stock_by_type" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -1302,9 +1164,7 @@ CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
     CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
 );
 
-
 ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
-
 
 CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true') AS
  SELECT "type",
@@ -1319,9 +1179,7 @@ CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true
           WHERE (("i"."type" = "t"."type") AND ("s"."pieces_per_day_out" IS NOT NULL))) AS "pieces_per_day_out"
    FROM ( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type");
 
-
 ALTER VIEW "public"."type_benchmarks" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."volunteer_invites" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -1336,122 +1194,72 @@ CREATE TABLE IF NOT EXISTS "public"."volunteer_invites" (
     CONSTRAINT "volunteer_invites_email_check" CHECK ((POSITION(('@'::"text") IN ("email")) > 1))
 );
 
-
 ALTER TABLE "public"."volunteer_invites" OWNER TO "postgres";
-
 
 ALTER TABLE ONLY "public"."action_tokens"
     ADD CONSTRAINT "action_tokens_pkey" PRIMARY KEY ("id");
 
-
-
 ALTER TABLE ONLY "public"."action_tokens"
     ADD CONSTRAINT "action_tokens_token_hash_key" UNIQUE ("token_hash");
-
-
 
 ALTER TABLE ONLY "public"."audit_log"
     ADD CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id");
 
-
-
 ALTER TABLE ONLY "public"."cash_counts"
     ADD CONSTRAINT "cash_counts_pkey" PRIMARY KEY ("sale_day_id", "denom_cents");
-
-
 
 ALTER TABLE ONLY "public"."items"
     ADD CONSTRAINT "items_pkey" PRIMARY KEY ("id");
 
-
-
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
-
-
 
 ALTER TABLE ONLY "public"."purchase_lines"
     ADD CONSTRAINT "purchase_lines_pkey" PRIMARY KEY ("id");
 
-
-
 ALTER TABLE ONLY "public"."purchase_lines"
     ADD CONSTRAINT "purchase_lines_purchase_id_line_no_key" UNIQUE ("purchase_id", "line_no");
-
-
 
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_claim_no_key" UNIQUE ("claim_no");
 
-
-
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_pkey" PRIMARY KEY ("id");
-
-
 
 ALTER TABLE ONLY "public"."sale_day_items"
     ADD CONSTRAINT "sale_day_items_pkey" PRIMARY KEY ("sale_day_id", "item_id");
 
-
-
 ALTER TABLE ONLY "public"."sale_day_signoffs"
     ADD CONSTRAINT "sale_day_signoffs_pkey" PRIMARY KEY ("sale_day_id", "user_id");
-
-
 
 ALTER TABLE ONLY "public"."sale_days"
     ADD CONSTRAINT "sale_days_pkey" PRIMARY KEY ("id");
 
-
-
 ALTER TABLE ONLY "public"."settings"
     ADD CONSTRAINT "settings_pkey" PRIMARY KEY ("id");
-
-
 
 ALTER TABLE ONLY "public"."shopping_trips"
     ADD CONSTRAINT "shopping_trips_pkey" PRIMARY KEY ("id");
 
-
-
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_pkey" PRIMARY KEY ("id");
-
-
 
 ALTER TABLE ONLY "public"."volunteer_invites"
     ADD CONSTRAINT "volunteer_invites_pkey" PRIMARY KEY ("id");
 
-
-
 CREATE INDEX "audit_log_table_name_row_pk_idx" ON "public"."audit_log" USING "btree" ("table_name", "row_pk");
-
-
 
 CREATE UNIQUE INDEX "profiles_email_key" ON "public"."profiles" USING "btree" ("lower"("email"));
 
-
-
 CREATE UNIQUE INDEX "sale_days_one_open" ON "public"."sale_days" USING "btree" ((true)) WHERE ("phase" <> 'closed'::"public"."sale_phase");
-
-
 
 CREATE UNIQUE INDEX "shopping_trips_one_open" ON "public"."shopping_trips" USING "btree" ((true)) WHERE ("released_at" IS NULL);
 
-
-
 CREATE INDEX "stock_movements_item_id_idx" ON "public"."stock_movements" USING "btree" ("item_id");
-
-
 
 CREATE INDEX "stock_movements_sale_day_id_idx" ON "public"."stock_movements" USING "btree" ("sale_day_id");
 
-
-
 CREATE UNIQUE INDEX "volunteer_invites_open" ON "public"."volunteer_invites" USING "btree" ("lower"("email")) WHERE ("accepted_at" IS NULL);
-
-
 
 CREATE OR REPLACE VIEW "public"."item_stock" WITH ("security_invoker"='true') AS
  SELECT "i"."id",
@@ -1472,878 +1280,411 @@ CREATE OR REPLACE VIEW "public"."item_stock" WITH ("security_invoker"='true') AS
      LEFT JOIN "public"."stock_movements" "m" ON (("m"."item_id" = "i"."id")))
   GROUP BY "i"."id";
 
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('sale_day_id', 'denom_cents');
-
-
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."items" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
-
-
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."purchase_lines" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."purchases" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
-
-
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_day_items" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('sale_day_id', 'item_id');
 
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_day_signoffs" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('sale_day_id', 'user_id');
-
-
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER UPDATE ON "public"."settings" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
-
-
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT ON "public"."stock_movements" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."volunteer_invites" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
-
-
 
 CREATE OR REPLACE TRIGGER "cash_counts_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."cash_counts_guard"();
 
-
-
 CREATE OR REPLACE TRIGGER "clear_signoffs" AFTER INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."clear_signoffs"();
-
-
 
 CREATE OR REPLACE TRIGGER "clear_signoffs" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_day_items" FOR EACH ROW EXECUTE FUNCTION "public"."clear_signoffs"();
 
-
-
 CREATE OR REPLACE TRIGGER "clear_signoffs" AFTER UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."sale_days_clear_signoffs"();
-
-
 
 CREATE OR REPLACE TRIGGER "items_touch" BEFORE UPDATE ON "public"."items" FOR EACH ROW EXECUTE FUNCTION "public"."items_touch"();
 
-
-
 CREATE OR REPLACE TRIGGER "profiles_guard" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."profiles_guard"();
-
-
 
 CREATE OR REPLACE TRIGGER "sale_day_items_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."sale_day_items" FOR EACH ROW EXECUTE FUNCTION "public"."sale_day_items_guard"();
 
-
-
 CREATE OR REPLACE TRIGGER "sale_days_guard" BEFORE UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."sale_days_guard"();
-
-
 
 CREATE OR REPLACE TRIGGER "settings_touch" BEFORE UPDATE ON "public"."settings" FOR EACH ROW EXECUTE FUNCTION "public"."settings_touch"();
 
-
-
 CREATE OR REPLACE TRIGGER "stock_movements_append_only" BEFORE DELETE OR UPDATE ON "public"."stock_movements" FOR EACH ROW EXECUTE FUNCTION "public"."forbid_change"();
-
-
 
 ALTER TABLE ONLY "public"."action_tokens"
     ADD CONSTRAINT "action_tokens_issued_to_fkey" FOREIGN KEY ("issued_to") REFERENCES "public"."profiles"("id");
 
-
-
 ALTER TABLE ONLY "public"."cash_counts"
     ADD CONSTRAINT "cash_counts_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id") ON DELETE CASCADE;
-
-
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
-
-
 ALTER TABLE ONLY "public"."purchase_lines"
     ADD CONSTRAINT "purchase_lines_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id");
-
-
 
 ALTER TABLE ONLY "public"."purchase_lines"
     ADD CONSTRAINT "purchase_lines_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "public"."purchases"("id") ON DELETE CASCADE;
 
-
-
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_buyer_id_fkey" FOREIGN KEY ("buyer_id") REFERENCES "public"."profiles"("id");
-
-
 
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_paid_by_fkey" FOREIGN KEY ("paid_by") REFERENCES "public"."profiles"("id");
 
-
-
 ALTER TABLE ONLY "public"."sale_day_items"
     ADD CONSTRAINT "sale_day_items_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id");
-
-
 
 ALTER TABLE ONLY "public"."sale_day_items"
     ADD CONSTRAINT "sale_day_items_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id") ON DELETE CASCADE;
 
-
-
 ALTER TABLE ONLY "public"."sale_day_signoffs"
     ADD CONSTRAINT "sale_day_signoffs_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id") ON DELETE CASCADE;
-
-
 
 ALTER TABLE ONLY "public"."sale_day_signoffs"
     ADD CONSTRAINT "sale_day_signoffs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id");
 
-
-
 ALTER TABLE ONLY "public"."shopping_trips"
     ADD CONSTRAINT "shopping_trips_volunteer_id_fkey" FOREIGN KEY ("volunteer_id") REFERENCES "public"."profiles"("id");
-
-
 
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id");
 
-
-
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_purchase_line_id_fkey" FOREIGN KEY ("purchase_line_id") REFERENCES "public"."purchase_lines"("id");
-
-
 
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id");
 
-
-
 ALTER TABLE ONLY "public"."volunteer_invites"
     ADD CONSTRAINT "volunteer_invites_accepted_by_fkey" FOREIGN KEY ("accepted_by") REFERENCES "public"."profiles"("id");
 
-
-
 ALTER TABLE "public"."action_tokens" ENABLE ROW LEVEL SECURITY;
-
 
 CREATE POLICY "admin_delete" ON "public"."volunteer_invites" FOR DELETE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role"));
 
-
-
 CREATE POLICY "admin_insert" ON "public"."profiles" FOR INSERT TO "authenticated" WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
-
-
 
 CREATE POLICY "admin_read" ON "public"."volunteer_invites" FOR SELECT TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role"));
 
-
-
 CREATE POLICY "admin_update" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role")) WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
-
-
 
 CREATE POLICY "admin_write" ON "public"."settings" FOR UPDATE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role")) WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
 
-
-
 ALTER TABLE "public"."audit_log" ENABLE ROW LEVEL SECURITY;
-
 
 ALTER TABLE "public"."cash_counts" ENABLE ROW LEVEL SECURITY;
 
-
 ALTER TABLE "public"."items" ENABLE ROW LEVEL SECURITY;
-
 
 CREATE POLICY "member_insert" ON "public"."shopping_trips" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_member"() AND ("volunteer_id" = "auth"."uid"())));
 
-
-
 CREATE POLICY "member_insert" ON "public"."stock_movements" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_member"() AND ("reason" = ANY (ARRAY['donated'::"public"."movement_reason", 'correction'::"public"."movement_reason"]))));
-
-
 
 CREATE POLICY "member_release" ON "public"."shopping_trips" FOR UPDATE TO "authenticated" USING (("volunteer_id" = "auth"."uid"())) WITH CHECK (("volunteer_id" = "auth"."uid"()));
 
-
-
 CREATE POLICY "member_write" ON "public"."cash_counts" TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
-
-
 
 CREATE POLICY "member_write" ON "public"."items" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_member"());
 
-
-
 CREATE POLICY "member_write" ON "public"."sale_day_items" TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
-
-
 
 CREATE POLICY "member_write" ON "public"."sale_days" FOR UPDATE TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
 
-
-
 CREATE POLICY "member_write_u" ON "public"."items" FOR UPDATE TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
-
-
 
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
-
 ALTER TABLE "public"."purchase_lines" ENABLE ROW LEVEL SECURITY;
-
 
 ALTER TABLE "public"."purchases" ENABLE ROW LEVEL SECURITY;
 
-
 CREATE POLICY "read_all" ON "public"."audit_log" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-
 
 CREATE POLICY "read_all" ON "public"."cash_counts" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-
-
 CREATE POLICY "read_all" ON "public"."items" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-
 
 CREATE POLICY "read_all" ON "public"."profiles" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-
-
 CREATE POLICY "read_all" ON "public"."purchase_lines" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-
 
 CREATE POLICY "read_all" ON "public"."purchases" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-
-
 CREATE POLICY "read_all" ON "public"."sale_day_items" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-
 
 CREATE POLICY "read_all" ON "public"."sale_day_signoffs" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-
-
 CREATE POLICY "read_all" ON "public"."sale_days" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-
 
 CREATE POLICY "read_all" ON "public"."settings" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-
-
 CREATE POLICY "read_all" ON "public"."shopping_trips" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-
 
 CREATE POLICY "read_all" ON "public"."stock_movements" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-
-
 ALTER TABLE "public"."sale_day_items" ENABLE ROW LEVEL SECURITY;
-
 
 ALTER TABLE "public"."sale_day_signoffs" ENABLE ROW LEVEL SECURITY;
 
-
 ALTER TABLE "public"."sale_days" ENABLE ROW LEVEL SECURITY;
-
 
 ALTER TABLE "public"."settings" ENABLE ROW LEVEL SECURITY;
 
-
 ALTER TABLE "public"."shopping_trips" ENABLE ROW LEVEL SECURITY;
-
 
 ALTER TABLE "public"."stock_movements" ENABLE ROW LEVEL SECURITY;
 
-
 ALTER TABLE "public"."volunteer_invites" ENABLE ROW LEVEL SECURITY;
-
-
-
 
 ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
 
-
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."cash_counts";
-
-
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."sale_day_items";
 
-
-
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."sale_day_signoffs";
 
-
-
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."sale_days";
-
-
 
 GRANT USAGE ON SCHEMA "public" TO "postgres";
 GRANT USAGE ON SCHEMA "public" TO "anon";
 GRANT USAGE ON SCHEMA "public" TO "authenticated";
 GRANT USAGE ON SCHEMA "public" TO "service_role";
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 GRANT ALL ON FUNCTION "public"."actor"() TO "anon";
 GRANT ALL ON FUNCTION "public"."actor"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."actor"() TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "anon";
 GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "anon";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."begin_count"("p_sale_day" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."begin_count"("p_sale_day" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."begin_count"("p_sale_day" "uuid") TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "anon";
 GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "anon";
 GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."forbid_change"() TO "anon";
 GRANT ALL ON FUNCTION "public"."forbid_change"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."forbid_change"() TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "anon";
 GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."has_role"("r" "public"."user_role") TO "anon";
 GRANT ALL ON FUNCTION "public"."has_role"("r" "public"."user_role") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."has_role"("r" "public"."user_role") TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."in_fn"() TO "anon";
 GRANT ALL ON FUNCTION "public"."in_fn"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."in_fn"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."is_member"() TO "anon";
 GRANT ALL ON FUNCTION "public"."is_member"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_member"() TO "service_role";
 
-
-
 REVOKE ALL ON FUNCTION "public"."issue_mark_paid_tokens"("p_valid" interval) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."issue_mark_paid_tokens"("p_valid" interval) TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."items_touch"() TO "anon";
 GRANT ALL ON FUNCTION "public"."items_touch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."items_touch"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."log_purchase"("p" "jsonb") TO "anon";
 GRANT ALL ON FUNCTION "public"."log_purchase"("p" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."log_purchase"("p" "jsonb") TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "service_role";
 
-
-
 REVOKE ALL ON FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."require_member"() TO "anon";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."sale_day_items_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."sale_day_items_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sale_day_items_guard"() TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."sale_days_clear_signoffs"() TO "anon";
 GRANT ALL ON FUNCTION "public"."sale_days_clear_signoffs"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sale_days_clear_signoffs"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "anon";
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "service_role";
-
-
 
 GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid") TO "service_role";
 
-
-
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "anon";
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 GRANT ALL ON TABLE "public"."action_tokens" TO "anon";
 GRANT ALL ON TABLE "public"."action_tokens" TO "authenticated";
 GRANT ALL ON TABLE "public"."action_tokens" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."audit_log" TO "anon";
 GRANT ALL ON TABLE "public"."audit_log" TO "authenticated";
 GRANT ALL ON TABLE "public"."audit_log" TO "service_role";
-
-
 
 GRANT ALL ON SEQUENCE "public"."audit_log_id_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."audit_log_id_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."audit_log_id_seq" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."cash_counts" TO "anon";
 GRANT ALL ON TABLE "public"."cash_counts" TO "authenticated";
 GRANT ALL ON TABLE "public"."cash_counts" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."profiles" TO "anon";
 GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
 GRANT ALL ON TABLE "public"."profiles" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."purchase_lines" TO "anon";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "authenticated";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."purchases" TO "anon";
 GRANT ALL ON TABLE "public"."purchases" TO "authenticated";
 GRANT ALL ON TABLE "public"."purchases" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."claims" TO "anon";
 GRANT ALL ON TABLE "public"."claims" TO "authenticated";
 GRANT ALL ON TABLE "public"."claims" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."items" TO "anon";
 GRANT ALL ON TABLE "public"."items" TO "authenticated";
 GRANT ALL ON TABLE "public"."items" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."sale_day_items" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_items" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_items" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."sale_days" TO "anon";
 GRANT ALL ON TABLE "public"."sale_days" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_days" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "anon";
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."item_stock" TO "anon";
 GRANT ALL ON TABLE "public"."item_stock" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_stock" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."item_overview" TO "anon";
 GRANT ALL ON TABLE "public"."item_overview" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_overview" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."lineup_options" TO "anon";
 GRANT ALL ON TABLE "public"."lineup_options" TO "authenticated";
 GRANT ALL ON TABLE "public"."lineup_options" TO "service_role";
-
-
 
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."sale_day_lineup" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_lineup" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_lineup" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."sale_day_totals" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_totals" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_totals" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."settings" TO "anon";
 GRANT ALL ON TABLE "public"."settings" TO "authenticated";
 GRANT ALL ON TABLE "public"."settings" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."shopping_trips" TO "anon";
 GRANT ALL ON TABLE "public"."shopping_trips" TO "authenticated";
 GRANT ALL ON TABLE "public"."shopping_trips" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."stock_by_type" TO "anon";
 GRANT ALL ON TABLE "public"."stock_by_type" TO "authenticated";
 GRANT ALL ON TABLE "public"."stock_by_type" TO "service_role";
-
-
 
 GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
 GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
 GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "anon";
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "authenticated";
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "service_role";
 
-
-
 GRANT ALL ON TABLE "public"."volunteer_invites" TO "anon";
 GRANT ALL ON TABLE "public"."volunteer_invites" TO "authenticated";
 GRANT ALL ON TABLE "public"."volunteer_invites" TO "service_role";
-
-
-
-
-
-
-
-
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
 
-
-
-
-
-
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
 
-
-
-
-
-
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

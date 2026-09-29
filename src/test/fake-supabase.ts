@@ -72,5 +72,15 @@ export const supabase = {
       return result
     },
   }),
+  channel: () => {
+    const channel = {
+      on: () => channel,
+      subscribe: () => channel,
+      track: async () => 'ok',
+      presenceState: () => ({}),
+    }
+    return channel
+  },
+  removeChannel: async () => 'ok',
   rpc: vi.fn(async () => ({ data: null, error: null })),
 }

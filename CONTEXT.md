@@ -48,7 +48,7 @@ After selling: count what's left of each lineup item, count the cash, then sign 
 _Avoid_: Close-out, reconciliation, end of day
 
 **Sign-off**:
-Two different volunteers each confirming the count up.
+A volunteer confirming the count up.
 _Avoid_: Approval, initials
 
 **Out**:

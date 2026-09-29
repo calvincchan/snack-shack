@@ -10,6 +10,7 @@ import {
   saleDayQueryKey,
   lineupQueryKey,
   optionsQueryKey,
+  recentClosedQueryKey,
   type ItemType,
 } from '@/lib/sale-day'
 import { itemsQueryKey } from '@/lib/items'
@@ -51,7 +52,7 @@ export function canFinish(totals: {
   itemsUncounted: number
 }): boolean {
   return (
-    totals.signoffs >= 2 &&
+    totals.signoffs >= 1 &&
     totals.itemsOverStart === 0 &&
     totals.itemsUncounted === 0
   )
@@ -263,6 +264,7 @@ function useCountMutation<TArgs, TResult = void>(
         signoffsKey,
         ['sale-day-notes'],
         saleDayQueryKey,
+        recentClosedQueryKey,
         lineupQueryKey,
         optionsQueryKey,
         itemsQueryKey,

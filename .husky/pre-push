@@ -1,7 +1,22 @@
 set -e
 
-# Same fast gates as the CI "app" job, minus Playwright and Supabase.
+# Same gates as the CI jobs, minus Playwright.
 pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm build
+
+# CI "db" job: only when the push touches supabase/ (migrations, seed, tests).
+base=$(git merge-base origin/main HEAD 2>/dev/null || echo "")
+if [ -n "$base" ] && git diff --name-only "$base" HEAD | grep -q '^supabase/'; then
+  supabase status >/dev/null 2>&1 || {
+    echo "supabase/ changed and local Supabase is not running. Run 'supabase start', then push again."
+    exit 1
+  }
+  echo "supabase/ changed: resetting the local database and checking it like CI."
+  pnpm db:reset
+  git diff --exit-code -- src/lib/database.types.ts supabase/schema.sql \
+    || { echo "Types or schema dump are stale. Commit the regenerated files."; exit 1; }
+  supabase test db
+fi

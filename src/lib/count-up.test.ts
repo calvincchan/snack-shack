@@ -49,12 +49,12 @@ describe('soldLabel', () => {
 })
 
 describe('canFinish', () => {
-  it('needs two sign-offs and no item over its start', () => {
-    expect(
-      canFinish({ signoffs: 2, itemsOverStart: 0, itemsUncounted: 0 }),
-    ).toBe(true)
+  it('needs a sign-off and no item over its start', () => {
     expect(
       canFinish({ signoffs: 1, itemsOverStart: 0, itemsUncounted: 0 }),
+    ).toBe(true)
+    expect(
+      canFinish({ signoffs: 0, itemsOverStart: 0, itemsUncounted: 0 }),
     ).toBe(false)
     expect(
       canFinish({ signoffs: 2, itemsOverStart: 1, itemsUncounted: 0 }),

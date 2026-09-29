@@ -60,7 +60,7 @@ Everything else (stock levels, insights, what to buy) follows from these counts 
 | **Treasurer** | PAC treasurer | Paying reimbursements | **Does not open the app.** Gets a weekly email. Each "Mark paid" button in the email is a one-time signed link that records the payment as them. |
 | **Admin** | The coordinator (the person commissioning this app) | Adding and removing volunteers, settings | Same as volunteer, plus the admin screens |
 
-Every volunteer uses their **own phone and their own login**. That makes the audit trail meaningful, the live "who's doing what" indicator possible, and the two-person sign-off real.
+Every volunteer uses their **own phone and their own login**. That makes the audit trail meaningful, the live "who's doing what" indicator possible, and the sign-off real.
 
 ---
 
@@ -96,9 +96,9 @@ A sale day moves through four phases, shown as a step bar. The phase is stored o
 **4. Count up**, three sub-steps:
 1. **Count stock.** For each lineup item: stepper for pieces left (pre-filled with the starting count so volunteers only tap down), and an **Out** field. Live "Sold N · $X" per item; deal items show "Sold 24 pcs = 12 deals". Bottom bar shows items sold and sales so far.
 2. **Count cash.** Helper credits stepper, then a stepper per denomination ($20, $10, $5, toonie, loonie, quarter, dime, nickel). Bottom bar shows counted vs expected with an over/short pill.
-3. **Sign off.** Summary (items sold, sales, helper credits, float, expected, counted, over/short). Optional note: "What ran out first, or what kids asked for". **Two different volunteers** each confirm. **Finish count-up** is disabled until both have, and while any item shows more left than it started with.
+3. **Sign off.** Summary (items sold, sales, helper credits, float, expected, counted, over/short). Optional note: "What ran out first, or what kids asked for". **One volunteer** confirms. **Finish count-up** is disabled until someone has, and while any item shows more left than it started with.
 
-**Done screen:** "Seal $X in the deposit bag". Write the date and both names on the bag, and leave the change float in the box. Stock updates; any price or type edits made during the sale take effect from now on.
+**Done screen:** "Seal $X in the deposit bag". Write the date and the names on the bag, and leave the change float in the box. Stock updates; any price or type edits made during the sale take effect from now on.
 
 Two phones will often work at once (typically one counts stock, one counts cash). They must see each other's entries live. See §6.
 
@@ -294,7 +294,7 @@ Possible later rules: over/short beyond ±$3 two sale days running; margin drop 
 
 ### 5.10 Other rules
 
-- **Two-person sign-off:** two different signed-in volunteers confirm; enforced by the database.
+- **Sign-off:** one signed-in volunteer confirms; enforced by the database.
 - **Shopping trip:** at most one open trip claim at a time; showing it is enough (no locking of purchases).
 - **Settings** (admin): change float (default $30), target sale days (2), over/short thresholds ($3 / $10), GST rate (5%), kid limits (3 items, 1 treat), treasurer email.
 
