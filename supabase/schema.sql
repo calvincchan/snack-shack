@@ -11,6 +11,10 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+CREATE EXTENSION IF NOT EXISTS "pg_cron" WITH SCHEMA "pg_catalog";
+
+CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
+
 COMMENT ON SCHEMA "public" IS 'standard public schema';
 
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
@@ -316,6 +320,29 @@ CREATE OR REPLACE FUNCTION "public"."in_fn"() RETURNS boolean
 $$;
 
 ALTER FUNCTION "public"."in_fn"() OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."invoke_weekly_treasurer_email"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_url text;
+  v_key text;
+begin
+  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'project_url';
+  select decrypted_secret into v_key from vault.decrypted_secrets where name = 'service_role_key';
+  if v_url is null or v_key is null then
+    raise notice 'Weekly treasurer email not scheduled: add project_url and service_role_key to Vault.';
+    return;
+  end if;
+  perform net.http_post(
+    url := v_url || '/functions/v1/weekly-treasurer-email',
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_key),
+    body := jsonb_build_object('scheduled', true)
+  );
+end $$;
+
+ALTER FUNCTION "public"."invoke_weekly_treasurer_email"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."is_member"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
@@ -662,6 +689,55 @@ CREATE OR REPLACE FUNCTION "public"."suggest_lineup"() RETURNS TABLE("item_id" "
 $$;
 
 ALTER FUNCTION "public"."suggest_lineup"() OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS "date"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO ''
+    AS $$
+  select (date_trunc('week', p_now at time zone 'America/Vancouver'))::date - 7
+$$;
+
+ALTER FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date" DEFAULT "public"."treasurer_report_week"()) RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  with dep as (
+    select t.sale_date, t.deposit_cents, t.over_short_cents,
+           coalesce((select string_agg(p.display_name, ', ' order by s.signed_at)
+                       from public.sale_day_signoffs s
+                       join public.profiles p on p.id = s.user_id
+                      where s.sale_day_id = t.sale_day_id), '') as volunteers
+      from public.sale_day_totals t
+     where t.phase = 'closed'
+       and t.sale_date between p_week_start and p_week_start + 6
+  ), owed as (
+    select c.buyer_id, c.buyer_name, sum(c.total_cents)::int as total_cents,
+           jsonb_agg(jsonb_build_object(
+             'id', c.id, 'label', c.claim_label, 'purchased_on', c.purchased_on,
+             'store', c.store, 'total_cents', c.total_cents,
+             'receipt_path', c.receipt_path) order by c.claim_no) as claims
+      from public.claims c
+     where c.status = 'to_pay'
+     group by c.buyer_id, c.buyer_name
+  )
+  select jsonb_build_object(
+    'week_start', p_week_start,
+    'deposits', coalesce((select jsonb_agg(to_jsonb(dep) order by dep.sale_date) from dep), '[]'),
+    'deposited_cents', coalesce((select sum(deposit_cents) from dep), 0)::int,
+    'to_reimburse', coalesce((select jsonb_agg(to_jsonb(owed) order by owed.buyer_name) from owed), '[]'),
+    'to_reimburse_cents', coalesce((select sum(total_cents) from owed), 0)::int,
+    'ledger', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'label', c.claim_label, 'purchased_on', c.purchased_on, 'store', c.store,
+        'buyer_name', c.buyer_name, 'total_cents', c.total_cents, 'status', c.status,
+        'paid_at', c.paid_at, 'payment_ref', c.payment_ref) order by c.claim_no)
+      from public.claims c), '[]')
+  )
+$$;
+
+ALTER FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date") OWNER TO "postgres";
 
 SET default_tablespace = '';
 
@@ -1656,6 +1732,9 @@ GRANT ALL ON FUNCTION "public"."in_fn"() TO "anon";
 GRANT ALL ON FUNCTION "public"."in_fn"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."in_fn"() TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."invoke_weekly_treasurer_email"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."invoke_weekly_treasurer_email"() TO "service_role";
+
 GRANT ALL ON FUNCTION "public"."is_member"() TO "anon";
 GRANT ALL ON FUNCTION "public"."is_member"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_member"() TO "service_role";
@@ -1709,6 +1788,13 @@ GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents"
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "anon";
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "service_role";
+
+GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) TO "anon";
+GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date") TO "service_role";
 
 GRANT ALL ON TABLE "public"."action_tokens" TO "anon";
 GRANT ALL ON TABLE "public"."action_tokens" TO "authenticated";

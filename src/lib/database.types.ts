@@ -1352,6 +1352,10 @@ export type Database = {
         Returns: boolean
       }
       in_fn: { Args: Record<PropertyKey, never>; Returns: boolean }
+      invoke_weekly_treasurer_email: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       is_member: { Args: Record<PropertyKey, never>; Returns: boolean }
       issue_mark_paid_tokens: {
         Args: { p_valid?: string }
@@ -1383,6 +1387,11 @@ export type Database = {
           suggested: boolean
           type: Database['public']['Enums']['item_type']
         }[]
+      }
+      treasurer_report_week: { Args: { p_now?: string }; Returns: string }
+      weekly_treasurer_report: {
+        Args: { p_week_start?: string }
+        Returns: Json
       }
     }
     Enums: {
