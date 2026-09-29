@@ -28,7 +28,7 @@ export function CheckStock({
   const start = useStartSale()
 
   // The counted float stays on this phone until Start sale (ADR-0003).
-  const [floatDollars, setFloatDollars] = useState(saleDay.floatCents / 100)
+  const [floatCents, setFloatCents] = useState(saleDay.floatCents)
 
   const items = lineup.data ?? []
   const off = items.filter(
@@ -55,8 +55,8 @@ export function CheckStock({
 
       <FloatRow
         expectedCents={saleDay.floatCents}
-        dollars={floatDollars}
-        onChange={setFloatDollars}
+        countedCents={floatCents}
+        onChange={setFloatCents}
       />
 
       <Button
@@ -82,10 +82,7 @@ export function CheckStock({
               start.mutate(
                 {
                   saleDayId: saleDay.id,
-                  floatCents: floatToSend(
-                    floatDollars * 100,
-                    saleDay.floatCents,
-                  ),
+                  floatCents: floatToSend(floatCents, saleDay.floatCents),
                 },
                 {
                   onSuccess: () =>
@@ -110,14 +107,14 @@ export function CheckStock({
 
 function FloatRow({
   expectedCents,
-  dollars,
+  countedCents,
   onChange,
 }: {
   expectedCents: number
-  dollars: number
-  onChange: (dollars: number) => void
+  countedCents: number
+  onChange: (cents: number) => void
 }) {
-  const matches = dollars * 100 === expectedCents
+  const matches = countedCents === expectedCents
   return (
     <div className="border-border bg-card flex flex-col gap-2 rounded-xl border p-3">
       <div className="flex items-center gap-3">
@@ -135,20 +132,20 @@ function FloatRow({
         </div>
         <Stepper
           label="Change float in dollars"
-          value={dollars}
-          onChange={onChange}
+          value={Math.round(countedCents / 100)}
+          onChange={(dollars) => onChange(dollars * 100)}
         />
       </div>
       {!matches && (
         <div className="flex items-center gap-2">
           <span className="text-warn flex-1 text-sm font-semibold tabular-nums">
-            Counted {formatCents(dollars * 100)}
+            Counted {formatCents(countedCents)}
           </span>
           <Button
             type="button"
             variant="outline"
             className="text-foreground min-h-11"
-            onClick={() => onChange(expectedCents / 100)}
+            onClick={() => onChange(expectedCents)}
           >
             Matches
           </Button>
