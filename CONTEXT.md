@@ -80,7 +80,7 @@ One thing the kids can buy, counted in pieces. An assorted variety pack is one i
 _Avoid_: Product, SKU
 
 **Piece**:
-The unit stock is counted in (one bar, one bag, one popsicle), even for deal items.
+The unit stock is counted in (one bar, one bag, one popsicle), even for deal items. Bulk candy bagged by volunteers counts as one piece per bag.
 _Avoid_: Unit, each
 
 **Type**:
