@@ -95,6 +95,9 @@ _Avoid_: Location, type
 Each kid buys at most 3 items, of which at most 1 is a treat.
 _Avoid_: Basket limit
 
+**Basket**:
+The items one kid is buying right now in the Sell helper, checked against the kid rules. Its total and change are worked out on the phone so the line never waits; nothing is saved.
+
 **Price option**:
 One of the allowed prices: $1, $2, 2 for $1, 3 for $1.
 
