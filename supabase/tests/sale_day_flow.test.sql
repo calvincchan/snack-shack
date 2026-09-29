@@ -117,7 +117,7 @@ select is((select sales_cents from public.sale_day_totals), 3200, 'sales from st
 select is((select expected_cents from public.sale_day_totals), 6100, 'expected cash = float + sales − helper credit');
 select is((select over_short_cents from public.sale_day_totals), 1300, 'over by $13');
 
-select throws_like($$ select public.close_sale_day((select id from public.sale_days)) $$, '%Two different volunteers%', 'needs two sign-offs');
+select throws_like($$ select public.close_sale_day((select id from public.sale_days)) $$, '%needs to confirm%', 'needs a sign-off');
 select public.sign_off((select id from public.sale_days));
 select public.sign_off((select id from public.sale_days));
 select is((select signoffs from public.sale_day_totals), 1, 'same person twice counts once');

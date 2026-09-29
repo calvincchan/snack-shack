@@ -260,7 +260,7 @@ begin
   perform public.require_member();
   select * into t from public.sale_day_totals where sale_day_id = p_sale_day;
   if t.phase is distinct from 'counting' then raise exception 'This sale day is not being counted.'; end if;
-  if t.signoffs < 2 then raise exception 'Two different volunteers need to sign off.'; end if;
+  if t.signoffs < 1 then raise exception 'A volunteer needs to confirm the count.'; end if;
   if t.items_over_start > 0 then raise exception 'Some items show more left than you started with. Recount them.'; end if;
   if t.items_uncounted > 0 then raise exception 'Some items have no leftover count.'; end if;
 
@@ -1783,6 +1783,10 @@ ALTER TABLE "public"."volunteer_invites" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
+
+
+
+
 
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."cash_counts";

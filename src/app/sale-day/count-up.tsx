@@ -78,7 +78,7 @@ function useDebouncedSave() {
 
 const showError = (error: Error) => toast.error(error.message)
 
-/** Step 4, Count up: check stock, count cash, two-person sign-off (HANDOFF §4.1). */
+/** Step 4, Count up: check stock, count cash, one-volunteer sign-off (HANDOFF §4.1). */
 export function CountUp({
   saleDay,
   onActivity,
@@ -524,7 +524,7 @@ function SignOff({
       </div>
 
       <section className="border-border bg-card flex flex-col gap-3 rounded-xl border p-3">
-        <h3 className="font-medium">Two different volunteers confirm</h3>
+        <h3 className="font-medium">A volunteer confirms</h3>
         <p className="text-muted-foreground text-sm">
           {signed.length === 0
             ? 'Nobody has confirmed yet.'

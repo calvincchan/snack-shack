@@ -43,7 +43,7 @@ erDiagram
 | `sale_days` | One after-lunch sale | `sale_date`, `phase` (lineup → selling → counting → closed), `float_cents` (copied from settings), `helper_credits`, `note`, timestamps. **Only one open at a time.** |
 | `sale_day_items` | The lineup, and every count for it | `check_count`, `check_reason` (lineup phase); `start_count`, `locked_price_cents`, `locked_bundle_size`, `locked_type` (set by `start_sale`); `left_count`, `out_count` (counting phase) |
 | `cash_counts` | Cash by denomination | `denom_cents` (2000, 1000, 500, 200, 100, 25, 10, 5), `qty` |
-| `sale_day_signoffs` | Two-person sign-off | one row per (sale day, user) |
+| `sale_day_signoffs` | Sign-off | one row per (sale day, user) |
 | `shopping_trips` | "I'm going shopping" | `volunteer_id`, `planned_for` (free text), `released_at`. Only one open trip. |
 | `action_tokens` | One-time signed links in the treasurer email | `token_hash` (sha256; plaintext never stored), `purpose` = mark_paid, `payload`, `issued_to`, `expires_at`, `used_at`. No client access. |
 | `audit_log` | Change history | `table_name`, `row_pk`, `action`, `old_data`, `new_data`, `actor`, `at`. Filled by the `audit_row()` trigger on every important table. |
@@ -82,7 +82,7 @@ All are `security definer`, check that the caller is an active member, and keep 
 | `start_sale(sale_day)` | Records Check stock differences as missing / damaged / found movements, sets `start_count`, **locks price, bundle and type**, phase → selling | Only from lineup; every item priced; ≥ 1 item |
 | `begin_count(sale_day)` | Phase → counting; pre-fills `left_count = start_count`; creates the eight cash rows | Only from selling |
 | `sign_off(sale_day)` | Adds the caller's sign-off | Only while counting; same person twice counts once |
-| `close_sale_day(sale_day)` | Posts `sold` and `out` movements, phase → closed | Counting; **2 different sign-offs**; no item above its start; every item counted; guarded update so a double tap fails cleanly |
+| `close_sale_day(sale_day)` | Posts `sold` and `out` movements, phase → closed | Counting; **1 sign-off**; no item above its start; every item counted; guarded update so a double tap fails cleanly |
 | `log_purchase(jsonb)` | One transaction: claim, new items, lines, purchase movements, weighted-average cost, optional price | Idempotent on the purchase `id`; receipt required; ≥ 1 line |
 | `issue_mark_paid_tokens(interval)` | For the weekly email: one token per volunteer owed money, issued to the treasurer | Service role only |
 | `redeem_action_token(token, ref)` | Marks that volunteer's claims paid, recorded as the treasurer | Service role only; single use; expires |
@@ -92,7 +92,7 @@ The `log_purchase` payload shape is documented in the migration above the functi
 ## Guards (triggers)
 
 - **Phase rules** on `sale_days`, `sale_day_items` and `cash_counts`: lineup rows only change during lineup; Check stock only during lineup; leftover counts and cash only during counting; locked columns only via `start_sale`; **nothing once closed**. Functions bypass this by setting `snack.fn = on` for their own transaction.
-- **Sign-offs reset** when any count, cash row or helper credit changes, so both volunteers always confirm the final numbers.
+- **Sign-offs reset** when any count, cash row or helper credit changes, so the confirmation is always of the final numbers.
 - **Ledger is append-only**: update and delete raise an error, even for the service role. Fix mistakes with a `correction` movement.
 - **Sign-in** (`on_auth_user_created` on `auth.users`): the first account on an empty database becomes the coordinator; otherwise an open invite for that email becomes a profile. No invite means no profile, and the app says "Ask the coordinator to add you". See ADR-0011.
 - **The team keeps a coordinator**: you cannot deactivate yourself, and the last active admin cannot be demoted or deactivated.

@@ -52,7 +52,7 @@ export function canFinish(totals: {
   itemsUncounted: number
 }): boolean {
   return (
-    totals.signoffs >= 2 &&
+    totals.signoffs >= 1 &&
     totals.itemsOverStart === 0 &&
     totals.itemsUncounted === 0
   )
