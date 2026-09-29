@@ -473,13 +473,14 @@ CREATE OR REPLACE FUNCTION "public"."redeem_action_token"("p_token" "text", "p_p
 declare
   t public.action_tokens;
   v_count int;
+  v_name text;
 begin
   select * into t from public.action_tokens
    where token_hash = encode(extensions.digest(p_token, 'sha256'), 'hex')
    for update;
-  if t.id is null then raise exception 'This link is not valid.'; end if;
-  if t.used_at is not null then raise exception 'This link has already been used.'; end if;
-  if t.expires_at < now() then raise exception 'This link has expired. Use the latest weekly email.'; end if;
+  if t.id is null then raise exception 'This link is not valid.' using errcode = 'SS001'; end if;
+  if t.used_at is not null then raise exception 'This link has already been used.' using errcode = 'SS002'; end if;
+  if t.expires_at < now() then raise exception 'This link has expired. Use the latest weekly email.' using errcode = 'SS003'; end if;
 
   perform set_config('app.actor', t.issued_to::text, true);
   update public.purchases
@@ -489,7 +490,9 @@ begin
      and status = 'to_pay';
   get diagnostics v_count = row_count;
   update public.action_tokens set used_at = now() where id = t.id;
-  return jsonb_build_object('purchases_paid', v_count, 'buyer_id', t.payload ->> 'buyer_id');
+
+  select display_name into v_name from public.profiles where id = (t.payload ->> 'buyer_id')::uuid;
+  return jsonb_build_object('purchases_paid', v_count, 'buyer_id', t.payload ->> 'buyer_id', 'buyer_name', v_name);
 end $$;
 
 ALTER FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") OWNER TO "postgres";
