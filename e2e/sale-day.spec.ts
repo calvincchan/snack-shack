@@ -116,7 +116,7 @@ test("a price changed during the sale does not move today's price", async ({
   await expect(chips).not.toContainText('$2')
 })
 
-test('two volunteers count up and sign off, and the deposit is sealed', async ({
+test('one volunteer signs off, both phones see the deposit', async ({
   page,
   browser,
 }) => {
@@ -147,24 +147,19 @@ test('two volunteers count up and sign off, and the deposit is sealed', async ({
 
   await page.getByRole('button', { name: 'Sign off' }).click()
   const finish = page.getByRole('button', { name: 'Finish count up' })
+  await expect(finish).toBeDisabled()
   await page.getByRole('button', { name: 'I counted and confirm' }).click()
   await expect(page.getByText(/Confirmed by/)).toBeVisible()
-  await expect(finish).toBeDisabled()
+  await expect(finish).toBeEnabled()
 
-  // A second volunteer on their own phone finishes it.
+  // A second volunteer is on their own phone; they land on Done too.
   const context = await browser.newContext()
   const second = await context.newPage()
   await openSaleDay(second, VOLUNTEER_EMAIL)
-  await second.getByRole('button', { name: '3 Sign-off' }).click()
-  await second.getByRole('button', { name: 'I counted and confirm' }).click()
-  const secondFinish = second.getByRole('button', { name: 'Finish count up' })
-  await expect(secondFinish).toBeEnabled()
-  await secondFinish.click()
+  await finish.click()
 
-  await expect(
-    second.getByRole('heading', {
-      name: `Seal $${((4000 - floatCents) / 100).toFixed(2)} in the deposit bag`,
-    }),
-  ).toBeVisible()
+  const deposit = `Seal $${((4000 - floatCents) / 100).toFixed(2)} in the deposit bag`
+  await expect(page.getByRole('heading', { name: deposit })).toBeVisible()
+  await expect(second.getByRole('heading', { name: deposit })).toBeVisible()
   await context.close()
 })
