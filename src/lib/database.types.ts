@@ -135,6 +135,13 @@ export type Database = {
             foreignKeyName: 'cash_counts_sale_day_id_fkey'
             columns: ['sale_day_id']
             isOneToOne: false
+            referencedRelation: 'insights_sale_days'
+            referencedColumns: ['sale_day_id']
+          },
+          {
+            foreignKeyName: 'cash_counts_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
             referencedRelation: 'sale_day_lineup_totals'
             referencedColumns: ['sale_day_id']
           },
@@ -255,6 +262,13 @@ export type Database = {
           purchase_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
           {
             foreignKeyName: 'purchase_lines_item_id_fkey'
             columns: ['item_id']
@@ -407,6 +421,13 @@ export type Database = {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_overview'
             referencedColumns: ['id']
           },
@@ -430,6 +451,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: 'items'
             referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sale_days'
+            referencedColumns: ['sale_day_id']
           },
           {
             foreignKeyName: 'sale_day_items_sale_day_id_fkey'
@@ -471,6 +499,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sale_days'
+            referencedColumns: ['sale_day_id']
+          },
           {
             foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
             columns: ['sale_day_id']
@@ -662,6 +697,13 @@ export type Database = {
             foreignKeyName: 'stock_movements_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_overview'
             referencedColumns: ['id']
           },
@@ -692,6 +734,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: 'purchase_lines'
             referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'stock_movements_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sale_days'
+            referencedColumns: ['sale_day_id']
           },
           {
             foreignKeyName: 'stock_movements_sale_day_id_fkey'
@@ -794,6 +843,53 @@ export type Database = {
           },
         ]
       }
+      insights_items: {
+        Row: {
+          days_out: number | null
+          item_id: string | null
+          name: string | null
+          pieces_per_day_out: number | null
+          pieces_sold: number | null
+          sales_cents: number | null
+          type: Database['public']['Enums']['item_type'] | null
+        }
+        Relationships: []
+      }
+      insights_sale_days: {
+        Row: {
+          cost_cents: number | null
+          counted_cents: number | null
+          helper_credits: number | null
+          items_out: number | null
+          note: string | null
+          outside_ok: boolean | null
+          over_short_cents: number | null
+          pieces_sold: number | null
+          profit_cents: number | null
+          sale_date: string | null
+          sale_day_id: string | null
+          sales_cents: number | null
+          volunteers: string | null
+        }
+        Relationships: []
+      }
+      insights_term: {
+        Row: {
+          cost_cents: number | null
+          helper_credit_cents: number | null
+          margin_pct: number | null
+          over_short_cents: number | null
+          over_short_ok_cents: number | null
+          pieces_per_day: number | null
+          pieces_sold: number | null
+          profit_cents: number | null
+          sale_days: number | null
+          sales_cents: number | null
+          sales_outside_ok: number | null
+          sales_per_day_cents: number | null
+        }
+        Relationships: []
+      }
       item_overview: {
         Row: {
           archived: boolean | null
@@ -891,6 +987,13 @@ export type Database = {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_overview'
             referencedColumns: ['id']
           },
@@ -914,6 +1017,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: 'items'
             referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sale_days'
+            referencedColumns: ['sale_day_id']
           },
           {
             foreignKeyName: 'sale_day_items_sale_day_id_fkey'
@@ -959,6 +1069,13 @@ export type Database = {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_overview'
             referencedColumns: ['id']
           },
@@ -982,6 +1099,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: 'items'
             referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
+            columns: ['sale_day_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sale_days'
+            referencedColumns: ['sale_day_id']
           },
           {
             foreignKeyName: 'sale_day_items_sale_day_id_fkey'

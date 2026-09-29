@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Check, WifiOff } from 'lucide-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
+import { OverShortPill } from '@/components/over-short-pill'
 import { Stepper } from '@/components/stepper'
 import { TypeDot } from '@/components/item-bits'
 import { Dock } from '@/app/sale-day/lineup'
@@ -29,7 +30,6 @@ import {
   useThresholds,
   useTotals,
   type CountItem,
-  type OverShort,
   type Thresholds,
   type Totals,
 } from '@/lib/count-up'
@@ -295,34 +295,6 @@ function StockRow({ saleDayId, item }: { saleDayId: string; item: CountItem }) {
         </p>
       )}
     </li>
-  )
-}
-
-const PILL: Record<OverShort, string> = {
-  ok: 'bg-ok/15 text-ok',
-  warn: 'bg-warn/15 text-warn',
-  bad: 'bg-bad/15 text-bad',
-}
-
-function OverShortPill({
-  cents,
-  thresholds,
-}: {
-  cents: number
-  thresholds: Thresholds | undefined
-}) {
-  const status = thresholds
-    ? overShortStatus(cents, thresholds.okCents, thresholds.warnCents)
-    : 'ok'
-  return (
-    <span
-      className={cn(
-        'rounded-full px-3 py-1 text-sm font-semibold tabular-nums',
-        PILL[status],
-      )}
-    >
-      {overShortLabel(cents)}
-    </span>
   )
 }
 

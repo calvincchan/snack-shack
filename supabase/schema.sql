@@ -866,6 +866,144 @@ CREATE OR REPLACE VIEW "public"."sale_day_item_results" WITH ("security_invoker"
 
 ALTER VIEW "public"."sale_day_item_results" OWNER TO "postgres";
 
+CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true') AS
+ SELECT "i"."id" AS "item_id",
+    "i"."name",
+    "i"."type",
+    ("count"(*))::integer AS "days_out",
+    ("sum"(GREATEST("r"."sold_pieces", 0)))::integer AS "pieces_sold",
+    ("round"((("sum"(GREATEST("r"."sold_pieces", 0)))::numeric / ("count"(*))::numeric)))::integer AS "pieces_per_day_out",
+    ("sum"(GREATEST("r"."sales_cents", 0)))::integer AS "sales_cents"
+   FROM (("public"."sale_day_item_results" "r"
+     JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "r"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
+     JOIN "public"."items" "i" ON (("i"."id" = "r"."item_id")))
+  GROUP BY "i"."id", "i"."name", "i"."type";
+
+ALTER VIEW "public"."insights_items" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."sale_day_signoffs" (
+    "sale_day_id" "uuid" NOT NULL,
+    "user_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "signed_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE "public"."sale_day_signoffs" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."sale_day_totals" WITH ("security_invoker"='true') AS
+ WITH "r" AS (
+         SELECT "sale_day_item_results"."sale_day_id",
+            (COALESCE("sum"(GREATEST("sale_day_item_results"."sold_pieces", 0)), (0)::bigint))::integer AS "pieces_sold",
+            (COALESCE("sum"(GREATEST("sale_day_item_results"."sold_pieces", 0)) FILTER (WHERE ("sale_day_item_results"."locked_type" = 'treat'::"public"."item_type")), (0)::bigint))::integer AS "treat_pieces_sold",
+            (COALESCE("sum"(GREATEST("sale_day_item_results"."sales_cents", 0)), (0)::bigint))::integer AS "sales_cents",
+            ("count"(*) FILTER (WHERE ("sale_day_item_results"."sold_pieces" < 0)))::integer AS "items_over_start",
+            ("count"(*) FILTER (WHERE ("sale_day_item_results"."left_count" IS NULL)))::integer AS "items_uncounted"
+           FROM "public"."sale_day_item_results"
+          GROUP BY "sale_day_item_results"."sale_day_id"
+        ), "c" AS (
+         SELECT "cash_counts"."sale_day_id",
+            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")))::integer AS "counted_cents"
+           FROM "public"."cash_counts"
+          GROUP BY "cash_counts"."sale_day_id"
+        )
+ SELECT "sd"."id" AS "sale_day_id",
+    "sd"."sale_date",
+    "sd"."phase",
+    "sd"."float_cents",
+    "sd"."helper_credits",
+    COALESCE("r"."pieces_sold", 0) AS "pieces_sold",
+    COALESCE("r"."treat_pieces_sold", 0) AS "treat_pieces_sold",
+    COALESCE("r"."sales_cents", 0) AS "sales_cents",
+    COALESCE("r"."items_over_start", 0) AS "items_over_start",
+    COALESCE("r"."items_uncounted", 0) AS "items_uncounted",
+    (("sd"."float_cents" + COALESCE("r"."sales_cents", 0)) - ("sd"."helper_credits" * 100)) AS "expected_cents",
+    COALESCE("c"."counted_cents", 0) AS "counted_cents",
+    (COALESCE("c"."counted_cents", 0) - (("sd"."float_cents" + COALESCE("r"."sales_cents", 0)) - ("sd"."helper_credits" * 100))) AS "over_short_cents",
+    (COALESCE("c"."counted_cents", 0) - "sd"."float_cents") AS "deposit_cents",
+    (( SELECT "count"(*) AS "count"
+           FROM "public"."sale_day_signoffs" "s"
+          WHERE ("s"."sale_day_id" = "sd"."id")))::integer AS "signoffs"
+   FROM (("public"."sale_days" "sd"
+     LEFT JOIN "r" ON (("r"."sale_day_id" = "sd"."id")))
+     LEFT JOIN "c" ON (("c"."sale_day_id" = "sd"."id")));
+
+ALTER VIEW "public"."sale_day_totals" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."settings" (
+    "id" boolean DEFAULT true NOT NULL,
+    "float_cents" integer DEFAULT 3000 NOT NULL,
+    "target_sale_days" integer DEFAULT 2 NOT NULL,
+    "over_short_ok_cents" integer DEFAULT 300 NOT NULL,
+    "over_short_warn_cents" integer DEFAULT 1000 NOT NULL,
+    "gst_rate" numeric(5,4) DEFAULT 0.05 NOT NULL,
+    "max_items_per_kid" integer DEFAULT 3 NOT NULL,
+    "max_treats_per_kid" integer DEFAULT 1 NOT NULL,
+    "treasurer_email" "text",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid",
+    CONSTRAINT "settings_float_cents_check" CHECK (("float_cents" >= 0)),
+    CONSTRAINT "settings_id_check" CHECK ("id"),
+    CONSTRAINT "settings_target_sale_days_check" CHECK (("target_sale_days" > 0))
+);
+
+ALTER TABLE "public"."settings" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_sale_days" WITH ("security_invoker"='true') AS
+ SELECT "sd"."id" AS "sale_day_id",
+    "sd"."sale_date",
+    "t"."sales_cents",
+    "t"."pieces_sold",
+    "t"."counted_cents",
+    "t"."over_short_cents",
+    "sd"."helper_credits",
+    "sd"."note",
+    (COALESCE("c"."cost_cents", (0)::numeric))::integer AS "cost_cents",
+    (((("t"."sales_cents")::numeric - COALESCE("c"."cost_cents", (0)::numeric)) - (("sd"."helper_credits" * 100))::numeric))::integer AS "profit_cents",
+    (( SELECT "count"(*) AS "count"
+           FROM "public"."sale_day_items" "sdi"
+          WHERE ("sdi"."sale_day_id" = "sd"."id")))::integer AS "items_out",
+    ( SELECT "string_agg"("p"."display_name", ', '::"text" ORDER BY "s"."signed_at") AS "string_agg"
+           FROM ("public"."sale_day_signoffs" "s"
+             JOIN "public"."profiles" "p" ON (("p"."id" = "s"."user_id")))
+          WHERE ("s"."sale_day_id" = "sd"."id")) AS "volunteers",
+    ("abs"("t"."over_short_cents") > ( SELECT "settings"."over_short_ok_cents"
+           FROM "public"."settings")) AS "outside_ok"
+   FROM (("public"."sale_days" "sd"
+     JOIN "public"."sale_day_totals" "t" ON (("t"."sale_day_id" = "sd"."id")))
+     LEFT JOIN LATERAL ( SELECT "round"("sum"((("r"."sold_pieces")::numeric * "i"."unit_cost_cents"))) AS "cost_cents"
+           FROM ("public"."sale_day_item_results" "r"
+             JOIN "public"."items" "i" ON (("i"."id" = "r"."item_id")))
+          WHERE (("r"."sale_day_id" = "sd"."id") AND ("r"."sold_pieces" > 0))) "c" ON (true))
+  WHERE ("sd"."phase" = 'closed'::"public"."sale_phase");
+
+ALTER VIEW "public"."insights_sale_days" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_term" WITH ("security_invoker"='true') AS
+ SELECT ("count"(*))::integer AS "sale_days",
+    (COALESCE("sum"("sales_cents"), (0)::bigint))::integer AS "sales_cents",
+    (COALESCE("sum"("cost_cents"), (0)::bigint))::integer AS "cost_cents",
+    ((COALESCE("sum"("helper_credits"), (0)::bigint))::integer * 100) AS "helper_credit_cents",
+    (COALESCE("sum"("profit_cents"), (0)::bigint))::integer AS "profit_cents",
+    (COALESCE("sum"("pieces_sold"), (0)::bigint))::integer AS "pieces_sold",
+    (COALESCE("sum"("over_short_cents"), (0)::bigint))::integer AS "over_short_cents",
+    ("count"(*) FILTER (WHERE "outside_ok"))::integer AS "sales_outside_ok",
+    ( SELECT "settings"."over_short_ok_cents"
+           FROM "public"."settings") AS "over_short_ok_cents",
+        CASE
+            WHEN ("count"(*) > 0) THEN ("round"((("sum"("sales_cents"))::numeric / ("count"(*))::numeric)))::integer
+            ELSE NULL::integer
+        END AS "sales_per_day_cents",
+        CASE
+            WHEN ("count"(*) > 0) THEN ("round"((("sum"("pieces_sold"))::numeric / ("count"(*))::numeric)))::integer
+            ELSE NULL::integer
+        END AS "pieces_per_day",
+        CASE
+            WHEN ("sum"("sales_cents") > 0) THEN ("round"(((100.0 * ("sum"("profit_cents"))::numeric) / ("sum"("sales_cents"))::numeric)))::integer
+            ELSE NULL::integer
+        END AS "margin_pct"
+   FROM "public"."insights_sale_days";
+
+ALTER VIEW "public"."insights_term" OWNER TO "postgres";
+
 CREATE OR REPLACE VIEW "public"."item_sale_stats" WITH ("security_invoker"='true') AS
  WITH "closed" AS (
          SELECT "sale_days"."id",
@@ -1031,72 +1169,6 @@ CREATE OR REPLACE VIEW "public"."sale_day_lineup_totals" WITH ("security_invoker
      LEFT JOIN "lineup" "l" ON (("l"."sale_day_id" = "n"."id")));
 
 ALTER VIEW "public"."sale_day_lineup_totals" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."sale_day_signoffs" (
-    "sale_day_id" "uuid" NOT NULL,
-    "user_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
-    "signed_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-ALTER TABLE "public"."sale_day_signoffs" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."sale_day_totals" WITH ("security_invoker"='true') AS
- WITH "r" AS (
-         SELECT "sale_day_item_results"."sale_day_id",
-            (COALESCE("sum"(GREATEST("sale_day_item_results"."sold_pieces", 0)), (0)::bigint))::integer AS "pieces_sold",
-            (COALESCE("sum"(GREATEST("sale_day_item_results"."sold_pieces", 0)) FILTER (WHERE ("sale_day_item_results"."locked_type" = 'treat'::"public"."item_type")), (0)::bigint))::integer AS "treat_pieces_sold",
-            (COALESCE("sum"(GREATEST("sale_day_item_results"."sales_cents", 0)), (0)::bigint))::integer AS "sales_cents",
-            ("count"(*) FILTER (WHERE ("sale_day_item_results"."sold_pieces" < 0)))::integer AS "items_over_start",
-            ("count"(*) FILTER (WHERE ("sale_day_item_results"."left_count" IS NULL)))::integer AS "items_uncounted"
-           FROM "public"."sale_day_item_results"
-          GROUP BY "sale_day_item_results"."sale_day_id"
-        ), "c" AS (
-         SELECT "cash_counts"."sale_day_id",
-            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")))::integer AS "counted_cents"
-           FROM "public"."cash_counts"
-          GROUP BY "cash_counts"."sale_day_id"
-        )
- SELECT "sd"."id" AS "sale_day_id",
-    "sd"."sale_date",
-    "sd"."phase",
-    "sd"."float_cents",
-    "sd"."helper_credits",
-    COALESCE("r"."pieces_sold", 0) AS "pieces_sold",
-    COALESCE("r"."treat_pieces_sold", 0) AS "treat_pieces_sold",
-    COALESCE("r"."sales_cents", 0) AS "sales_cents",
-    COALESCE("r"."items_over_start", 0) AS "items_over_start",
-    COALESCE("r"."items_uncounted", 0) AS "items_uncounted",
-    (("sd"."float_cents" + COALESCE("r"."sales_cents", 0)) - ("sd"."helper_credits" * 100)) AS "expected_cents",
-    COALESCE("c"."counted_cents", 0) AS "counted_cents",
-    (COALESCE("c"."counted_cents", 0) - (("sd"."float_cents" + COALESCE("r"."sales_cents", 0)) - ("sd"."helper_credits" * 100))) AS "over_short_cents",
-    (COALESCE("c"."counted_cents", 0) - "sd"."float_cents") AS "deposit_cents",
-    (( SELECT "count"(*) AS "count"
-           FROM "public"."sale_day_signoffs" "s"
-          WHERE ("s"."sale_day_id" = "sd"."id")))::integer AS "signoffs"
-   FROM (("public"."sale_days" "sd"
-     LEFT JOIN "r" ON (("r"."sale_day_id" = "sd"."id")))
-     LEFT JOIN "c" ON (("c"."sale_day_id" = "sd"."id")));
-
-ALTER VIEW "public"."sale_day_totals" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."settings" (
-    "id" boolean DEFAULT true NOT NULL,
-    "float_cents" integer DEFAULT 3000 NOT NULL,
-    "target_sale_days" integer DEFAULT 2 NOT NULL,
-    "over_short_ok_cents" integer DEFAULT 300 NOT NULL,
-    "over_short_warn_cents" integer DEFAULT 1000 NOT NULL,
-    "gst_rate" numeric(5,4) DEFAULT 0.05 NOT NULL,
-    "max_items_per_kid" integer DEFAULT 3 NOT NULL,
-    "max_treats_per_kid" integer DEFAULT 1 NOT NULL,
-    "treasurer_email" "text",
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_by" "uuid",
-    CONSTRAINT "settings_float_cents_check" CHECK (("float_cents" >= 0)),
-    CONSTRAINT "settings_id_check" CHECK ("id"),
-    CONSTRAINT "settings_target_sale_days_check" CHECK (("target_sale_days" > 0))
-);
-
-ALTER TABLE "public"."settings" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."shopping_trips" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -1615,6 +1687,30 @@ GRANT ALL ON TABLE "public"."sale_day_item_results" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "service_role";
 
+GRANT ALL ON TABLE "public"."insights_items" TO "anon";
+GRANT ALL ON TABLE "public"."insights_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_items" TO "service_role";
+
+GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "anon";
+GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "service_role";
+
+GRANT ALL ON TABLE "public"."sale_day_totals" TO "anon";
+GRANT ALL ON TABLE "public"."sale_day_totals" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_day_totals" TO "service_role";
+
+GRANT ALL ON TABLE "public"."settings" TO "anon";
+GRANT ALL ON TABLE "public"."settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."settings" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_sale_days" TO "anon";
+GRANT ALL ON TABLE "public"."insights_sale_days" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_sale_days" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_term" TO "anon";
+GRANT ALL ON TABLE "public"."insights_term" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_term" TO "service_role";
+
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "anon";
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "service_role";
@@ -1642,18 +1738,6 @@ GRANT ALL ON TABLE "public"."sale_day_lineup" TO "service_role";
 GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_day_totals" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_totals" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_totals" TO "service_role";
-
-GRANT ALL ON TABLE "public"."settings" TO "anon";
-GRANT ALL ON TABLE "public"."settings" TO "authenticated";
-GRANT ALL ON TABLE "public"."settings" TO "service_role";
 
 GRANT ALL ON TABLE "public"."shopping_trips" TO "anon";
 GRANT ALL ON TABLE "public"."shopping_trips" TO "authenticated";
