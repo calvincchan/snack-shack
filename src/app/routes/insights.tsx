@@ -1,7 +1,8 @@
 import { formatCents } from '@/lib/money'
-import { formatSaleDate } from '@/lib/time'
+import { formatSaleDate, formatSaleDateShort } from '@/lib/time'
 import { OverShortPill } from '@/components/over-short-pill'
 import { useThresholds, type Thresholds } from '@/lib/count-up'
+import { numbersSay, useRuleFacts } from '@/lib/insights-rules'
 import {
   useInsightsItems,
   useInsightsSaleDays,
@@ -52,8 +53,7 @@ export function InsightsPage() {
 
       <Tiles term={term.data} />
       <SalesChart days={days.data} />
-      <ItemsTable items={items.data} />
-      <CashHistory days={days.data} thresholds={thresholds.data} />
+      <NumbersSay />
       {notes.length > 0 && (
         <Section title="Count up notes">
           <ul className="divide-border divide-y">
@@ -65,7 +65,28 @@ export function InsightsPage() {
           </ul>
         </Section>
       )}
+      <ItemsTable items={items.data} />
+      <CashHistory days={days.data} thresholds={thresholds.data} />
     </div>
+  )
+}
+
+function NumbersSay() {
+  const rules = useRuleFacts()
+  const sentences = rules.data ? numbersSay(rules.data) : []
+  if (sentences.length === 0) return null
+
+  return (
+    <Section title="What the numbers say">
+      <ul className="divide-border divide-y">
+        {sentences.map((sentence) => (
+          <li key={sentence.key} className="py-2 text-sm">
+            <b>{sentence.lead}</b>
+            {sentence.rest && ` ${sentence.rest}`}
+          </li>
+        ))}
+      </ul>
+    </Section>
   )
 }
 
@@ -166,7 +187,7 @@ function SalesChart({ days }: { days: InsightsSaleDay[] }) {
               }}
             />
             <span className="text-muted-foreground text-[11px]">
-              {formatSaleDate(day.saleDate).replace(/^\w+, /, '')}
+              {formatSaleDateShort(day.saleDate)}
             </span>
           </li>
         ))}

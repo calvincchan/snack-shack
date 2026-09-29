@@ -803,6 +803,54 @@ CREATE TABLE IF NOT EXISTS "public"."items" (
 
 ALTER TABLE "public"."items" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."sale_days" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "sale_date" "date" NOT NULL,
+    "phase" "public"."sale_phase" DEFAULT 'lineup'::"public"."sale_phase" NOT NULL,
+    "float_cents" integer NOT NULL,
+    "helper_credits" integer DEFAULT 0 NOT NULL,
+    "note" "text",
+    "started_at" timestamp with time zone,
+    "started_by" "uuid",
+    "count_started_at" timestamp with time zone,
+    "closed_at" timestamp with time zone,
+    "closed_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "sale_days_float_cents_check" CHECK (("float_cents" >= 0)),
+    CONSTRAINT "sale_days_helper_credits_check" CHECK (("helper_credits" >= 0))
+);
+
+ALTER TABLE "public"."sale_days" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "item_id" "uuid" NOT NULL,
+    "qty" integer NOT NULL,
+    "reason" "public"."movement_reason" NOT NULL,
+    "purchase_line_id" "uuid",
+    "sale_day_id" "uuid",
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "stock_movements_qty_check" CHECK (("qty" <> 0)),
+    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
+);
+
+ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_check_stock_losses" WITH ("security_invoker"='true') AS
+ SELECT ("sum"((- "m"."qty")))::integer AS "pieces",
+    ("count"(DISTINCT "m"."item_id"))::integer AS "items",
+    ("round"("sum"((((- "m"."qty"))::numeric * "i"."unit_cost_cents"))))::integer AS "cost_cents"
+   FROM (("public"."stock_movements" "m"
+     JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "m"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
+     JOIN "public"."items" "i" ON (("i"."id" = "m"."item_id")))
+  WHERE ("m"."reason" = ANY (ARRAY['missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason"]))
+ HAVING ("sum"((- "m"."qty")) > 0);
+
+ALTER VIEW "public"."insights_check_stock_losses" OWNER TO "postgres";
+
 CREATE TABLE IF NOT EXISTS "public"."sale_day_items" (
     "sale_day_id" "uuid" NOT NULL,
     "item_id" "uuid" NOT NULL,
@@ -823,26 +871,6 @@ CREATE TABLE IF NOT EXISTS "public"."sale_day_items" (
 );
 
 ALTER TABLE "public"."sale_day_items" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."sale_days" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "sale_date" "date" NOT NULL,
-    "phase" "public"."sale_phase" DEFAULT 'lineup'::"public"."sale_phase" NOT NULL,
-    "float_cents" integer NOT NULL,
-    "helper_credits" integer DEFAULT 0 NOT NULL,
-    "note" "text",
-    "started_at" timestamp with time zone,
-    "started_by" "uuid",
-    "count_started_at" timestamp with time zone,
-    "closed_at" timestamp with time zone,
-    "closed_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    CONSTRAINT "sale_days_float_cents_check" CHECK (("float_cents" >= 0)),
-    CONSTRAINT "sale_days_helper_credits_check" CHECK (("helper_credits" >= 0))
-);
-
-ALTER TABLE "public"."sale_days" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."sale_day_item_results" WITH ("security_invoker"='true') AS
  SELECT "sdi"."sale_day_id",
@@ -865,6 +893,29 @@ CREATE OR REPLACE VIEW "public"."sale_day_item_results" WITH ("security_invoker"
      JOIN "public"."sale_days" "sd" ON (("sd"."id" = "sdi"."sale_day_id")));
 
 ALTER VIEW "public"."sale_day_item_results" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_fading_items" WITH ("security_invoker"='true') AS
+ WITH "days" AS (
+         SELECT "r"."item_id",
+            "sd"."sale_date",
+            GREATEST("r"."sold_pieces", 0) AS "sold_pieces",
+            "row_number"() OVER (PARTITION BY "r"."item_id" ORDER BY "sd"."sale_date") AS "rn_first",
+            "row_number"() OVER (PARTITION BY "r"."item_id" ORDER BY "sd"."sale_date" DESC) AS "rn_last"
+           FROM ("public"."sale_day_item_results" "r"
+             JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "r"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
+        )
+ SELECT "i"."id" AS "item_id",
+    "i"."name",
+    "f"."sale_date" AS "first_date",
+    "f"."sold_pieces" AS "first_pieces",
+    "l"."sale_date" AS "last_date",
+    "l"."sold_pieces" AS "last_pieces"
+   FROM (("public"."items" "i"
+     JOIN "days" "f" ON ((("f"."item_id" = "i"."id") AND ("f"."rn_first" = 1))))
+     JOIN "days" "l" ON ((("l"."item_id" = "i"."id") AND ("l"."rn_last" = 1))))
+  WHERE (("f"."sale_date" <> "l"."sale_date") AND ("f"."sold_pieces" > 0) AND (("l"."sold_pieces" * 100) <= ("f"."sold_pieces" * 85)));
+
+ALTER VIEW "public"."insights_fading_items" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true') AS
  SELECT "i"."id" AS "item_id",
@@ -977,6 +1028,32 @@ CREATE OR REPLACE VIEW "public"."insights_sale_days" WITH ("security_invoker"='t
 
 ALTER VIEW "public"."insights_sale_days" OWNER TO "postgres";
 
+CREATE OR REPLACE VIEW "public"."insights_slowest_item" WITH ("security_invoker"='true') AS
+ SELECT "item_id",
+    "name",
+    "pieces_per_day_out",
+    "days_out"
+   FROM "public"."insights_items"
+  WHERE (( SELECT "count"(*) AS "count"
+           FROM "public"."insights_items" "insights_items_1") >= 2)
+  ORDER BY "pieces_per_day_out", "name"
+ LIMIT 1;
+
+ALTER VIEW "public"."insights_slowest_item" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_sold_out_items" WITH ("security_invoker"='true') AS
+ SELECT "i"."id" AS "item_id",
+    "i"."name",
+    ("count"(*) FILTER (WHERE ("r"."left_count" = 0)))::integer AS "sold_out_days",
+    ("count"(*))::integer AS "days_out"
+   FROM (("public"."sale_day_item_results" "r"
+     JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "r"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
+     JOIN "public"."items" "i" ON (("i"."id" = "r"."item_id")))
+  GROUP BY "i"."id", "i"."name"
+ HAVING ("count"(*) FILTER (WHERE ("r"."left_count" = 0)) > 0);
+
+ALTER VIEW "public"."insights_sold_out_items" OWNER TO "postgres";
+
 CREATE OR REPLACE VIEW "public"."insights_term" WITH ("security_invoker"='true') AS
  SELECT ("count"(*))::integer AS "sale_days",
     (COALESCE("sum"("sales_cents"), (0)::bigint))::integer AS "sales_cents",
@@ -1003,6 +1080,16 @@ CREATE OR REPLACE VIEW "public"."insights_term" WITH ("security_invoker"='true')
    FROM "public"."insights_sale_days";
 
 ALTER VIEW "public"."insights_term" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_treat_share" WITH ("security_invoker"='true') AS
+ SELECT ("sum"("treat_pieces_sold"))::integer AS "treat_pieces",
+    ("sum"("pieces_sold"))::integer AS "pieces_sold",
+    ("round"(((100.0 * ("sum"("treat_pieces_sold"))::numeric) / ("sum"("pieces_sold"))::numeric)))::integer AS "treat_pct"
+   FROM "public"."sale_day_totals" "t"
+  WHERE ("phase" = 'closed'::"public"."sale_phase")
+ HAVING ("sum"("pieces_sold") > 0);
+
+ALTER VIEW "public"."insights_treat_share" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."item_sale_stats" WITH ("security_invoker"='true') AS
  WITH "closed" AS (
@@ -1223,22 +1310,6 @@ CREATE OR REPLACE VIEW "public"."stock_by_type" WITH ("security_invoker"='true')
      CROSS JOIN "public"."settings");
 
 ALTER VIEW "public"."stock_by_type" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "item_id" "uuid" NOT NULL,
-    "qty" integer NOT NULL,
-    "reason" "public"."movement_reason" NOT NULL,
-    "purchase_line_id" "uuid",
-    "sale_day_id" "uuid",
-    "note" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    CONSTRAINT "stock_movements_qty_check" CHECK (("qty" <> 0)),
-    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
-);
-
-ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true') AS
  SELECT "type",
@@ -1675,17 +1746,29 @@ GRANT ALL ON TABLE "public"."items" TO "anon";
 GRANT ALL ON TABLE "public"."items" TO "authenticated";
 GRANT ALL ON TABLE "public"."items" TO "service_role";
 
-GRANT ALL ON TABLE "public"."sale_day_items" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_items" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_items" TO "service_role";
-
 GRANT ALL ON TABLE "public"."sale_days" TO "anon";
 GRANT ALL ON TABLE "public"."sale_days" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_days" TO "service_role";
 
+GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
+GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
+GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_check_stock_losses" TO "anon";
+GRANT ALL ON TABLE "public"."insights_check_stock_losses" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_check_stock_losses" TO "service_role";
+
+GRANT ALL ON TABLE "public"."sale_day_items" TO "anon";
+GRANT ALL ON TABLE "public"."sale_day_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_day_items" TO "service_role";
+
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "anon";
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "authenticated";
 GRANT ALL ON TABLE "public"."sale_day_item_results" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_fading_items" TO "anon";
+GRANT ALL ON TABLE "public"."insights_fading_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_fading_items" TO "service_role";
 
 GRANT ALL ON TABLE "public"."insights_items" TO "anon";
 GRANT ALL ON TABLE "public"."insights_items" TO "authenticated";
@@ -1707,9 +1790,21 @@ GRANT ALL ON TABLE "public"."insights_sale_days" TO "anon";
 GRANT ALL ON TABLE "public"."insights_sale_days" TO "authenticated";
 GRANT ALL ON TABLE "public"."insights_sale_days" TO "service_role";
 
+GRANT ALL ON TABLE "public"."insights_slowest_item" TO "anon";
+GRANT ALL ON TABLE "public"."insights_slowest_item" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_slowest_item" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_sold_out_items" TO "anon";
+GRANT ALL ON TABLE "public"."insights_sold_out_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_sold_out_items" TO "service_role";
+
 GRANT ALL ON TABLE "public"."insights_term" TO "anon";
 GRANT ALL ON TABLE "public"."insights_term" TO "authenticated";
 GRANT ALL ON TABLE "public"."insights_term" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_treat_share" TO "anon";
+GRANT ALL ON TABLE "public"."insights_treat_share" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_treat_share" TO "service_role";
 
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "anon";
 GRANT ALL ON TABLE "public"."item_sale_stats" TO "authenticated";
@@ -1746,10 +1841,6 @@ GRANT ALL ON TABLE "public"."shopping_trips" TO "service_role";
 GRANT ALL ON TABLE "public"."stock_by_type" TO "anon";
 GRANT ALL ON TABLE "public"."stock_by_type" TO "authenticated";
 GRANT ALL ON TABLE "public"."stock_by_type" TO "service_role";
-
-GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
-GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
-GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
 
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "anon";
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "authenticated";
