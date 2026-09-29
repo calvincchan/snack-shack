@@ -183,7 +183,8 @@ Money is stored as **integer cents**. Stock is stored as **pieces** (single bars
 - Price options offered everywhere: **$1**, **$2**, **2 for $1**, **3 for $1**. Stored as `price_cents` + `bundle_size` (pieces per deal).
 - Price per piece = `price_cents / bundle_size`.
 - A deal counts as **one item** and, for treats, **one treat** in the kid rules.
-- Loose deal items are **not pre-bagged** (for now). Kids take 2 from the box; volunteers count pieces.
+- Loose deal items (mini bars) are **not pre-bagged**. Kids take 2 from the box; volunteers count pieces.
+- **Bulk candy bought by weight** is bagged by volunteers, about 65–70 g a bag. Log the purchase as an estimated bag count (1 kg ≈ 15 bags, 1.2 kg ≈ 18); a bag is the piece, bundle size 1, priced $1 or $2 a bag. Check stock and count up absorb the estimate's error.
 
 ### 5.2 Cost per piece
 
