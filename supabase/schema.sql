@@ -1785,10 +1785,6 @@ ALTER TABLE "public"."volunteer_invites" ENABLE ROW LEVEL SECURITY;
 ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
 
 
-
-
-
-
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."cash_counts";
 
 
