@@ -470,6 +470,25 @@ function SettingsSection() {
     onError: (error) => toast.error(say(error)),
   })
 
+  const sendTest = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke<{
+        to: string
+        error?: string
+      }>('weekly-treasurer-email', { body: { test: true } })
+      if (error) {
+        // A failed call hides the function's own message inside the response.
+        const detail = await (error as { context?: Response }).context
+          ?.json()
+          .catch(() => null)
+        throw new Error(detail?.error ?? error.message)
+      }
+      return data!
+    },
+    onSuccess: (data) => toast.success(`Test email sent to ${data.to}.`),
+    onError: (error) => toast.error(say(error)),
+  })
+
   if (settings.isPending)
     return <p className="text-muted-foreground text-sm">Loading…</p>
 
@@ -551,6 +570,22 @@ function SettingsSection() {
       >
         {save.isPending ? 'Saving…' : 'Save settings'}
       </Button>
+
+      <div className="flex flex-col gap-1.5">
+        <p className="text-muted-foreground text-sm">
+          The weekly email goes out Monday at 7:00. Send the same email to
+          yourself to see how it looks.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={sendTest.isPending}
+          onClick={() => sendTest.mutate()}
+          className="text-foreground min-h-12"
+        >
+          {sendTest.isPending ? 'Sending…' : 'Send a test email to me'}
+        </Button>
+      </div>
     </form>
   )
 }
