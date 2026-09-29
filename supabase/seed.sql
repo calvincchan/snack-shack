@@ -168,6 +168,15 @@ begin
     true);
   perform public.sign_off(v_day);
   perform public.close_sale_day(v_day);
+
+  -- close_sale_day() stamps now(). The Done screen shows any sale day closed in
+  -- the last few hours, so back-date this one to lunchtime on its sale date;
+  -- otherwise every fresh reset opens on "Seal $X in the deposit bag".
+  perform set_config('snack.fn', 'on', true);
+  update public.sale_days
+     set closed_at = (sale_date + time '13:30') at time zone 'America/Vancouver'
+   where id = v_day;
+  perform set_config('snack.fn', '', true);
 end $$;
 
 select set_config('request.jwt.claims', '', true);
