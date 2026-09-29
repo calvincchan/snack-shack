@@ -266,7 +266,28 @@ export type Database = {
             foreignKeyName: 'purchase_lines_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_fading_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sold_out_items'
             referencedColumns: ['item_id']
           },
           {
@@ -421,7 +442,28 @@ export type Database = {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_fading_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sold_out_items'
             referencedColumns: ['item_id']
           },
           {
@@ -697,7 +739,28 @@ export type Database = {
             foreignKeyName: 'stock_movements_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_fading_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sold_out_items'
             referencedColumns: ['item_id']
           },
           {
@@ -843,6 +906,25 @@ export type Database = {
           },
         ]
       }
+      insights_check_stock_losses: {
+        Row: {
+          cost_cents: number | null
+          items: number | null
+          pieces: number | null
+        }
+        Relationships: []
+      }
+      insights_fading_items: {
+        Row: {
+          first_date: string | null
+          first_pieces: number | null
+          item_id: string | null
+          last_date: string | null
+          last_pieces: number | null
+          name: string | null
+        }
+        Relationships: []
+      }
       insights_items: {
         Row: {
           days_out: number | null
@@ -873,6 +955,24 @@ export type Database = {
         }
         Relationships: []
       }
+      insights_slowest_item: {
+        Row: {
+          days_out: number | null
+          item_id: string | null
+          name: string | null
+          pieces_per_day_out: number | null
+        }
+        Relationships: []
+      }
+      insights_sold_out_items: {
+        Row: {
+          days_out: number | null
+          item_id: string | null
+          name: string | null
+          sold_out_days: number | null
+        }
+        Relationships: []
+      }
       insights_term: {
         Row: {
           cost_cents: number | null
@@ -887,6 +987,14 @@ export type Database = {
           sales_cents: number | null
           sales_outside_ok: number | null
           sales_per_day_cents: number | null
+        }
+        Relationships: []
+      }
+      insights_treat_share: {
+        Row: {
+          pieces_sold: number | null
+          treat_pct: number | null
+          treat_pieces: number | null
         }
         Relationships: []
       }
@@ -987,7 +1095,28 @@ export type Database = {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_fading_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sold_out_items'
             referencedColumns: ['item_id']
           },
           {
@@ -1069,7 +1198,28 @@ export type Database = {
             foreignKeyName: 'sale_day_items_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_fading_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'sale_day_items_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_sold_out_items'
             referencedColumns: ['item_id']
           },
           {

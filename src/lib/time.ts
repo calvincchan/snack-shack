@@ -37,6 +37,11 @@ export function formatSaleDate(date: string): string {
   })
 }
 
+/** "Sep 29": the same date without the weekday, for tight spots. */
+export function formatSaleDateShort(date: string): string {
+  return formatSaleDate(date).replace(/^[^,]+, /, '')
+}
+
 /** Today where the volunteer is standing, as the database writes dates. */
 export function todayDate(now: Date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, '0')

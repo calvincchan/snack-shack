@@ -4,7 +4,7 @@ import { COORDINATOR_EMAIL, VOLUNTEER_EMAIL } from './global-setup'
 
 test.describe.configure({ mode: 'serial' })
 
-// The seed closes one sale day: 106 pieces sold, the gummies at 0 and a note.
+// The seed closes five sale days; the last has the gummies at 0 and a note.
 test('stock by type shows the gauges, the rate and what to buy', async ({
   page,
 }) => {
@@ -19,8 +19,8 @@ test('stock by type shows the gauges, the rate and what to buy', async ({
     name: 'Snacks against target stock',
   })
   await expect(snacks).toBeVisible()
-  await expect(page.getByText('58 sold a sale day')).toBeVisible()
-  await expect(page.getByText('48 sold a sale day')).toBeVisible()
+  await expect(page.getByText('52 sold a sale day')).toBeVisible()
+  await expect(page.getByText('59 sold a sale day')).toBeVisible()
   await expect(page.getByText('Covered for 2+ sale days').first()).toBeVisible()
 })
 

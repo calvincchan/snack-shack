@@ -275,7 +275,7 @@ deposit       = counted − float
 
 Each rule is a query plus a sentence template. Show a sentence only when it applies. Current rules:
 
-1. **Fading item:** an item's sales on its last day out fell well below its first day out this term (prototype: popsicles). "Leave them out of the lineup on cold days."
+1. **Fading item:** an item's sales on its last day out fell well below its first day out this term (15% or more, over at least two days out; prototype: popsicles). "Leave them out of the lineup on cold days."
 2. **Sold out:** an item closed at 0 on N of the D days it was out. "Bring more of it, or buy more next trip."
 3. **Slowest mover:** lowest pieces per day out. "Try a lower price on the Items tab, or leave it out of the lineup for a while."
 4. **Treat share:** treats as % of items sold.
