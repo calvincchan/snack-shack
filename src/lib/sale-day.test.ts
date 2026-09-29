@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { differenceLabel, stepIndex } from '@/lib/sale-day'
+import { differenceLabel, floatToSend, stepIndex } from '@/lib/sale-day'
 
 describe('stepIndex', () => {
   it('splits the lineup phase into Lineup and Check stock', () => {
@@ -22,5 +22,20 @@ describe('differenceLabel', () => {
     expect(at(-2, 'damaged')).toBe('2 damaged (Mini bars)')
     expect(at(-1, 'missing')).toBe('1 missing (Mini bars)')
     expect(at(3, 'found')).toBe('3 extra found (Mini bars)')
+  })
+})
+
+describe('floatToSend', () => {
+  it('sends nothing when the box matches the setting', () => {
+    expect(floatToSend(3000, 3000)).toBeNull()
+  })
+
+  it('sends nothing when the float was not touched', () => {
+    expect(floatToSend(null, 3000)).toBeNull()
+  })
+
+  it('sends the counted amount in cents when it differs', () => {
+    expect(floatToSend(2500, 3000)).toBe(2500)
+    expect(floatToSend(0, 3000)).toBe(0)
   })
 })

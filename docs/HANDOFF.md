@@ -89,7 +89,8 @@ A sale day moves through four phases, shown as a step bar. The phase is stored o
 - Stepper per item, pre-filled with the expected count. A **Matches** button resets to expected.
 - If the count is lower, pick **Missing** or **Damaged** (default Missing). If higher, it's recorded as **Found**.
 - **Start sale** records the differences as stock adjustments, **locks each lineup item's price, deal size and type**, and moves to Selling.
-- Differences found here do **not** affect the cash check, because they are fixed before any money changes hands.
+- **Change float row** (after the items): shows what the box should hold (the Settings default). One **Matches** tap, or a whole-dollar stepper for the real total. Untouched means "as set"; Start sale is not blocked. The counted amount becomes this sale day's float (expected cash, over/short and deposit follow it) and passes to `start_sale`; the Settings default is unchanged. Nothing is saved before Start sale.
+- Item differences found here do **not** affect the cash check, because they are fixed before any money changes hands. The float is fixed here too, so it counts from the counted amount.
 
 **3. Selling.** Shows what's on the table with today's prices, any differences reported at the check, a link to the Sell helper, and **"Sale's over: count up"**.
 

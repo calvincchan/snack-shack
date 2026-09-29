@@ -577,7 +577,7 @@ end $$;
 
 ALTER FUNCTION "public"."sign_off"("p_sale_day" "uuid") OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."start_sale"("p_sale_day" "uuid") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer DEFAULT NULL::integer) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
@@ -586,9 +586,11 @@ declare
   v_diff int;
 begin
   perform public.require_member();
+  if p_float_cents < 0 then raise exception 'The change float cannot be negative.'; end if;
   perform set_config('snack.fn', 'on', true);
   update public.sale_days
-     set phase = 'selling', started_at = now(), started_by = auth.uid()
+     set phase = 'selling', started_at = now(), started_by = auth.uid(),
+         float_cents = coalesce(p_float_cents, float_cents)
    where id = p_sale_day and phase = 'lineup';
   if not found then raise exception 'This sale has already started.'; end if;
   if not exists (select 1 from public.sale_day_items where sale_day_id = p_sale_day) then
@@ -620,7 +622,7 @@ begin
   perform set_config('snack.fn', '', true);
 end $$;
 
-ALTER FUNCTION "public"."start_sale"("p_sale_day" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."suggest_lineup"() RETURNS TABLE("item_id" "uuid", "type" "public"."item_type", "score" integer, "reason" "text", "suggested" boolean)
     LANGUAGE "sql" STABLE
@@ -1557,9 +1559,9 @@ GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid") TO "anon";
-GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "anon";
 GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "authenticated";

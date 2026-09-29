@@ -343,10 +343,26 @@ export function useSetCheckCount() {
   )
 }
 
+export type StartSale = { saleDayId: string; floatCents: number | null }
+
+/**
+ * The float to pass to Start sale: only an amount that differs from the day's
+ * current float. Null keeps it, so an untouched row writes nothing.
+ */
+export function floatToSend(
+  countedCents: number | null,
+  currentCents: number,
+): number | null {
+  return countedCents === null || countedCents === currentCents
+    ? null
+    : countedCents
+}
+
 export function useStartSale() {
-  return useSaleDayMutation(async (saleDayId: string) => {
+  return useSaleDayMutation(async (start: StartSale) => {
     const { error } = await supabase.rpc('start_sale', {
-      p_sale_day: saleDayId,
+      p_sale_day: start.saleDayId,
+      p_float_cents: start.floatCents ?? undefined,
     })
     if (error) throw error
   })
