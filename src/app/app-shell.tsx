@@ -16,6 +16,7 @@ import { InsightsPage } from '@/app/routes/insights'
 import { AdminPage } from '@/app/routes/admin'
 import { SignInPage } from '@/app/routes/sign-in'
 import { NoProfilePage } from '@/app/routes/no-profile'
+import { MarkPaidPage } from '@/app/routes/mark-paid'
 import { AccountMenu } from '@/app/account-menu'
 import { useAuth } from '@/lib/auth'
 import { useItems } from '@/lib/items'
@@ -31,6 +32,12 @@ const tabs = [
 ]
 
 export function AppShell() {
+  // The treasurer opens this from an email and never signs in.
+  if (window.location.pathname === '/mark-paid') return <MarkPaidPage />
+  return <SignedInShell />
+}
+
+function SignedInShell() {
   const { state } = useAuth()
 
   if (state.status === 'loading') {
