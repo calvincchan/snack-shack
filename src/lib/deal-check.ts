@@ -55,11 +55,10 @@ export function dealCheck(input: DealInput): Deal | null {
 
   const deals = Math.floor(pieces / suggested.bundleSize)
   const salesCents = deals * suggested.priceCents
-  // HANDOFF §5.4 divides deals, not pieces, by the pieces-per-day rate. See
-  // issue #29: for a "2 for $1" box that halves the estimate.
+  // The rate counts pieces, so divide pieces, not deals (issue #29).
   const saleDays =
     input.piecesPerDayOut && input.piecesPerDayOut > 0
-      ? deals / input.piecesPerDayOut
+      ? pieces / input.piecesPerDayOut
       : null
 
   return {

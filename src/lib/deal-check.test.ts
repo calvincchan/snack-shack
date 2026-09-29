@@ -58,12 +58,14 @@ describe('dealCheck', () => {
   })
 
   it('warns that a box is too big past six sale days', () => {
-    // 65 deals at 15 a day is about 4.3 sale days: fine.
-    expect(dealCheck(input())!.tooBig).toBe(false)
+    // 130 pieces at 30 a day is about 4.3 sale days: fine.
+    const quick = dealCheck(input({ piecesPerDayOut: 30 }))!
+    expect(quick.saleDays).toBeCloseTo(4.333, 3)
+    expect(quick.tooBig).toBe(false)
 
-    // The same box where this type only moves 8 a day: 8.1 sale days.
-    const slower = dealCheck(input({ piecesPerDayOut: 8 }))!
-    expect(slower.saleDays).toBeCloseTo(8.125, 3)
+    // The same box where this type only moves 15 a day: 8.7 sale days.
+    const slower = dealCheck(input({ piecesPerDayOut: 15 }))!
+    expect(slower.saleDays).toBeCloseTo(8.667, 3)
     expect(slower.tooBig).toBe(true)
   })
 

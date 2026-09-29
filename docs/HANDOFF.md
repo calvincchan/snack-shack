@@ -225,7 +225,7 @@ sales           = deals × rec.price
 profit          = sales − total
 usual cost      = average cost per piece of active, non-new items of the same type
 rate            = average pieces sold per sale day, per item of the same type, on days it was in a lineup
-sale days       = deals ÷ rate           (warn "big box, make sure it fits" when > 6)
+sale days       = pieces ÷ rate          (warn "big box, make sure it fits" when > 6)
 ```
 
 Output: band pill with the suggested price and margin; cost each; deals × price = sales; profit or loss on the box; "Cheaper/Pricier than our usual treats ($0.52 each on average)"; "lasts about N sale days in the lineup"; all four options with band and margin; **Bought it** button.
