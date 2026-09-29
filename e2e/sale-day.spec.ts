@@ -116,6 +116,33 @@ test("a price changed during the sale does not move today's price", async ({
   await expect(chips).not.toContainText('$2')
 })
 
+test('the sell helper adds up a basket and shows the change', async ({
+  page,
+}) => {
+  await signIn(page, COORDINATOR_EMAIL)
+  await page.getByRole('link', { name: 'Sell', exact: true }).click()
+
+  const tiles = page.getByRole('list', { name: 'Tiles' })
+  await tiles.getByRole('button', { name: /Chips, assorted/ }).click()
+  await expect(page.getByText('1 of 3 items')).toBeVisible()
+
+  await page
+    .getByRole('group', { name: 'Paid with' })
+    .getByRole('button', { name: '$5' })
+    .click()
+  await expect(page.getByRole('status')).toHaveText(/^Change \$4\.00$/)
+
+  // One treat per kid: the other treat tiles go grey.
+  const treats = tiles.getByRole('button').filter({ hasText: 'Treat' })
+  await treats.first().click()
+  await expect(page.getByText('1 of 1 treat')).toBeVisible()
+  await expect(treats.first()).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Next kid' }).click()
+  await expect(page.getByText('0 of 3 items')).toBeVisible()
+  await expect(treats.first()).toBeEnabled()
+})
+
 test('one volunteer signs off, both phones see the deposit', async ({
   page,
   browser,

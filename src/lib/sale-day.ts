@@ -376,3 +376,21 @@ export function useBeginCount() {
     if (error) throw error
   })
 }
+
+/** The most a kid may buy, from settings (HANDOFF §4.2). */
+export function useKidRules() {
+  return useQuery({
+    queryKey: ['settings', 'kid-rules'],
+    queryFn: async (): Promise<{ maxItems: number; maxTreats: number }> => {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('max_items_per_kid, max_treats_per_kid')
+        .single()
+      if (error) throw error
+      return {
+        maxItems: data.max_items_per_kid,
+        maxTreats: data.max_treats_per_kid,
+      }
+    },
+  })
+}
