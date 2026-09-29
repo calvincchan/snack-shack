@@ -6,14 +6,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCents } from '@/lib/money'
+import type { ItemType } from '@/lib/sale-day'
 import {
-  saleDayQueryKey,
-  lineupQueryKey,
-  optionsQueryKey,
-  recentClosedQueryKey,
-  type ItemType,
-} from '@/lib/sale-day'
-import { itemsQueryKey } from '@/lib/items'
+  COUNT_KEY,
+  cashKey,
+  invalidateCountReads,
+  resultsKey,
+  signoffsKey,
+  totalsKey,
+  type CountWrite,
+} from '@/lib/count-queue'
 import type { Tables } from '@/lib/database.types'
 
 export type OverShort = 'ok' | 'warn' | 'bad'
@@ -101,11 +103,6 @@ function toTotals(row: TotalsRow): Totals {
     signoffs: row.signoffs ?? 0,
   }
 }
-
-const totalsKey = ['sale-day-totals'] as const
-const resultsKey = ['sale-day-results'] as const
-const cashKey = ['cash-counts'] as const
-const signoffsKey = ['signoffs'] as const
 
 export function useTotals(saleDayId: string | undefined) {
   return useQuery({
@@ -249,110 +246,56 @@ export function useSignoffs(saleDayId: string) {
   })
 }
 
-function useCountMutation<TArgs, TResult = void>(
-  run: (args: TArgs) => Promise<TResult>,
-) {
+/** Sign-off and Finish need the database's answer, so they are never queued. */
+function usePhaseMutation(run: (saleDayId: string) => Promise<void>) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: run,
-    onSettled: () => {
-      for (const key of [
-        totalsKey,
-        resultsKey,
-        cashKey,
-        signoffsKey,
-        ['sale-day-notes'],
-        saleDayQueryKey,
-        recentClosedQueryKey,
-        lineupQueryKey,
-        optionsQueryKey,
-        itemsQueryKey,
-        ['open-sale-day'],
-      ]) {
-        void queryClient.invalidateQueries({ queryKey: key })
-      }
-    },
+    networkMode: 'always',
+    onSettled: () => invalidateCountReads(queryClient),
   })
 }
 
-export function useSetLeftOut() {
-  return useCountMutation(
-    async ({
-      saleDayId,
-      itemId,
-      left,
-      out,
-    }: {
-      saleDayId: string
-      itemId: string
-      left: number
-      out: number
-    }) => {
-      const { error } = await supabase
-        .from('sale_day_items')
-        .update({ left_count: left, out_count: out })
-        .eq('sale_day_id', saleDayId)
-        .eq('item_id', itemId)
-      if (error) throw error
-    },
+/** A queued write: waits while offline and sends in order when Wi-Fi returns. */
+function useCountWrite<T extends CountWrite>(kind: T['kind'], scope: string) {
+  return useMutation<void, Error, T>({
+    mutationKey: [...COUNT_KEY, kind],
+    scope: { id: scope },
+  })
+}
+
+export function useSetLeftOut(itemId: string) {
+  return useCountWrite<Extract<CountWrite, { kind: 'left-out' }>>(
+    'left-out',
+    `item:${itemId}`,
   )
 }
 
 export function useSetCash() {
-  return useCountMutation(
-    async ({
-      saleDayId,
-      denomCents,
-      qty,
-    }: {
-      saleDayId: string
-      denomCents: number
-      qty: number
-    }) => {
-      const { error } = await supabase
-        .from('cash_counts')
-        .update({ qty })
-        .eq('sale_day_id', saleDayId)
-        .eq('denom_cents', denomCents)
-      if (error) throw error
-    },
-  )
+  return useCountWrite<Extract<CountWrite, { kind: 'cash' }>>('cash', 'cash')
 }
 
 export function useSetHelperCredits() {
-  return useCountMutation(
-    async ({ saleDayId, credits }: { saleDayId: string; credits: number }) => {
-      const { error } = await supabase
-        .from('sale_days')
-        .update({ helper_credits: credits })
-        .eq('id', saleDayId)
-      if (error) throw error
-    },
+  return useCountWrite<Extract<CountWrite, { kind: 'helper-credits' }>>(
+    'helper-credits',
+    'helper-credits',
   )
 }
 
 export function useSetNote() {
-  return useCountMutation(
-    async ({ saleDayId, note }: { saleDayId: string; note: string }) => {
-      const { error } = await supabase
-        .from('sale_days')
-        .update({ note: note.trim() === '' ? null : note.trim() })
-        .eq('id', saleDayId)
-      if (error) throw error
-    },
-  )
+  return useCountWrite<Extract<CountWrite, { kind: 'note' }>>('note', 'note')
 }
 
 export function useSignOff() {
-  return useCountMutation(async (saleDayId: string) => {
+  return usePhaseMutation(async (saleDayId) => {
     const { error } = await supabase.rpc('sign_off', { p_sale_day: saleDayId })
     if (error) throw error
   })
 }
 
 export function useFinishCount() {
-  return useCountMutation(async (saleDayId: string) => {
+  return usePhaseMutation(async (saleDayId) => {
     const { error } = await supabase.rpc('close_sale_day', {
       p_sale_day: saleDayId,
     })

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { Check, WifiOff } from 'lucide-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Stepper } from '@/components/stepper'
@@ -32,6 +33,7 @@ import {
   type Thresholds,
   type Totals,
 } from '@/lib/count-up'
+import { useCountSyncStatus } from '@/lib/count-queue'
 import type { SaleDay } from '@/lib/sale-day'
 
 type Part = 'stock' | 'cash' | 'sign'
@@ -78,6 +80,28 @@ function useDebouncedSave() {
 
 const showError = (error: Error) => toast.error(error.message)
 
+/** Says whether every count is on the server or some wait for Wi-Fi. */
+function SyncIndicator() {
+  const status = useCountSyncStatus()
+  const waiting = status === 'waiting'
+  return (
+    <p
+      role="status"
+      className={cn(
+        'flex items-center justify-end gap-1.5 text-sm font-medium',
+        waiting ? 'text-warn' : 'text-muted-foreground',
+      )}
+    >
+      {waiting ? (
+        <WifiOff aria-hidden size={16} />
+      ) : (
+        <Check aria-hidden size={16} />
+      )}
+      {waiting ? 'Waiting for Wi-Fi' : 'Saved'}
+    </p>
+  )
+}
+
 /** Step 4, Count up: check stock, count cash, one-volunteer sign-off (HANDOFF §4.1). */
 export function CountUp({
   saleDay,
@@ -93,6 +117,7 @@ export function CountUp({
 
   return (
     <>
+      <SyncIndicator />
       <div
         role="group"
         aria-label="Count up parts"
@@ -189,7 +214,7 @@ function CountStock({
 }
 
 function StockRow({ saleDayId, item }: { saleDayId: string; item: CountItem }) {
-  const save = useSetLeftOut()
+  const save = useSetLeftOut(item.itemId)
   const debounce = useDebouncedSave()
   const [left, setLeft] = useLiveValue(item.leftCount)
   const [out, setOut] = useLiveValue(item.outCount)
@@ -197,7 +222,13 @@ function StockRow({ saleDayId, item }: { saleDayId: string; item: CountItem }) {
   const persist = (nextLeft: number, nextOut: number) =>
     debounce(item.itemId, () =>
       save.mutate(
-        { saleDayId, itemId: item.itemId, left: nextLeft, out: nextOut },
+        {
+          kind: 'left-out',
+          saleDayId,
+          itemId: item.itemId,
+          left: nextLeft,
+          out: nextOut,
+        },
         {
           onError: (error) => {
             // Let the stepper follow the server again instead of pinning to a
@@ -342,7 +373,7 @@ function CountCash({
             onSave={(credits) =>
               debounce('credits', () =>
                 setCredits.mutate(
-                  { saleDayId: saleDay.id, credits },
+                  { kind: 'helper-credits', saleDayId: saleDay.id, credits },
                   { onError: showError },
                 ),
               )
@@ -367,7 +398,12 @@ function CountCash({
               onSave={(qty) =>
                 debounce(String(denom.cents), () =>
                   setCash.mutate(
-                    { saleDayId: saleDay.id, denomCents: denom.cents, qty },
+                    {
+                      kind: 'cash',
+                      saleDayId: saleDay.id,
+                      denomCents: denom.cents,
+                      qty,
+                    },
                     { onError: showError },
                   ),
                 )
@@ -454,6 +490,8 @@ function SignOff({
   const setNote = useSetNote()
   const signOff = useSignOff()
   const finish = useFinishCount()
+  // Counts still waiting for Wi-Fi would land after these, so hold both.
+  const waiting = useCountSyncStatus() === 'waiting'
   const [note, setLocalNote] = useState<string | null>(null)
   // Sign-offs vanish when any count changes after someone signed; say so.
   const [seen, setSeen] = useState(0)
@@ -515,7 +553,7 @@ function SignOff({
           onBlur={() =>
             note !== null &&
             setNote.mutate(
-              { saleDayId: saleDay.id, note },
+              { kind: 'note', saleDayId: saleDay.id, note },
               { onError: showError },
             )
           }
@@ -539,12 +577,18 @@ function SignOff({
           type="button"
           variant="outline"
           className="text-foreground min-h-12"
-          disabled={iSigned || signOff.isPending}
+          disabled={iSigned || signOff.isPending || waiting}
           onClick={() => signOff.mutate(saleDay.id, { onError: showError })}
         >
           {iSigned ? 'You confirmed' : 'I counted and confirm'}
         </Button>
       </section>
+
+      {waiting && (
+        <p className="text-muted-foreground text-sm">
+          Counts are waiting for Wi-Fi. Confirm and finish once they save.
+        </p>
+      )}
 
       {totals.itemsOverStart > 0 && (
         <p role="alert" className="text-bad text-sm font-semibold">
@@ -564,12 +608,16 @@ function SignOff({
       <Button
         type="button"
         className="text-primary-foreground min-h-12 w-full"
-        disabled={!ready || finish.isPending}
+        disabled={!ready || finish.isPending || waiting}
         onClick={async () => {
           try {
             // The note saves on blur, which can lose the race with this tap.
             if (note !== null) {
-              await setNote.mutateAsync({ saleDayId: saleDay.id, note })
+              await setNote.mutateAsync({
+                kind: 'note',
+                saleDayId: saleDay.id,
+                note,
+              })
             }
             await finish.mutateAsync(saleDay.id)
           } catch (error) {
