@@ -79,7 +79,7 @@ All are `security definer`, check that the caller is an active member, and keep 
 | `add_volunteer(email, name, role)` | Writes the profile if that email already has an account, otherwise an invite. Returns `{"status": "added" \| "invited"}` | Admin only |
 | `suggest_lineup()` | Scores items (HANDOFF §5.6); returns `item_id, type, score, reason, suggested` | Priced, active, stock > 0 |
 | `create_sale_day(date)` | Creates the sale day with the float from settings and the suggested lineup | One open sale day |
-| `start_sale(sale_day)` | Records Check stock differences as missing / damaged / found movements, sets `start_count`, **locks price, bundle and type**, phase → selling | Only from lineup; every item priced; ≥ 1 item |
+| `start_sale(sale_day, float_cents?)` | Sets the day's float when given (≥ 0; null keeps it). Records Check stock differences as missing / damaged / found movements, sets `start_count`, **locks price, bundle and type**, phase → selling | Only from lineup; every item priced; ≥ 1 item |
 | `begin_count(sale_day)` | Phase → counting; pre-fills `left_count = start_count`; creates the eight cash rows | Only from selling |
 | `sign_off(sale_day)` | Adds the caller's sign-off | Only while counting; same person twice counts once |
 | `close_sale_day(sale_day)` | Posts `sold` and `out` movements, phase → closed | Counting; **1 sign-off**; no item above its start; every item counted; guarded update so a double tap fails cleanly |

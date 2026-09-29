@@ -4,10 +4,12 @@ import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Stepper } from '@/components/stepper'
 import { Tag, TypeDot } from '@/components/item-bits'
+import { formatCents } from '@/lib/money'
 import { Dock } from '@/app/sale-day/lineup'
 import {
   useLineup,
   useSetCheckCount,
+  floatToSend,
   useStartSale,
   type CheckReason,
   type LineupItem,
@@ -24,6 +26,9 @@ export function CheckStock({
 }) {
   const lineup = useLineup(saleDay.id)
   const start = useStartSale()
+
+  // The counted float stays on this phone until Start sale (ADR-0003).
+  const [floatCents, setFloatCents] = useState(saleDay.floatCents)
 
   const items = lineup.data ?? []
   const off = items.filter(
@@ -48,6 +53,12 @@ export function CheckStock({
         ))}
       </ul>
 
+      <FloatRow
+        expectedCents={saleDay.floatCents}
+        countedCents={floatCents}
+        onChange={setFloatCents}
+      />
+
       <Button
         type="button"
         variant="outline"
@@ -68,16 +79,22 @@ export function CheckStock({
             className="text-primary-foreground min-h-12"
             disabled={start.isPending || items.length === 0}
             onClick={() =>
-              start.mutate(saleDay.id, {
-                onSuccess: () =>
-                  toast.success(
-                    off === 0
-                      ? 'Sale started.'
-                      : 'Differences reported. Sale started.',
-                  ),
-                // The database functions word their own refusals; show them.
-                onError: (error) => toast.error(error.message),
-              })
+              start.mutate(
+                {
+                  saleDayId: saleDay.id,
+                  floatCents: floatToSend(floatCents, saleDay.floatCents),
+                },
+                {
+                  onSuccess: () =>
+                    toast.success(
+                      off === 0
+                        ? 'Sale started.'
+                        : 'Differences reported. Sale started.',
+                    ),
+                  // The database functions word their own refusals; show them.
+                  onError: (error) => toast.error(error.message),
+                },
+              )
             }
           >
             Start sale
@@ -85,6 +102,56 @@ export function CheckStock({
         }
       />
     </>
+  )
+}
+
+function FloatRow({
+  expectedCents,
+  countedCents,
+  onChange,
+}: {
+  expectedCents: number
+  countedCents: number
+  onChange: (cents: number) => void
+}) {
+  const matches = countedCents === expectedCents
+  return (
+    <div className="border-border bg-card flex flex-col gap-2 rounded-xl border p-3">
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="font-medium">Change float</span>
+          <span className="text-muted-foreground text-sm tabular-nums">
+            Box should hold {formatCents(expectedCents)}
+            {matches && (
+              <>
+                {' · '}
+                <span className="text-ok font-semibold">matches</span>
+              </>
+            )}
+          </span>
+        </div>
+        <Stepper
+          label="Change float in dollars"
+          value={Math.round(countedCents / 100)}
+          onChange={(dollars) => onChange(dollars * 100)}
+        />
+      </div>
+      {!matches && (
+        <div className="flex items-center gap-2">
+          <span className="text-warn flex-1 text-sm font-semibold tabular-nums">
+            Counted {formatCents(countedCents)}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-foreground min-h-11"
+            onClick={() => onChange(expectedCents)}
+          >
+            Matches
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 

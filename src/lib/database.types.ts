@@ -1096,7 +1096,10 @@ export type Database = {
       }
       require_member: { Args: Record<PropertyKey, never>; Returns: undefined }
       sign_off: { Args: { p_sale_day: string }; Returns: undefined }
-      start_sale: { Args: { p_sale_day: string }; Returns: undefined }
+      start_sale: {
+        Args: { p_float_cents?: number; p_sale_day: string }
+        Returns: undefined
+      }
       suggest_lineup: {
         Args: Record<PropertyKey, never>
         Returns: {
