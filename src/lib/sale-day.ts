@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { itemsQueryKey } from '@/lib/items'
 import { todayDate } from '@/lib/time'
+import type { KidRules } from '@/lib/basket'
 import type { Enums, Tables } from '@/lib/database.types'
 
 export type ItemType = Enums<'item_type'>
@@ -381,7 +382,7 @@ export function useBeginCount() {
 export function useKidRules() {
   return useQuery({
     queryKey: ['settings', 'kid-rules'],
-    queryFn: async (): Promise<{ maxItems: number; maxTreats: number }> => {
+    queryFn: async (): Promise<KidRules> => {
       const { data, error } = await supabase
         .from('settings')
         .select('max_items_per_kid, max_treats_per_kid')
