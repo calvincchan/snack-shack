@@ -1,7 +1,7 @@
 -- The change float counted at Check stock (ADR-0003 amended, pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(9);
+select plan(10);
 
 -- The seed fills the database for local development. These tests describe
 -- behaviour from an empty start, so clear it inside the transaction.
@@ -64,6 +64,13 @@ select set_config('request.jwt.claims',
 select pg_temp.new_day('2026-10-06');
 select public.start_sale((select id from public.sale_days), 2500);
 select is((select float_cents from public.sale_days), 2500, 'the counted float becomes the day''s float');
+select is(
+  (select (old_data ->> 'float_cents') || '→' || (new_data ->> 'float_cents')
+     from public.audit_log
+    where table_name = 'sale_days' and action = 'UPDATE'
+      and (new_data ->> 'float_cents')::int = 2500),
+  '3000→2500',
+  'the audit log records the old and new float');
 select is((select float_cents from public.settings), 3000, 'the Settings default is untouched');
 select is((select float_cents from public.sale_day_lineup_totals), 2500, 'the header reads the counted float');
 
