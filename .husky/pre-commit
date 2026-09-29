@@ -1,1 +1,12 @@
 pnpm lint-staged
+
+# A migration ships in the same commit as the types and schema dump it produces.
+staged=$(git diff --cached --name-only)
+if echo "$staged" | grep -q '^supabase/migrations/.*\.sql$'; then
+  for file in src/lib/database.types.ts supabase/schema.sql; do
+    echo "$staged" | grep -qx "$file" || {
+      echo "Migration staged without $file. Run 'pnpm db:reset' and stage it."
+      exit 1
+    }
+  done
+fi

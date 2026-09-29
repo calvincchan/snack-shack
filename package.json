@@ -17,7 +17,7 @@
     "db:reset": "supabase db reset && pnpm db:sync",
     "db:sync": "pnpm db:types && pnpm db:dump",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts && prettier --write src/lib/database.types.ts",
-    "db:dump": "supabase db dump --local -f supabase/schema.sql",
+    "db:dump": "supabase db dump --local -f supabase/schema.sql && perl -0pi -e 's/\\n{3,}/\\n\\n/g' supabase/schema.sql",
     "prepare": "husky"
   },
   "lint-staged": {
