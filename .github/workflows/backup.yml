@@ -26,11 +26,16 @@ jobs:
 
       - name: Dump
         run: |
-          pg_dump "${{ secrets.SUPABASE_DB_URL }}" \
+          set -euo pipefail
+          # The runner also ships pg_dump 16, which refuses a version 17
+          # server, so name the 17 binary.
+          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" \
             --no-owner --no-privileges \
             --schema=public --schema=auth --schema=storage \
             | gzip > "snack-shack-$(date -u +%Y-%m-%d).sql.gz"
           ls -l *.sql.gz
+          # An empty dump gzips to 20 bytes; a real one is far bigger.
+          test "$(gunzip -c snack-shack-*.sql.gz | wc -c)" -gt 10000
 
       - name: Upload
         run: |
