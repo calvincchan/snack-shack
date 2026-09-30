@@ -19,7 +19,7 @@ jobs:
       - name: Install the Postgres 17 client
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo curl --fail-with-body -sSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
@@ -35,9 +35,10 @@ jobs:
       - name: Upload
         run: |
           file=$(ls snack-shack-*.sql.gz)
-          curl -fsS -X POST \
+          curl --fail-with-body -sS -X POST \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/backups/$file" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "x-upsert: true" \
             -H "Content-Type: application/gzip" \
             --data-binary "@$file"
@@ -46,12 +47,13 @@ jobs:
         run: |
           base="${{ secrets.SUPABASE_URL }}/storage/v1/object"
           auth="Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
-          old=$(curl -fsS -X POST "$base/list/backups" -H "$auth" \
+          key="apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
+          old=$(curl --fail-with-body -sS -X POST "$base/list/backups" -H "$auth" -H "$key" \
             -H "Content-Type: application/json" \
             -d '{"prefix":"","limit":100,"sortBy":{"column":"name","order":"desc"}}' \
             | jq -c --argjson keep "$KEEP" '[.[].name] | .[$keep:]')
           if [ "$old" != "[]" ]; then
-            curl -fsS -X DELETE "$base/backups" -H "$auth" \
+            curl --fail-with-body -sS -X DELETE "$base/backups" -H "$auth" -H "$key" \
               -H "Content-Type: application/json" \
               -d "{\"prefixes\": $old}"
           fi
