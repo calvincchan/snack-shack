@@ -795,6 +795,27 @@ CREATE TABLE IF NOT EXISTS "public"."cash_counts" (
 
 ALTER TABLE "public"."cash_counts" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "type" "public"."item_type" NOT NULL,
+    "storage" "public"."storage_kind" DEFAULT 'shelf'::"public"."storage_kind" NOT NULL,
+    "price_cents" integer,
+    "bundle_size" integer DEFAULT 1 NOT NULL,
+    "unit_cost_cents" numeric(10,2) DEFAULT 0 NOT NULL,
+    "archived" boolean DEFAULT false NOT NULL,
+    "version" integer DEFAULT 1 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "items_name_check" CHECK (("length"(TRIM(BOTH FROM "name")) > 0)),
+    CONSTRAINT "items_price_option" CHECK ((("price_cents" IS NULL) OR (("price_cents" = 100) AND ("bundle_size" = ANY (ARRAY[1, 2, 3]))) OR (("price_cents" = 200) AND ("bundle_size" = 1)))),
+    CONSTRAINT "items_unit_cost_cents_check" CHECK (("unit_cost_cents" >= (0)::numeric))
+);
+
+ALTER TABLE "public"."items" OWNER TO "postgres";
+
 CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "id" "uuid" NOT NULL,
     "display_name" "text" NOT NULL,
@@ -806,6 +827,74 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
 );
 
 ALTER TABLE "public"."profiles" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."change_history" WITH ("security_invoker"='true') AS
+ WITH "changes" AS (
+         SELECT "a"."id",
+            "a"."at",
+            "a"."actor",
+            (("a"."new_data" ->> 'id'::"text"))::"uuid" AS "item_id",
+            NULL::"uuid" AS "sale_day_id",
+            "f"."field",
+            ("a"."old_data" ->> "f"."field") AS "old_value",
+            ("a"."new_data" ->> "f"."field") AS "new_value"
+           FROM ("public"."audit_log" "a"
+             CROSS JOIN ( VALUES ('name'::"text"), ('type'::"text"), ('storage'::"text"), ('archived'::"text")) "f"("field"))
+          WHERE (("a"."table_name" = 'items'::"text") AND ("a"."action" = 'UPDATE'::"text") AND (("a"."old_data" ->> "f"."field") IS DISTINCT FROM ("a"."new_data" ->> "f"."field")) AND (NOT (EXISTS ( SELECT 1
+                   FROM "public"."audit_log" "b"
+                  WHERE (("b"."table_name" = 'items'::"text") AND ("b"."action" = 'INSERT'::"text") AND ("b"."row_pk" = "a"."row_pk") AND ("b"."at" = "a"."at"))))))
+        UNION ALL
+         SELECT "a"."id",
+            "a"."at",
+            "a"."actor",
+            (("a"."new_data" ->> 'id'::"text"))::"uuid" AS "uuid",
+            NULL::"uuid" AS "uuid",
+            'price'::"text",
+            ((("a"."old_data" ->> 'price_cents'::"text") || '/'::"text") || ("a"."old_data" ->> 'bundle_size'::"text")),
+            ((("a"."new_data" ->> 'price_cents'::"text") || '/'::"text") || ("a"."new_data" ->> 'bundle_size'::"text"))
+           FROM "public"."audit_log" "a"
+          WHERE (("a"."table_name" = 'items'::"text") AND ("a"."action" = 'UPDATE'::"text") AND ((("a"."old_data" ->> 'price_cents'::"text") IS DISTINCT FROM ("a"."new_data" ->> 'price_cents'::"text")) OR (("a"."old_data" ->> 'bundle_size'::"text") IS DISTINCT FROM ("a"."new_data" ->> 'bundle_size'::"text"))) AND (NOT (EXISTS ( SELECT 1
+                   FROM "public"."audit_log" "b"
+                  WHERE (("b"."table_name" = 'items'::"text") AND ("b"."action" = 'INSERT'::"text") AND ("b"."row_pk" = "a"."row_pk") AND ("b"."at" = "a"."at"))))))
+        UNION ALL
+         SELECT "a"."id",
+            "a"."at",
+            "a"."actor",
+            (("a"."new_data" ->> 'item_id'::"text"))::"uuid" AS "uuid",
+            (("a"."new_data" ->> 'sale_day_id'::"text"))::"uuid" AS "uuid",
+            "f"."field",
+            ("a"."old_data" ->> "f"."field"),
+            ("a"."new_data" ->> "f"."field")
+           FROM ("public"."audit_log" "a"
+             CROSS JOIN ( VALUES ('check_count'::"text"), ('left_count'::"text")) "f"("field"))
+          WHERE (("a"."table_name" = 'sale_day_items'::"text") AND ("a"."action" = ANY (ARRAY['INSERT'::"text", 'UPDATE'::"text"])) AND (("a"."new_data" ->> "f"."field") IS NOT NULL) AND (("f"."field" = 'check_count'::"text") OR (("a"."old_data" ->> "f"."field") IS NOT NULL)) AND (("a"."old_data" ->> "f"."field") IS DISTINCT FROM ("a"."new_data" ->> "f"."field")))
+        UNION ALL
+         SELECT "a"."id",
+            "a"."at",
+            "a"."actor",
+            NULL::"uuid" AS "uuid",
+            (("a"."new_data" ->> 'id'::"text"))::"uuid" AS "uuid",
+            'phase'::"text",
+            ("a"."old_data" ->> 'phase'::"text"),
+            ("a"."new_data" ->> 'phase'::"text")
+           FROM "public"."audit_log" "a"
+          WHERE (("a"."table_name" = 'sale_days'::"text") AND ("a"."action" = 'UPDATE'::"text") AND (("a"."old_data" ->> 'phase'::"text") IS DISTINCT FROM ("a"."new_data" ->> 'phase'::"text")))
+        )
+ SELECT "c"."id",
+    "c"."at",
+    "c"."item_id",
+    "i"."name" AS "item_name",
+    "c"."sale_day_id",
+    "c"."field",
+    "c"."old_value",
+    "c"."new_value",
+    "c"."actor" AS "actor_id",
+    "p"."display_name" AS "actor_name"
+   FROM (("changes" "c"
+     LEFT JOIN "public"."items" "i" ON (("i"."id" = "c"."item_id")))
+     LEFT JOIN "public"."profiles" "p" ON (("p"."id" = "c"."actor")));
+
+ALTER VIEW "public"."change_history" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."purchase_lines" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -860,27 +949,6 @@ CREATE OR REPLACE VIEW "public"."claims" WITH ("security_invoker"='true') AS
      JOIN "public"."profiles" "pr" ON (("pr"."id" = "p"."buyer_id")));
 
 ALTER VIEW "public"."claims" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."items" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "name" "text" NOT NULL,
-    "type" "public"."item_type" NOT NULL,
-    "storage" "public"."storage_kind" DEFAULT 'shelf'::"public"."storage_kind" NOT NULL,
-    "price_cents" integer,
-    "bundle_size" integer DEFAULT 1 NOT NULL,
-    "unit_cost_cents" numeric(10,2) DEFAULT 0 NOT NULL,
-    "archived" boolean DEFAULT false NOT NULL,
-    "version" integer DEFAULT 1 NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_by" "uuid" DEFAULT "public"."actor"(),
-    CONSTRAINT "items_name_check" CHECK (("length"(TRIM(BOTH FROM "name")) > 0)),
-    CONSTRAINT "items_price_option" CHECK ((("price_cents" IS NULL) OR (("price_cents" = 100) AND ("bundle_size" = ANY (ARRAY[1, 2, 3]))) OR (("price_cents" = 200) AND ("bundle_size" = 1)))),
-    CONSTRAINT "items_unit_cost_cents_check" CHECK (("unit_cost_cents" >= (0)::numeric))
-);
-
-ALTER TABLE "public"."items" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."sale_days" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -1815,9 +1883,17 @@ GRANT ALL ON TABLE "public"."cash_counts" TO "anon";
 GRANT ALL ON TABLE "public"."cash_counts" TO "authenticated";
 GRANT ALL ON TABLE "public"."cash_counts" TO "service_role";
 
+GRANT ALL ON TABLE "public"."items" TO "anon";
+GRANT ALL ON TABLE "public"."items" TO "authenticated";
+GRANT ALL ON TABLE "public"."items" TO "service_role";
+
 GRANT ALL ON TABLE "public"."profiles" TO "anon";
 GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
 GRANT ALL ON TABLE "public"."profiles" TO "service_role";
+
+GRANT ALL ON TABLE "public"."change_history" TO "anon";
+GRANT ALL ON TABLE "public"."change_history" TO "authenticated";
+GRANT ALL ON TABLE "public"."change_history" TO "service_role";
 
 GRANT ALL ON TABLE "public"."purchase_lines" TO "anon";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "authenticated";
@@ -1830,10 +1906,6 @@ GRANT ALL ON TABLE "public"."purchases" TO "service_role";
 GRANT ALL ON TABLE "public"."claims" TO "anon";
 GRANT ALL ON TABLE "public"."claims" TO "authenticated";
 GRANT ALL ON TABLE "public"."claims" TO "service_role";
-
-GRANT ALL ON TABLE "public"."items" TO "anon";
-GRANT ALL ON TABLE "public"."items" TO "authenticated";
-GRANT ALL ON TABLE "public"."items" TO "service_role";
 
 GRANT ALL ON TABLE "public"."sale_days" TO "anon";
 GRANT ALL ON TABLE "public"."sale_days" TO "authenticated";

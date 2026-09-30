@@ -871,6 +871,21 @@ export type Database = {
       }
     }
     Views: {
+      change_history: {
+        Row: {
+          actor_id: string | null
+          actor_name: string | null
+          at: string | null
+          field: string | null
+          id: number | null
+          item_id: string | null
+          item_name: string | null
+          new_value: string | null
+          old_value: string | null
+          sale_day_id: string | null
+        }
+        Relationships: []
+      }
       claims: {
         Row: {
           buyer_id: string | null

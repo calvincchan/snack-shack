@@ -69,6 +69,7 @@ All views use `security_invoker = true`, so row level security still applies.
 | `sale_day_lineup` | Per lineup item: today's price, deal size and type (locked once the sale starts), the pieces Check stock expects, the counts entered, and the pieces-a-day rate behind the lineup margin |
 | `sale_day_lineup_totals` | Per sale day: `day_no`, date, phase, float, `snacks`, `treats`, `items_off` and the weighted lineup `margin` |
 | `item_sale_stats` | Per item across closed sale days: `days_out`, `pieces_sold`, `pieces_per_day_out`, `sales_since_out` (0 = out at the last sale, null = never), `sold_out_recently` (closed at 0 in the last 2), `sold_out_days` |
+| `change_history` | One row per changed field, read from `audit_log`, for the history lists: item edits (`name`, `price` as `cents/bundle`, `type`, `storage`, `archived`), sale day counts (`check_count`, `left_count`) and `phase`. Skips unit cost, version bumps, an item's first pricing in `log_purchase`, and `begin_count`'s automatic fill |
 
 ## Functions (the only way to do the important things)
 

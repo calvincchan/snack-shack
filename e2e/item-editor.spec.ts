@@ -110,3 +110,16 @@ test('two phones editing the same item: the second save asks whose edit to keep'
   await firstPhone.close()
   await secondPhone.close()
 })
+
+test('the editor lists who changed an item and when', async ({ page }) => {
+  await openItems(page, COORDINATOR_EMAIL)
+  const editor = await openEditor(page, 'Cheddar crackers')
+
+  await editor.getByRole('button', { name: /^\$2/ }).click()
+  await editor.getByRole('button', { name: 'Save' }).click()
+
+  const reopened = await openEditor(page, 'Cheddar crackers')
+  await reopened.getByRole('button', { name: 'History' }).click()
+  await expect(reopened.getByText('Price changed $1 → $2')).toBeVisible()
+  await expect(reopened.getByText(/ · /).first()).toBeVisible()
+})
