@@ -30,6 +30,7 @@ import {
 } from '@/lib/items'
 import { formatMargin, priceLabel, priceOptions } from '@/lib/pricing'
 import { timeAgo } from '@/lib/time'
+import { HistoryList } from '@/components/history-list'
 
 function editOf(item: Item): ItemEdit {
   return {
@@ -276,6 +277,8 @@ export function ItemEditor({
                 {item.archived ? 'Put back on the list' : 'Archive this item'}
               </Button>
             </div>
+
+            <HistoryList scope={{ kind: 'item', id: item.id }} />
           </div>
         </SheetContent>
       </Sheet>

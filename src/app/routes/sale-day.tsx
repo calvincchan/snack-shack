@@ -16,6 +16,7 @@ import {
   type SaleDay,
 } from '@/lib/sale-day'
 import { useSaleDayLive } from '@/lib/live-sale-day'
+import { HistoryList } from '@/components/history-list'
 import { presenceLabels, type Activity } from '@/lib/presence'
 import { formatCents } from '@/lib/money'
 import { formatSaleDate } from '@/lib/time'
@@ -101,6 +102,8 @@ export function SaleDayPage() {
       {day.phase === 'counting' && (
         <CountUp saleDay={day} onActivity={setActivity} />
       )}
+
+      <HistoryList scope={{ kind: 'sale-day', id: day.id }} />
     </div>
   )
 }

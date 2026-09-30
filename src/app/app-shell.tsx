@@ -18,6 +18,7 @@ import { SignInPage } from '@/app/routes/sign-in'
 import { NoProfilePage } from '@/app/routes/no-profile'
 import { MarkPaidPage } from '@/app/routes/mark-paid'
 import { AccountMenu } from '@/app/account-menu'
+import { InstallBanner } from '@/components/install-banner'
 import { useAuth } from '@/lib/auth'
 import { useItems } from '@/lib/items'
 import { useSaleDay } from '@/lib/sale-day'
@@ -79,6 +80,8 @@ function MemberShell() {
           </div>
           <AccountMenu />
         </header>
+
+        <InstallBanner />
 
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <Routes>
