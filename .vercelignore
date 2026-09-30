@@ -1,0 +1,7 @@
+.codegraph
+node_modules
+test-results
+playwright-report
+supabase
+docs
+.env.local
