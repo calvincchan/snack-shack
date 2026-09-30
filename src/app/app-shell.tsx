@@ -83,7 +83,10 @@ function MemberShell() {
 
         <InstallBanner />
 
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <main
+          tabIndex={0}
+          className="focus-visible:ring-ring/50 min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:ring-[3px] focus-visible:ring-inset"
+        >
           <Routes>
             <Route path="/" element={<SaleDayPage />} />
             <Route path="/sell" element={<SellPage />} />
@@ -104,7 +107,7 @@ function MemberShell() {
                 cn(
                   'flex min-h-12 flex-col items-center justify-center gap-0.5 py-2 text-xs',
                   isActive
-                    ? 'text-primary'
+                    ? 'text-foreground font-semibold'
                     : 'text-muted-foreground hover:text-foreground',
                 )
               }
@@ -113,7 +116,7 @@ function MemberShell() {
               <span>
                 {label}
                 {to === '/items' && needPrice > 0 && (
-                  <span className="text-primary"> ({needPrice})</span>
+                  <span className="text-warn"> ({needPrice})</span>
                 )}
               </span>
             </NavLink>
