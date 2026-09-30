@@ -12,7 +12,8 @@ export default defineConfig({
     baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Phone size: the app is for one-handed use at the table.
+  projects: [{ name: 'phone', use: { ...devices['Pixel 7'] } }],
   webServer: {
     command: 'pnpm build && pnpm exec vite preview --port 4173 --strictPort',
     url: 'http://localhost:4173',

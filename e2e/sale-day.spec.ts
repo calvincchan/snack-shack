@@ -171,6 +171,7 @@ test('one volunteer signs off, both phones see the deposit', async ({
   await page.getByRole('button', { name: 'Count cash' }).click()
 
   // Wi-Fi drops mid-count: the taps queue, then land once when it returns.
+  await expect(page.getByRole('button', { name: 'One more $20' })).toBeVisible()
   await page.context().setOffline(true)
   await page.getByRole('button', { name: 'One more $20' }).click()
   await page.getByRole('button', { name: 'One more $20' }).click()
@@ -187,7 +188,7 @@ test('one volunteer signs off, both phones see the deposit', async ({
   await expect(finish).toBeEnabled()
 
   // A second volunteer is on their own phone; they land on Done too.
-  const context = await browser.newContext()
+  const context = await browser.newContext(test.info().project.use)
   const second = await context.newPage()
   await openSaleDay(second, VOLUNTEER_EMAIL)
   await finish.click()

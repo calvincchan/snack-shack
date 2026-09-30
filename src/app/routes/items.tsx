@@ -189,7 +189,7 @@ function ItemRow({
       <button
         type="button"
         onClick={onOpen}
-        className="hover:bg-accent flex w-full items-center gap-3 p-3 text-left"
+        className="text-foreground hover:bg-accent flex w-full items-center gap-3 p-3 text-left"
       >
         <TypeDot type={item.type} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">

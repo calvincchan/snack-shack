@@ -40,8 +40,8 @@ test('tips call out what ran out and what the last count up said', async ({
 test('one volunteer claims the shopping trip and everyone else sees it', async ({
   browser,
 }) => {
-  const yukisPhone = await browser.newContext()
-  const calvinsPhone = await browser.newContext()
+  const yukisPhone = await browser.newContext(test.info().project.use)
+  const calvinsPhone = await browser.newContext(test.info().project.use)
   const yuki = await yukisPhone.newPage()
   const calvin = await calvinsPhone.newPage()
 

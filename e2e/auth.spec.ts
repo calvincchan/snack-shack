@@ -50,8 +50,8 @@ test('the coordinator changes a setting', async ({ page }) => {
 })
 
 test('two phones sign in as two different volunteers', async ({ browser }) => {
-  const coordinatorPhone = await browser.newContext()
-  const volunteerPhone = await browser.newContext()
+  const coordinatorPhone = await browser.newContext(test.info().project.use)
+  const volunteerPhone = await browser.newContext(test.info().project.use)
 
   const coordinator = await coordinatorPhone.newPage()
   await signIn(coordinator, COORDINATOR_EMAIL)
