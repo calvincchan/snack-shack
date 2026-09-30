@@ -70,8 +70,8 @@ test('archiving takes an item off the list, and it can come back', async ({
 test('two phones editing the same item: the second save asks whose edit to keep', async ({
   browser,
 }) => {
-  const firstPhone = await browser.newContext()
-  const secondPhone = await browser.newContext()
+  const firstPhone = await browser.newContext(test.info().project.use)
+  const secondPhone = await browser.newContext(test.info().project.use)
   const yuki = await firstPhone.newPage()
   const calvin = await secondPhone.newPage()
 

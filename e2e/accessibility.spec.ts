@@ -82,7 +82,12 @@ test('every button sets its own text colour', async ({ page }) => {
           const parent = getComputedStyle(el.parentElement!).color
           // Browsers give buttons ButtonText, not the parent's colour; if
           // it matches the parent, the colour came from inheritance.
-          return own === parent && !/\btext-/.test(el.className)
+          return (
+            own === parent &&
+            !/\btext-(?!xs|sm|base|lg|xl|\d|left|center|right)/.test(
+              el.className,
+            )
+          )
         })
         .map((el) => el.textContent?.trim().slice(0, 30)),
     )
@@ -90,15 +95,25 @@ test('every button sets its own text colour', async ({ page }) => {
   }
 })
 
-test('keyboard focus is visible on the tab bar', async ({ page }) => {
+test('keyboard focus shows a ring on links, buttons and fields', async ({
+  page,
+}) => {
   await signIn(page, COORDINATOR_EMAIL)
-  const link = page.getByRole('link', { name: 'Sell', exact: true })
-  await link.focus()
-  await page.keyboard.press('Tab')
-  await page.keyboard.press('Shift+Tab')
-  const outline = await link.evaluate((el) => {
-    const s = getComputedStyle(el)
-    return `${s.outlineStyle} ${s.boxShadow}`
-  })
-  expect(outline).not.toBe('none none')
+  await page.getByRole('link', { name: 'Items' }).click()
+  // Walk the page with the keyboard; each stop must draw a ring.
+  const rings: string[] = []
+  for (let stop = 0; stop < 8; stop++) {
+    await page.keyboard.press('Tab')
+    rings.push(
+      await page.evaluate(() => {
+        const el = document.activeElement!
+        // Focus rests on the page itself before the first stop.
+        if (el === document.body) return ''
+        const s = getComputedStyle(el)
+        const ring = s.boxShadow !== 'none' || s.outlineStyle !== 'none'
+        return ring ? '' : el.outerHTML.slice(0, 60)
+      }),
+    )
+  }
+  expect(rings.filter(Boolean)).toEqual([])
 })
