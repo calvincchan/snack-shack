@@ -26,10 +26,17 @@ function base64(text: string): string {
   return btoa(binary)
 }
 
+// The test button calls this from the browser, which sends a preflight first.
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, apikey, content-type, x-client-info',
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...cors, 'Content-Type': 'application/json' },
   })
 
 function vancouverHour(now: Date): number {
@@ -43,6 +50,7 @@ function vancouverHour(now: Date): number {
 }
 
 Deno.serve(async (request) => {
+  if (request.method === 'OPTIONS') return new Response(null, { headers: cors })
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405)
 
   const url = Deno.env.get('SUPABASE_URL')!
