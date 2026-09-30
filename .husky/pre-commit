@@ -1,12 +1,16 @@
 pnpm lint-staged
 
 # A migration ships in the same commit as the types and schema dump it produces.
+# If `pnpm db:sync` changed either file, it must be staged. (A migration that
+# leaves them identical, like a storage bucket, stages nothing; CI checks they
+# are fresh.)
 staged=$(git diff --cached --name-only)
 if echo "$staged" | grep -q '^supabase/migrations/.*\.sql$'; then
+  unstaged=$(git diff --name-only)
   for file in src/lib/database.types.ts supabase/schema.sql; do
-    echo "$staged" | grep -qx "$file" || {
-      echo "Migration staged without $file. Run 'pnpm db:reset' and stage it."
+    if echo "$unstaged" | grep -qx "$file"; then
+      echo "Migration staged but $file has unstaged changes. Stage it (run 'pnpm db:reset' first if unsure)."
       exit 1
-    }
+    fi
   done
 fi

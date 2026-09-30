@@ -1,0 +1,57 @@
+name: Weekly backup
+
+# Dumps the production database and stores it in the private `backups` bucket
+# in Supabase Storage. The free plan has no daily backups, so this is it.
+# Secrets: SUPABASE_DB_URL (session pooler URI; GitHub runners are IPv4 only),
+# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+
+on:
+  schedule:
+    - cron: '0 11 * * 0'
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    env:
+      KEEP: 8
+    steps:
+      - name: Install the Postgres 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Dump
+        run: |
+          pg_dump "${{ secrets.SUPABASE_DB_URL }}" \
+            --no-owner --no-privileges \
+            --schema=public --schema=auth --schema=storage \
+            | gzip > "snack-shack-$(date -u +%Y-%m-%d).sql.gz"
+          ls -l *.sql.gz
+
+      - name: Upload
+        run: |
+          file=$(ls snack-shack-*.sql.gz)
+          curl -fsS -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/backups/$file" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "x-upsert: true" \
+            -H "Content-Type: application/gzip" \
+            --data-binary "@$file"
+
+      - name: Keep the newest backups only
+        run: |
+          base="${{ secrets.SUPABASE_URL }}/storage/v1/object"
+          auth="Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
+          old=$(curl -fsS -X POST "$base/list/backups" -H "$auth" \
+            -H "Content-Type: application/json" \
+            -d '{"prefix":"","limit":100,"sortBy":{"column":"name","order":"desc"}}' \
+            | jq -c --argjson keep "$KEEP" '[.[].name] | .[$keep:]')
+          if [ "$old" != "[]" ]; then
+            curl -fsS -X DELETE "$base/backups" -H "$auth" \
+              -H "Content-Type: application/json" \
+              -d "{\"prefixes\": $old}"
+          fi
