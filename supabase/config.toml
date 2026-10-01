@@ -248,6 +248,12 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# The sign-in email carries a 6-digit code as well as the link. A link opens
+# in Safari, not the home screen app, so the app takes the code instead.
+[auth.email.template.magic_link]
+subject = "Your Snack Shack sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"

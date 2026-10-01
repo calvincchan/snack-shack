@@ -51,7 +51,7 @@ export async function signIn(page: Page, email: string) {
   await page.getByLabel('Email').fill(email)
 
   const sent = page.getByRole('heading', { name: 'Check your email' })
-  const send = page.getByRole('button', { name: 'Send me a link' })
+  const send = page.getByRole('button', { name: 'Email me a code' })
 
   // Supabase throttles repeated links to the same address, and a test run asks
   // for several. Wait out the throttle rather than failing the test.
