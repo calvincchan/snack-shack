@@ -37,6 +37,7 @@ export function signedInAs(profile: Partial<Profile> = {}) {
 }
 
 export const signInWithOtp = vi.fn(async () => ({ data: {}, error: null }))
+export const verifyOtp = vi.fn(async () => ({ data: {}, error: null }))
 export const signOut = vi.fn(async () => {
   signedOut()
   return { error: null }
@@ -53,6 +54,7 @@ export const supabase = {
       data: { subscription: { unsubscribe: () => {} } },
     }),
     signInWithOtp,
+    verifyOtp,
     signOut,
   },
   from: (table: string) => ({

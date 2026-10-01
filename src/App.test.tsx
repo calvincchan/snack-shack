@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
@@ -8,8 +8,13 @@ vi.mock('@/lib/supabase', async () => {
   return { supabase: fake.supabase }
 })
 
-const { signedOut, signedInAs, signedInWithoutProfile } =
-  await import('@/test/fake-supabase')
+const {
+  signedOut,
+  signedInAs,
+  signedInWithoutProfile,
+  signInWithOtp,
+  verifyOtp,
+} = await import('@/test/fake-supabase')
 const { AuthProvider } = await import('@/lib/auth')
 const App = (await import('./App')).default
 
@@ -36,11 +41,59 @@ describe('App', () => {
 
     expect(await screen.findByLabelText('Email')).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Send me a link' }),
+      screen.getByRole('button', { name: 'Email me a code' }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('link', { name: 'Sale day' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('emails a code, then signs in with the code typed in', async () => {
+    renderApp()
+
+    fireEvent.change(await screen.findByLabelText('Email'), {
+      target: { value: 'yuki@example.com' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Email me a code' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Check your email' }),
+    ).toBeInTheDocument()
+    expect(signInWithOtp).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'yuki@example.com' }),
+    )
+
+    fireEvent.change(screen.getByLabelText('Code'), {
+      target: { value: '123456' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    await waitFor(() =>
+      expect(verifyOtp).toHaveBeenCalledWith({
+        email: 'yuki@example.com',
+        token: '123456',
+        type: 'email',
+      }),
+    )
+  })
+
+  it('rejects a code that is not 6 digits without calling Supabase', async () => {
+    renderApp()
+
+    fireEvent.change(await screen.findByLabelText('Email'), {
+      target: { value: 'yuki@example.com' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Email me a code' }))
+    fireEvent.change(await screen.findByLabelText('Code'), {
+      target: { value: '12ab' },
+    })
+    verifyOtp.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Enter the 6-digit code.',
+    )
+    expect(verifyOtp).not.toHaveBeenCalled()
   })
 
   it('sends someone with no profile to the coordinator', async () => {

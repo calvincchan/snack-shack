@@ -39,27 +39,7 @@ export function SignInPage() {
   }
 
   if (sentTo) {
-    return (
-      <main className="bg-background text-foreground mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
-        <MailCheck className="text-primary size-10" aria-hidden="true" />
-        <h1 className="font-heading text-2xl font-semibold">
-          Check your email
-        </h1>
-        <p className="text-muted-foreground">
-          We sent a sign-in link to{' '}
-          <span className="text-foreground">{sentTo}</span>. Open it on this
-          phone. The link signs you in and keeps you signed in.
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="text-foreground min-h-12"
-          onClick={() => setSentTo(null)}
-        >
-          Use a different email
-        </Button>
-      </main>
-    )
+    return <CodeStep email={sentTo} onBack={() => setSentTo(null)} />
   }
 
   return (
@@ -67,7 +47,7 @@ export function SignInPage() {
       <div className="flex flex-col gap-1">
         <h1 className="font-heading text-2xl font-semibold">Snack Shack</h1>
         <p className="text-muted-foreground">
-          Sign in with your email. We send you a link, so there is no password
+          Sign in with your email. We email you a code, so there is no password
           to remember.
         </p>
       </div>
@@ -98,9 +78,83 @@ export function SignInPage() {
           disabled={form.formState.isSubmitting}
           className="text-primary-foreground min-h-12"
         >
-          {form.formState.isSubmitting ? 'Sending…' : 'Send me a link'}
+          {form.formState.isSubmitting ? 'Sending…' : 'Email me a code'}
         </Button>
       </form>
+    </main>
+  )
+}
+
+const codeSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'Enter the 6-digit code.'),
+})
+
+type CodeValues = z.infer<typeof codeSchema>
+
+/** A link opens in Safari, not the home screen app, so the app takes the code. */
+function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
+  const form = useForm<CodeValues>({
+    resolver: zodResolver(codeSchema),
+    defaultValues: { code: '' },
+  })
+
+  async function onSubmit({ code }: CodeValues) {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'email',
+    })
+    if (error) form.setError('code', { message: error.message })
+  }
+
+  return (
+    <main className="bg-background text-foreground mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
+      <MailCheck className="text-primary size-10" aria-hidden="true" />
+      <h1 className="font-heading text-2xl font-semibold">Check your email</h1>
+      <p className="text-muted-foreground">
+        We sent a 6-digit code to{' '}
+        <span className="text-foreground">{email}</span>. Enter it here. You
+        stay signed in.
+      </p>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={form.handleSubmit(onSubmit)}
+        noValidate
+      >
+        <Label htmlFor="code">Code</Label>
+        <Input
+          id="code"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          className="min-h-12 tabular-nums"
+          aria-invalid={Boolean(form.formState.errors.code)}
+          {...form.register('code')}
+        />
+        {form.formState.errors.code && (
+          <p role="alert" className="text-destructive text-sm">
+            {form.formState.errors.code.message}
+          </p>
+        )}
+        <Button
+          type="submit"
+          disabled={form.formState.isSubmitting}
+          className="text-primary-foreground min-h-12"
+        >
+          {form.formState.isSubmitting ? 'Checking…' : 'Sign in'}
+        </Button>
+      </form>
+      <Button
+        type="button"
+        variant="outline"
+        className="text-foreground min-h-12"
+        onClick={onBack}
+      >
+        Use a different email
+      </Button>
     </main>
   )
 }
