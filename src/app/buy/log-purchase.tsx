@@ -196,7 +196,7 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
   return (
     <div className="flex flex-col gap-4">
       <section className="border-border bg-card flex flex-col gap-3 rounded-xl border p-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="purchased-on">Date</Label>
             <Input

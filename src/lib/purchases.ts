@@ -3,7 +3,13 @@ import { supabase } from '@/lib/supabase'
 import { itemsQueryKey } from '@/lib/items'
 import type { Enums } from '@/lib/database.types'
 
-export const STORES = ['Costco', 'Superstore', 'Walmart', 'Other'] as const
+export const STORES = [
+  'Costco',
+  'Wholesale Club',
+  'Superstore',
+  'Walmart',
+  'Other',
+] as const
 
 /** The volunteers who can be reimbursed. */
 export function useVolunteers() {
