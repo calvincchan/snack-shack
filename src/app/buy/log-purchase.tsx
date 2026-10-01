@@ -202,7 +202,7 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
             <Input
               id="purchased-on"
               type="date"
-              className="min-h-12"
+              className="inline-block min-h-12 max-w-full min-w-0 appearance-none [&::-webkit-date-and-time-value]:text-left"
               value={purchasedOn}
               onChange={(event) => setPurchasedOn(event.target.value)}
             />
