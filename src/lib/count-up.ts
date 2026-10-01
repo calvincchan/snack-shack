@@ -62,14 +62,14 @@ export function canFinish(totals: {
 
 /** Coins and bills counted at the end, biggest first. */
 export const DENOMINATIONS = [
-  { cents: 2000, label: '$20' },
-  { cents: 1000, label: '$10' },
-  { cents: 500, label: '$5' },
-  { cents: 200, label: 'Toonie' },
-  { cents: 100, label: 'Loonie' },
-  { cents: 25, label: 'Quarter' },
-  { cents: 10, label: 'Dime' },
-  { cents: 5, label: 'Nickel' },
+  { cents: 2000, label: '$20 Bill' },
+  { cents: 1000, label: '$10 Bill' },
+  { cents: 500, label: '$5 Bill' },
+  { cents: 200, label: '$2 Toonie' },
+  { cents: 100, label: '$1 Loonie' },
+  { cents: 25, label: '¢25 Quarter' },
+  { cents: 10, label: '¢10 Dime' },
+  { cents: 5, label: '¢5 Nickel' },
 ] as const
 
 type TotalsRow = Tables<'sale_day_totals'>
