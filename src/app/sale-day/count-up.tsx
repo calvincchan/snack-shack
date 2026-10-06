@@ -570,7 +570,7 @@ function SignOff({
         <p className="text-muted-foreground text-sm">
           {syncStatus === 'saving'
             ? 'Counts are still saving.'
-            : 'Some counts did not save. Change them again to retry.'}
+            : 'Some counts did not save. Check them and try again.'}
         </p>
       )}
 
