@@ -309,7 +309,7 @@ Possible later rules: over/short beyond ±$3 two sale days running; margin drop 
 - **Counts are per row** (sale day × item, sale day × coin), so two volunteers counting different things never touch the same row.
 - **Rare real collisions** (item edits) use a `version` column: save only if unchanged since loaded; otherwise show "Yuki changed this to $2 a minute ago. Keep yours or hers?"
 - **Live updates only on the Sale day screen:** Supabase Realtime on sale day rows and counts, plus Presence ("Yuki is counting cash"). Other tabs refetch on focus.
-- **Offline:** the count-up must survive a Wi-Fi drop. Queue writes locally with client-generated UUIDs so retries don't duplicate.
+- **Connection:** count-up needs a connection. Writes are plain online mutations; a failed write shows a clear error and "Not saved" until that row saves again. Purchases keep client-generated UUIDs so a retry doesn't duplicate (ADR-0012).
 - **Audit trail:** every row records who created and last changed it; a shared trigger writes old and new values to `audit_log` for the tables that matter. Show history where useful ("BBQ chips count changed 14 → 12 by Yuki at 12:58").
 
 ---

@@ -3,20 +3,148 @@
  * the counts. The maths is in the database; the only rules here are how the
  * numbers are shown and when Finish is allowed.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { formatCents } from '@/lib/money'
-import type { ItemType } from '@/lib/sale-day'
 import {
-  COUNT_KEY,
-  cashKey,
-  invalidateCountReads,
-  resultsKey,
-  signoffsKey,
-  totalsKey,
-  type CountWrite,
-} from '@/lib/count-queue'
+  lineupQueryKey,
+  optionsQueryKey,
+  recentClosedQueryKey,
+  saleDayQueryKey,
+  type ItemType,
+} from '@/lib/sale-day'
+import { itemsQueryKey } from '@/lib/items'
 import type { Tables } from '@/lib/database.types'
+
+export const COUNT_KEY = ['count'] as const
+
+export type CountWrite =
+  | {
+      kind: 'left-out'
+      saleDayId: string
+      itemId: string
+      left: number
+      out: number
+    }
+  | { kind: 'cash'; saleDayId: string; denomCents: number; qty: number }
+  | { kind: 'helper-credits'; saleDayId: string; credits: number }
+  | { kind: 'note'; saleDayId: string; note: string }
+
+function run(write: CountWrite) {
+  switch (write.kind) {
+    case 'left-out':
+      return supabase
+        .from('sale_day_items')
+        .update({ left_count: write.left, out_count: write.out })
+        .eq('sale_day_id', write.saleDayId)
+        .eq('item_id', write.itemId)
+    case 'cash':
+      return supabase
+        .from('cash_counts')
+        .update({ qty: write.qty })
+        .eq('sale_day_id', write.saleDayId)
+        .eq('denom_cents', write.denomCents)
+    case 'helper-credits':
+      return supabase
+        .from('sale_days')
+        .update({ helper_credits: write.credits })
+        .eq('id', write.saleDayId)
+    case 'note':
+      return supabase
+        .from('sale_days')
+        .update({
+          note: write.note.trim() === '' ? null : write.note.trim(),
+        })
+        .eq('id', write.saleDayId)
+  }
+}
+
+/** A dropped connection gets plain words; a database refusal is shown as-is. */
+export function countErrorMessage(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : ''
+  return /failed to fetch|load failed|network/i.test(message)
+    ? 'No connection. Change not saved.'
+    : message
+}
+
+async function send(write: CountWrite): Promise<void> {
+  const { error } = await run(write)
+  if (error) throw new Error(countErrorMessage(error))
+}
+
+/** What the count up reads, refreshed after a write settles. */
+export const totalsKey = ['sale-day-totals'] as const
+export const resultsKey = ['sale-day-results'] as const
+export const cashKey = ['cash-counts'] as const
+export const signoffsKey = ['signoffs'] as const
+
+const countReadKeys = [
+  totalsKey,
+  resultsKey,
+  cashKey,
+  signoffsKey,
+  ['sale-day-notes'],
+  saleDayQueryKey,
+  recentClosedQueryKey,
+  lineupQueryKey,
+  optionsQueryKey,
+  itemsQueryKey,
+  ['open-sale-day'],
+]
+
+export function invalidateCountReads(client: QueryClient) {
+  for (const queryKey of countReadKeys) {
+    void client.invalidateQueries({ queryKey })
+  }
+}
+
+export type CountSyncStatus = 'saved' | 'saving' | 'failed'
+
+/**
+ * "Saving" while any write is in flight. "Failed" while a row's latest write
+ * was refused and nothing has saved that row since; the next edit clears it.
+ */
+export function countSyncStatus(
+  writes: {
+    options: { scope?: { id: string } }
+    state: { status: string; submittedAt: number }
+  }[],
+): CountSyncStatus {
+  if (writes.some((w) => w.state.status === 'pending')) return 'saving'
+  const latest = new Map<string, (typeof writes)[number]>()
+  for (const w of writes) {
+    const row = w.options.scope?.id ?? ''
+    const seen = latest.get(row)
+    if (!seen || w.state.submittedAt >= seen.state.submittedAt) {
+      latest.set(row, w)
+    }
+  }
+  return [...latest.values()].some((w) => w.state.status === 'error')
+    ? 'failed'
+    : 'saved'
+}
+
+export function useCountSyncStatus(): CountSyncStatus {
+  const writes = useMutationState({
+    filters: { mutationKey: COUNT_KEY },
+    select: (m) => ({
+      options: { scope: m.options.scope },
+      state: { status: m.state.status, submittedAt: m.state.submittedAt },
+    }),
+  })
+  return countSyncStatus(writes)
+}
 
 export type OverShort = 'ok' | 'warn' | 'bad'
 
@@ -246,7 +374,7 @@ export function useSignoffs(saleDayId: string) {
   })
 }
 
-/** Sign-off and Finish need the database's answer, so they are never queued. */
+/** Sign-off and Finish change the phase, so they need the database's answer. */
 function usePhaseMutation(run: (saleDayId: string) => Promise<void>) {
   const queryClient = useQueryClient()
 
@@ -257,11 +385,20 @@ function usePhaseMutation(run: (saleDayId: string) => Promise<void>) {
   })
 }
 
-/** A queued write: waits while offline and sends in order when Wi-Fi returns. */
+/**
+ * A plain online write. The scope keeps writes to one row in order, so the
+ * last edit wins. Each write sets an absolute value, so a repeat is harmless.
+ */
 function useCountWrite<T extends CountWrite>(kind: T['kind'], scope: string) {
+  const queryClient = useQueryClient()
   return useMutation<void, Error, T>({
     mutationKey: [...COUNT_KEY, kind],
+    mutationFn: send,
     scope: { id: scope },
+    networkMode: 'always',
+    // A refused write must keep showing "Not saved" until its row saves again.
+    gcTime: Infinity,
+    onSettled: () => invalidateCountReads(queryClient),
   })
 }
 

@@ -170,13 +170,15 @@ test('one volunteer signs off, both phones see the deposit', async ({
   await expect(page.getByRole('status')).toHaveText('Saved')
   await page.getByRole('button', { name: 'Count cash' }).click()
 
-  // Wi-Fi drops mid-count: the taps queue, then land once when it returns.
+  // Wi-Fi drops mid-count: the write fails and says so; the next edit saves.
   await expect(page.getByRole('button', { name: 'One more $20' })).toBeVisible()
   await page.context().setOffline(true)
   await page.getByRole('button', { name: 'One more $20' }).click()
   await page.getByRole('button', { name: 'One more $20' }).click()
-  await expect(page.getByRole('status')).toHaveText('Waiting for Wi-Fi')
+  await expect(page.getByRole('status')).toHaveText('Not saved')
   await page.context().setOffline(false)
+  await page.getByRole('button', { name: 'One fewer $20' }).click()
+  await page.getByRole('button', { name: 'One more $20' }).click()
   await expect(page.getByRole('status')).toHaveText('Saved')
   await expect(page.getByText(/^Counted \$40\.00 of /)).toBeVisible()
 

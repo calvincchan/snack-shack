@@ -20,7 +20,7 @@ A mobile web app for parent volunteers who run an after-lunch snack table at an 
 
 ## Stack
 
-Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanStack Query, TanStack Router or React Router, react-hook-form + zod, Supabase (Postgres, Auth, Realtime, Storage, Edge Functions, Cron), Resend (or similar) for email, vite-plugin-pwa with persisted TanStack Query mutations for the offline count up, pnpm. Tests: pgTAP, Vitest, Playwright. Check current versions when scaffolding; don't pin from docs.
+Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanStack Query, TanStack Router or React Router, react-hook-form + zod, Supabase (Postgres, Auth, Realtime, Storage, Edge Functions, Cron), Resend (or similar) for email, vite-plugin-pwa for home screen install (no offline queue, ADR-0012), pnpm. Tests: pgTAP, Vitest, Playwright. Check current versions when scaffolding; don't pin from docs.
 
 ## Rules
 
@@ -28,7 +28,7 @@ Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanSta
 - **Business maths lives in Postgres** (views and functions). The UI reads views and calls functions. If you need a new calculation, add a view or function with a pgTAP test.
 - **Stock is an append-only ledger** (`stock_movements`). Never update or delete a movement; add a correction.
 - **Sale day phase changes only through the functions** (`start_sale`, `begin_count`, `sign_off`, `close_sale_day`). Show their error messages to the user as-is.
-- **Client-generated UUIDs** for anything created offline (purchases, count-up writes).
+- **Client-generated UUIDs** for anything a retry could repeat (purchases). Count-up writes need none: each sets one keyed row to an absolute value.
 - **Database types are generated, never hand-written.** Every migration ships in the same commit as the `pnpm db:sync` output (`src/lib/database.types.ts` and `supabase/schema.sql`); `pnpm db:reset` runs it for you, and CI fails if either file is stale. In TypeScript, derive from `Tables<'…'>`, `TablesInsert<'…'>` and `Enums<'…'>`; a view model may narrow a view's nullable columns, but its field types must still come from the generated row type.
 - **UI copy:** Canadian English (colour, centre, cheque) with "-ize" endings. Use the `CONTEXT.md` words (sale day, lineup, check stock, count up, change float, over/short, out, target stock). Keep copy short and plain.
 - **Mobile first:** touch targets 44–48 px, one-handed use, light and dark mode, tabular numbers.
