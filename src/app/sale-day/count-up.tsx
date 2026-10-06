@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, WifiOff } from 'lucide-react'
+import { Check, CircleAlert, Loader } from 'lucide-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { OverShortPill } from '@/components/over-short-pill'
@@ -18,6 +18,8 @@ import {
   overShortStatus,
   soldLabel,
   useCashCounts,
+  useCountSyncStatus,
+  type CountSyncStatus,
   useCountItems,
   useFinishCount,
   useSaleDayNotes,
@@ -33,7 +35,6 @@ import {
   type Thresholds,
   type Totals,
 } from '@/lib/count-up'
-import { useCountSyncStatus } from '@/lib/count-queue'
 import type { SaleDay } from '@/lib/sale-day'
 
 type Part = 'stock' | 'cash' | 'sign'
@@ -80,24 +81,32 @@ function useDebouncedSave() {
 
 const showError = (error: Error) => toast.error(error.message)
 
-/** Says whether every count is on the server or some wait for Wi-Fi. */
+/** Says whether every count is saved, saving, or refused. */
+const SYNC: Record<
+  CountSyncStatus,
+  { Icon: typeof Check; label: string; className: string }
+> = {
+  saved: { Icon: Check, label: 'Saved', className: 'text-muted-foreground' },
+  saving: {
+    Icon: Loader,
+    label: 'Saving…',
+    className: 'text-muted-foreground',
+  },
+  failed: { Icon: CircleAlert, label: 'Not saved', className: 'text-bad' },
+}
+
 function SyncIndicator() {
-  const status = useCountSyncStatus()
-  const waiting = status === 'waiting'
+  const { Icon, label, className } = SYNC[useCountSyncStatus()]
   return (
     <p
       role="status"
       className={cn(
         'flex items-center justify-end gap-1.5 text-sm font-medium',
-        waiting ? 'text-warn' : 'text-muted-foreground',
+        className,
       )}
     >
-      {waiting ? (
-        <WifiOff aria-hidden size={16} />
-      ) : (
-        <Check aria-hidden size={16} />
-      )}
-      {waiting ? 'Waiting for Wi-Fi' : 'Saved'}
+      <Icon aria-hidden size={16} />
+      {label}
     </p>
   )
 }
@@ -462,8 +471,9 @@ function SignOff({
   const setNote = useSetNote()
   const signOff = useSignOff()
   const finish = useFinishCount()
-  // Counts still waiting for Wi-Fi would land after these, so hold both.
-  const waiting = useCountSyncStatus() === 'waiting'
+  // Counts still saving, or not saved, would land after these, so hold both.
+  const syncStatus = useCountSyncStatus()
+  const unsaved = syncStatus !== 'saved'
   const [note, setLocalNote] = useState<string | null>(null)
   // Sign-offs vanish when any count changes after someone signed; say so.
   const [seen, setSeen] = useState(0)
@@ -549,16 +559,18 @@ function SignOff({
           type="button"
           variant="outline"
           className="text-foreground min-h-12"
-          disabled={iSigned || signOff.isPending || waiting}
+          disabled={iSigned || signOff.isPending || unsaved}
           onClick={() => signOff.mutate(saleDay.id, { onError: showError })}
         >
           {iSigned ? 'You confirmed' : 'I counted and confirm'}
         </Button>
       </section>
 
-      {waiting && (
+      {unsaved && (
         <p className="text-muted-foreground text-sm">
-          Counts are waiting for Wi-Fi. Confirm and finish once they save.
+          {syncStatus === 'saving'
+            ? 'Counts are still saving.'
+            : 'Some counts did not save. Check them and try again.'}
         </p>
       )}
 
@@ -580,7 +592,7 @@ function SignOff({
       <Button
         type="button"
         className="text-primary-foreground min-h-12 w-full"
-        disabled={!ready || finish.isPending || waiting}
+        disabled={!ready || finish.isPending || unsaved}
         onClick={async () => {
           try {
             // The note saves on blur, which can lose the race with this tap.

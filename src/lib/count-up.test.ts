@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   canFinish,
+  countErrorMessage,
+  countSyncStatus,
   overShortLabel,
   overShortStatus,
   soldLabel,
@@ -62,5 +64,50 @@ describe('canFinish', () => {
     expect(
       canFinish({ signoffs: 2, itemsOverStart: 0, itemsUncounted: 1 }),
     ).toBe(false)
+  })
+})
+
+describe('countErrorMessage', () => {
+  it('words a dropped connection plainly', () => {
+    expect(countErrorMessage(new TypeError('Failed to fetch'))).toBe(
+      'No connection. Change not saved.',
+    )
+    expect(countErrorMessage({ message: 'Load failed' })).toBe(
+      'No connection. Change not saved.',
+    )
+  })
+
+  it('passes a database refusal through as-is', () => {
+    expect(countErrorMessage({ message: 'Sale day is closed' })).toBe(
+      'Sale day is closed',
+    )
+  })
+})
+
+describe('countSyncStatus', () => {
+  const write = (
+    status: 'pending' | 'success' | 'error',
+    scope: string,
+    submittedAt: number,
+  ) => ({ options: { scope: { id: scope } }, state: { status, submittedAt } })
+
+  it('is saved with nothing written', () => {
+    expect(countSyncStatus([])).toBe('saved')
+  })
+
+  it('is saving while any write is in flight', () => {
+    expect(
+      countSyncStatus([write('error', 'a', 1), write('pending', 'b', 2)]),
+    ).toBe('saving')
+  })
+
+  it('is failed until the same row saves again', () => {
+    expect(countSyncStatus([write('error', 'a', 1)])).toBe('failed')
+    expect(
+      countSyncStatus([write('error', 'a', 1), write('success', 'b', 2)]),
+    ).toBe('failed')
+    expect(
+      countSyncStatus([write('error', 'a', 1), write('success', 'a', 2)]),
+    ).toBe('saved')
   })
 })

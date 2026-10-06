@@ -5,7 +5,7 @@ The schema is in [`supabase/migrations/`](../supabase/migrations/). It is a **re
 Conventions:
 - **Money:** integer **cents** (`*_cents int`). Unit cost is fractional cents: `unit_cost_cents numeric(10,2)` (13.84 = 13.84¢).
 - **Stock:** integer **pieces**, even for deal items.
-- **IDs:** `uuid`. Clients may generate them so offline retries don't duplicate.
+- **IDs:** `uuid`. Clients may generate them so a retry does not duplicate (purchases).
 - **Who/when:** `created_by`, `updated_by` default to `public.actor()`, which is the signed-in user, or the treasurer when an Edge Function redeems a signed link.
 - Business maths lives in **views and functions**. The frontend reads views and calls functions; it doesn't compute money.
 
