@@ -55,6 +55,37 @@ test('tapping a claim shows its lines and status, tapping again hides them', asy
   await expect(page.getByText(/PAID 2026-.*E-transfer/)).toBeVisible()
 })
 
+test('a refund shows as a minus line, lowers the total, and can be undone', async ({
+  page,
+}) => {
+  await signIn(page, COORDINATOR_EMAIL)
+  await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Claims' }).click()
+
+  const yuki = page.getByRole('list', { name: 'Claims to pay Yuki' })
+  const claim = page.getByRole('button', { name: /SS-003/ })
+  await expect(claim).toContainText('$42.72')
+  await claim.click()
+
+  await page.getByRole('button', { name: 'Refund', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByLabel('Pieces returned')).not.toHaveValue('')
+  // Fewer pieces reworks the amount until one is typed.
+  await dialog.getByLabel('Pieces returned').fill('1')
+  const prefilled = await dialog.getByLabel('Refund amount').inputValue()
+  expect(Number(prefilled)).toBeGreaterThan(0)
+  await dialog.getByLabel('Note (optional)').fill('Box was crushed')
+  await dialog.getByRole('button', { name: 'Save refund' }).click()
+  await expect(dialog).toHaveCount(0)
+
+  await expect(yuki.getByText(/REFUND ×1/)).toBeVisible()
+  await expect(claim).not.toContainText('$42.72')
+
+  await page.getByRole('button', { name: /Undo refund/ }).click()
+  await expect(yuki.getByText(/REFUND ×/)).toHaveCount(0)
+  await expect(claim).toContainText('$42.72')
+})
+
 test('the CSV ledger can be downloaded', async ({ page }) => {
   await signIn(page, COORDINATOR_EMAIL)
   await page.getByRole('link', { name: 'Buy' }).click()
@@ -69,7 +100,7 @@ test('the CSV ledger can be downloaded', async ({ page }) => {
   const stream = await file.createReadStream()
   const csv = (await stream.toArray()).join('')
   expect(csv.split('\n')[0]).toBe(
-    'Claim,Date,Store,Volunteer,Total,Status,Paid on,Reference',
+    'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Reference',
   )
   expect(csv).toContain('SS-001,2026-09-08,Costco,Calvin,')
   expect(csv).toContain('E-transfer')

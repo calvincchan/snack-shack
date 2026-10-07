@@ -54,7 +54,8 @@ CREATE TYPE "public"."movement_reason" AS ENUM (
     'damaged',
     'found',
     'donated',
-    'correction'
+    'correction',
+    'returned'
 );
 
 ALTER TYPE "public"."movement_reason" OWNER TO "postgres";
@@ -191,6 +192,15 @@ begin
 end $$;
 
 ALTER FUNCTION "public"."cash_counts_guard"() OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."cents_text"("p_cents" integer) RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO ''
+    AS $_$
+  select '$' || to_char(p_cents / 100.0, 'FM999,990.00')
+$_$;
+
+ALTER FUNCTION "public"."cents_text"("p_cents" integer) OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."clear_signoffs"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -365,14 +375,14 @@ begin
   select id into v_treasurer from public.profiles where role = 'treasurer' and active limit 1;
   if v_treasurer is null then raise exception 'No active treasurer account.'; end if;
   for r in
-    select c.buyer_id, c.buyer_name, sum(c.total_cents)::int as total, array_agg(c.id order by c.claim_no) as ids
-    from public.claims c where c.status = 'to_pay'
+    select c.buyer_id, c.buyer_name, sum(c.net_cents)::int as total, array_agg(c.id order by c.claim_no) as ids
+    from public.claims c where c.status = 'to_pay' and c.net_cents > 0
     group by c.buyer_id, c.buyer_name
   loop
     v_token := encode(extensions.gen_random_bytes(24), 'hex');
     insert into public.action_tokens (token_hash, purpose, payload, issued_to, expires_at)
     values (encode(extensions.digest(v_token, 'sha256'), 'hex'), 'mark_paid',
-            jsonb_build_object('buyer_id', r.buyer_id, 'purchase_ids', to_jsonb(r.ids)),
+            jsonb_build_object('buyer_id', r.buyer_id, 'purchase_ids', to_jsonb(r.ids), 'total_cents', r.total),
             v_treasurer, now() + p_valid);
     buyer_id := r.buyer_id; buyer_name := r.buyer_name; total_cents := r.total;
     purchase_ids := r.ids; token := v_token;
@@ -474,6 +484,7 @@ declare
   t public.action_tokens;
   v_count int;
   v_name text;
+  v_now_cents int;
 begin
   select * into t from public.action_tokens
    where token_hash = encode(extensions.digest(p_token, 'sha256'), 'hex')
@@ -481,6 +492,19 @@ begin
   if t.id is null then raise exception 'This link is not valid.' using errcode = 'SS001'; end if;
   if t.used_at is not null then raise exception 'This link has already been used.' using errcode = 'SS002'; end if;
   if t.expires_at < now() then raise exception 'This link has expired. Use the latest weekly email.' using errcode = 'SS003'; end if;
+
+  if t.payload ? 'total_cents' then
+    -- Lock the claims so a refund cannot land between this check and the update.
+    perform 1 from public.purchases
+     where id in (select jsonb_array_elements_text(t.payload -> 'purchase_ids')::uuid) for update;
+    select coalesce(sum(c.net_cents), 0) into v_now_cents
+      from public.claims c
+     where c.id in (select jsonb_array_elements_text(t.payload -> 'purchase_ids')::uuid);
+    if v_now_cents <> (t.payload ->> 'total_cents')::int then
+      raise exception 'The amount changed since this email. Check before you send money; use next week''s email.'
+        using errcode = 'SS004';
+    end if;
+  end if;
 
   perform set_config('app.actor', t.issued_to::text, true);
   update public.purchases
@@ -496,6 +520,62 @@ begin
 end $$;
 
 ALTER FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text" DEFAULT NULL::"text", "p_note" "text" DEFAULT NULL::"text") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_line public.purchase_lines;
+  v_claim public.purchases;
+  v_buyer text;
+  v_pieces_left int;
+  v_cents_left int;
+  v_on_hand int;
+begin
+  perform public.require_member();
+  if exists (select 1 from public.purchase_refunds where id = p_id) then return p_id; end if;
+
+  select * into v_line from public.purchase_lines where id = p_line for update;
+  if v_line.id is null then raise exception 'That line is not on a claim.'; end if;
+  -- Locked so a Mark paid link cannot be redeemed between our checks and the insert.
+  select * into v_claim from public.purchases where id = v_line.purchase_id for update;
+  select display_name into v_buyer from public.profiles where id = v_claim.buyer_id;
+
+  if v_claim.status = 'paid' then raise exception 'Already paid. Ask the treasurer.'; end if;
+  if v_claim.buyer_id <> auth.uid() and not public.has_role('admin') then
+    raise exception 'Only % or a coordinator can refund.', v_buyer;
+  end if;
+
+  if p_pieces is null or p_pieces < 1 then raise exception 'Enter the pieces.'; end if;
+  select v_line.pieces - coalesce(sum(r.pieces), 0), v_line.cost_cents - coalesce(sum(r.amount_cents), 0)
+    into v_pieces_left, v_cents_left
+    from public.purchase_refunds r where r.purchase_line_id = v_line.id;
+  if p_pieces > v_pieces_left then raise exception 'Only % left on this line.', v_pieces_left; end if;
+
+  select on_hand into v_on_hand from public.item_stock where id = v_line.item_id;
+  if p_pieces > greatest(v_on_hand, 0) then raise exception 'Only % on hand.', greatest(v_on_hand, 0); end if;
+
+  if exists (select 1 from public.sale_day_items sdi
+               join public.sale_days sd on sd.id = sdi.sale_day_id
+              where sdi.item_id = v_line.item_id and sd.phase in ('selling', 'counting')) then
+    raise exception 'Refund after today''s sale closes.';
+  end if;
+
+  if p_amount_cents is null or p_amount_cents <= 0 then raise exception 'Enter the refund amount.'; end if;
+  if p_amount_cents > v_cents_left then
+    raise exception 'Up to % left on this line.', public.cents_text(v_cents_left);
+  end if;
+
+  insert into public.purchase_refunds (id, purchase_line_id, pieces, amount_cents, refunded_on, slip_path, note)
+  values (p_id, p_line, p_pieces, p_amount_cents, p_refunded_on,
+          nullif(p_slip_path, ''), nullif(trim(coalesce(p_note, '')), ''));
+  insert into public.stock_movements (item_id, qty, reason, purchase_line_id, refund_id)
+  values (v_line.item_id, -p_pieces, 'returned', p_line, p_id);
+  return p_id;
+end $$;
+
+ALTER FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."require_member"() RETURNS "void"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
@@ -702,6 +782,35 @@ $$;
 
 ALTER FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."undo_refund"("p_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_refund public.purchase_refunds;
+  v_line public.purchase_lines;
+  v_claim public.purchases;
+  v_buyer text;
+begin
+  perform public.require_member();
+  select * into v_refund from public.purchase_refunds where id = p_id for update;
+  if v_refund.id is null then raise exception 'That refund is already gone.'; end if;
+  select * into v_line from public.purchase_lines where id = v_refund.purchase_line_id;
+  select * into v_claim from public.purchases where id = v_line.purchase_id for update;
+  select display_name into v_buyer from public.profiles where id = v_claim.buyer_id;
+
+  if v_claim.status = 'paid' then raise exception 'Already paid. Ask the treasurer.'; end if;
+  if v_claim.buyer_id <> auth.uid() and not public.has_role('admin') then
+    raise exception 'Only % or a coordinator can undo a refund.', v_buyer;
+  end if;
+
+  delete from public.purchase_refunds where id = p_id;
+  insert into public.stock_movements (item_id, qty, reason, purchase_line_id, refund_id, note)
+  values (v_line.item_id, v_refund.pieces, 'correction', v_line.id, p_id, 'Refund undone');
+end $$;
+
+ALTER FUNCTION "public"."undo_refund"("p_id" "uuid") OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date" DEFAULT "public"."treasurer_report_week"()) RETURNS "jsonb"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -716,13 +825,13 @@ CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "da
      where t.phase = 'closed'
        and t.sale_date between p_week_start and p_week_start + 6
   ), owed as (
-    select c.buyer_id, c.buyer_name, sum(c.total_cents)::int as total_cents,
+    select c.buyer_id, c.buyer_name, sum(c.net_cents)::int as total_cents,
            jsonb_agg(jsonb_build_object(
              'id', c.id, 'label', c.claim_label, 'purchased_on', c.purchased_on,
-             'store', c.store, 'total_cents', c.total_cents,
+             'store', c.store, 'total_cents', c.net_cents, 'refunded_cents', c.refunded_cents,
              'receipt_path', c.receipt_path) order by c.claim_no) as claims
       from public.claims c
-     where c.status = 'to_pay'
+     where c.status = 'to_pay' and c.net_cents > 0
      group by c.buyer_id, c.buyer_name
   )
   select jsonb_build_object(
@@ -734,7 +843,8 @@ CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "da
     'ledger', coalesce((
       select jsonb_agg(jsonb_build_object(
         'label', c.claim_label, 'purchased_on', c.purchased_on, 'store', c.store,
-        'buyer_name', c.buyer_name, 'total_cents', c.total_cents, 'status', c.status,
+        'buyer_name', c.buyer_name, 'total_cents', c.net_cents, 'refunded_cents', c.refunded_cents,
+        'status', case when c.status = 'to_pay' and c.net_cents = 0 then 'refunded' else c.status::text end,
         'paid_at', c.paid_at, 'payment_ref', c.payment_ref) order by c.claim_no)
       from public.claims c), '[]')
   )
@@ -909,17 +1019,57 @@ CREATE TABLE IF NOT EXISTS "public"."purchase_lines" (
 
 ALTER TABLE "public"."purchase_lines" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."purchase_refunds" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "purchase_line_id" "uuid" NOT NULL,
+    "pieces" integer NOT NULL,
+    "amount_cents" integer NOT NULL,
+    "refunded_on" "date" NOT NULL,
+    "slip_path" "text",
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "purchase_refunds_amount_cents_check" CHECK (("amount_cents" > 0)),
+    CONSTRAINT "purchase_refunds_pieces_check" CHECK (("pieces" >= 1))
+);
+
+ALTER TABLE "public"."purchase_refunds" OWNER TO "postgres";
+
 CREATE OR REPLACE VIEW "public"."claim_lines" WITH ("security_invoker"='true') AS
  SELECT "l"."id",
     "l"."purchase_id",
     "l"."line_no",
     "l"."pieces",
     "l"."cost_cents",
-    "i"."name" AS "item_name"
-   FROM ("public"."purchase_lines" "l"
-     JOIN "public"."items" "i" ON (("i"."id" = "l"."item_id")));
+    "i"."name" AS "item_name",
+    ("l"."pieces" - (COALESCE("rf"."pieces", (0)::bigint))::integer) AS "pieces_left",
+    ("l"."cost_cents" - (COALESCE("rf"."cents", (0)::bigint))::integer) AS "cents_left"
+   FROM (("public"."purchase_lines" "l"
+     JOIN "public"."items" "i" ON (("i"."id" = "l"."item_id")))
+     LEFT JOIN ( SELECT "purchase_refunds"."purchase_line_id",
+            "sum"("purchase_refunds"."pieces") AS "pieces",
+            "sum"("purchase_refunds"."amount_cents") AS "cents"
+           FROM "public"."purchase_refunds"
+          GROUP BY "purchase_refunds"."purchase_line_id") "rf" ON (("rf"."purchase_line_id" = "l"."id")));
 
 ALTER VIEW "public"."claim_lines" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."claim_refunds" WITH ("security_invoker"='true') AS
+ SELECT "r"."id",
+    "l"."purchase_id",
+    "r"."purchase_line_id",
+    "r"."pieces",
+    "r"."amount_cents",
+    "r"."refunded_on",
+    "r"."slip_path",
+    "r"."note",
+    "r"."created_at",
+    "pr"."display_name" AS "created_by_name"
+   FROM (("public"."purchase_refunds" "r"
+     JOIN "public"."purchase_lines" "l" ON (("l"."id" = "r"."purchase_line_id")))
+     LEFT JOIN "public"."profiles" "pr" ON (("pr"."id" = "r"."created_by")));
+
+ALTER VIEW "public"."claim_refunds" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."purchases" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -956,7 +1106,17 @@ CREATE OR REPLACE VIEW "public"."claims" WITH ("security_invoker"='true') AS
     (( SELECT COALESCE("sum"("l"."cost_cents"), (0)::bigint) AS "coalesce"
            FROM "public"."purchase_lines" "l"
           WHERE ("l"."purchase_id" = "p"."id")))::integer AS "total_cents",
-    "pr"."display_name" AS "buyer_name"
+    "pr"."display_name" AS "buyer_name",
+    (( SELECT COALESCE("sum"("r"."amount_cents"), (0)::bigint) AS "coalesce"
+           FROM ("public"."purchase_refunds" "r"
+             JOIN "public"."purchase_lines" "l" ON (("l"."id" = "r"."purchase_line_id")))
+          WHERE ("l"."purchase_id" = "p"."id")))::integer AS "refunded_cents",
+    ((( SELECT COALESCE("sum"("l"."cost_cents"), (0)::bigint) AS "coalesce"
+           FROM "public"."purchase_lines" "l"
+          WHERE ("l"."purchase_id" = "p"."id")) - ( SELECT COALESCE("sum"("r"."amount_cents"), (0)::bigint) AS "coalesce"
+           FROM ("public"."purchase_refunds" "r"
+             JOIN "public"."purchase_lines" "l" ON (("l"."id" = "r"."purchase_line_id")))
+          WHERE ("l"."purchase_id" = "p"."id"))))::integer AS "net_cents"
    FROM ("public"."purchases" "p"
      JOIN "public"."profiles" "pr" ON (("pr"."id" = "p"."buyer_id")));
 
@@ -992,8 +1152,9 @@ CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
     "note" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "created_by" "uuid" DEFAULT "public"."actor"(),
+    "refund_id" "uuid",
     CONSTRAINT "stock_movements_qty_check" CHECK (("qty" <> 0)),
-    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
+    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
 );
 
 ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
@@ -1524,6 +1685,9 @@ ALTER TABLE ONLY "public"."purchase_lines"
 ALTER TABLE ONLY "public"."purchase_lines"
     ADD CONSTRAINT "purchase_lines_purchase_id_line_no_key" UNIQUE ("purchase_id", "line_no");
 
+ALTER TABLE ONLY "public"."purchase_refunds"
+    ADD CONSTRAINT "purchase_refunds_pkey" PRIMARY KEY ("id");
+
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_claim_no_key" UNIQUE ("claim_no");
 
@@ -1554,6 +1718,8 @@ ALTER TABLE ONLY "public"."volunteer_invites"
 CREATE INDEX "audit_log_table_name_row_pk_idx" ON "public"."audit_log" USING "btree" ("table_name", "row_pk");
 
 CREATE UNIQUE INDEX "profiles_email_key" ON "public"."profiles" USING "btree" ("lower"("email"));
+
+CREATE INDEX "purchase_refunds_purchase_line_id_idx" ON "public"."purchase_refunds" USING "btree" ("purchase_line_id");
 
 CREATE UNIQUE INDEX "sale_days_one_open" ON "public"."sale_days" USING "btree" ((true)) WHERE ("phase" <> 'closed'::"public"."sale_phase");
 
@@ -1591,6 +1757,8 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."purchase_lines" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."purchase_refunds" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."purchases" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
@@ -1640,6 +1808,9 @@ ALTER TABLE ONLY "public"."purchase_lines"
 
 ALTER TABLE ONLY "public"."purchase_lines"
     ADD CONSTRAINT "purchase_lines_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "public"."purchases"("id") ON DELETE CASCADE;
+
+ALTER TABLE ONLY "public"."purchase_refunds"
+    ADD CONSTRAINT "purchase_refunds_purchase_line_id_fkey" FOREIGN KEY ("purchase_line_id") REFERENCES "public"."purchase_lines"("id") ON DELETE CASCADE;
 
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_buyer_id_fkey" FOREIGN KEY ("buyer_id") REFERENCES "public"."profiles"("id");
@@ -1712,6 +1883,8 @@ ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."purchase_lines" ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE "public"."purchase_refunds" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "public"."purchases" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "read_all" ON "public"."audit_log" FOR SELECT TO "authenticated" USING ("public"."is_member"());
@@ -1723,6 +1896,8 @@ CREATE POLICY "read_all" ON "public"."items" FOR SELECT TO "authenticated" USING
 CREATE POLICY "read_all" ON "public"."profiles" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
 CREATE POLICY "read_all" ON "public"."purchase_lines" FOR SELECT TO "authenticated" USING ("public"."is_member"());
+
+CREATE POLICY "read_all" ON "public"."purchase_refunds" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
 CREATE POLICY "read_all" ON "public"."purchases" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
@@ -1787,6 +1962,10 @@ GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "service_role";
 
+GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "anon";
+GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "service_role";
+
 GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "anon";
 GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "service_role";
@@ -1840,6 +2019,10 @@ GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."redeem_action_token"("p_token" "text", "p_payment_ref" "text") TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") TO "service_role";
+
 GRANT ALL ON FUNCTION "public"."require_member"() TO "anon";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "service_role";
@@ -1876,6 +2059,10 @@ GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with ti
 GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."undo_refund"("p_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."undo_refund"("p_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."undo_refund"("p_id" "uuid") TO "service_role";
+
 REVOKE ALL ON FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date") TO "service_role";
 
@@ -1911,9 +2098,17 @@ GRANT ALL ON TABLE "public"."purchase_lines" TO "anon";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "authenticated";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "service_role";
 
+GRANT ALL ON TABLE "public"."purchase_refunds" TO "anon";
+GRANT ALL ON TABLE "public"."purchase_refunds" TO "authenticated";
+GRANT ALL ON TABLE "public"."purchase_refunds" TO "service_role";
+
 GRANT ALL ON TABLE "public"."claim_lines" TO "anon";
 GRANT ALL ON TABLE "public"."claim_lines" TO "authenticated";
 GRANT ALL ON TABLE "public"."claim_lines" TO "service_role";
+
+GRANT ALL ON TABLE "public"."claim_refunds" TO "anon";
+GRANT ALL ON TABLE "public"."claim_refunds" TO "authenticated";
+GRANT ALL ON TABLE "public"."claim_refunds" TO "service_role";
 
 GRANT ALL ON TABLE "public"."purchases" TO "anon";
 GRANT ALL ON TABLE "public"."purchases" TO "authenticated";

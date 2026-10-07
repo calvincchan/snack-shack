@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase'
 
 export type MarkPaidResult =
   | { status: 'paid'; buyerName: string; count: number }
-  | { status: 'invalid' | 'used' | 'expired'; message: string }
+  | { status: 'invalid' | 'used' | 'expired' | 'changed'; message: string }
   | { status: 'error'; message: string }
 
 const TRY_AGAIN = 'Something went wrong. Try the link again.'
@@ -28,7 +28,10 @@ export function parseRedeem(body: unknown): MarkPaidResult {
     }
   }
   if (
-    (b.status === 'invalid' || b.status === 'used' || b.status === 'expired') &&
+    (b.status === 'invalid' ||
+      b.status === 'used' ||
+      b.status === 'expired' ||
+      b.status === 'changed') &&
     typeof b.message === 'string'
   ) {
     return { status: b.status, message: b.message }

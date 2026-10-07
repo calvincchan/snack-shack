@@ -78,6 +78,9 @@ export function MarkPaidPage() {
           >
             {result.message}
           </h1>
+          {result.status === 'changed' && (
+            <p className="text-muted-foreground">Nothing was marked paid.</p>
+          )}
           {result.status === 'used' && (
             <p className="text-muted-foreground">
               Those receipts are already marked paid.

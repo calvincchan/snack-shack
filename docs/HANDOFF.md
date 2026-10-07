@@ -130,10 +130,13 @@ Three segments: **What to buy · Log purchase · Claims**.
 - **Save and claim reimbursement:** adds the pieces to stock, updates item costs, creates the claim.
 
 **Claims**
-- Totals: owed to volunteers, reimbursed this term.
-- **To pay**, grouped by volunteer. **Paid** list with payment reference.
+- Totals: owed to volunteers, reimbursed this term. All totals use the **net** of each claim (receipt total minus refunds).
+- **To pay**, grouped by volunteer. **Paid** list with payment reference. Tap a claim to see its lines like the receipt.
+- **Refund** (To pay claims, buyer or coordinator only): opens a dialog with item picker (lines with pieces left), **pieces returned**, **refund amount**, **refunded on** (default today), optional note and optional slip photo. Pieces and amount start as everything left on the line; changing the pieces reworks the amount as cost left × pieces ÷ pieces left until the volunteer types an amount. Hint: "Worked out from the receipt, tax included. Check it against the refund slip."
+- Refunds print under their line as minus lines, with **Undo** while the claim is To pay. The returned pieces leave stock; undo puts them back. Refused after the claim is Paid, past the pieces left or on hand, or while the item is in a sale day that has started selling ("Refund after today's sale closes."). Unit cost is not recalculated (ADR-0013).
+- A claim refunded to $0 drops out of To pay and shows under **Paid** as "Refunded".
 - Preview of the weekly treasurer email (see §5.9).
-- **Copy CSV ledger.**
+- **Copy CSV ledger.** Total is net; a **Refunded** column shows the refunds.
 
 ### 4.4 Items
 
@@ -232,7 +235,7 @@ Output: band pill with the suggested price and margin; cost each; deals × price
 
 ### 5.5 Stock and the ledger
 
-- Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), sold (−), out during sale (−), missing (−), damaged (−), found (+), donated (−), correction (±).
+- Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), sold (−), out during sale (−), missing (−), damaged (−), found (+), donated (−), returned (−, a refund), correction (±, including the + that undoes a refund).
 - Current stock = sum of the item's rows.
 - Donations before summer are logged as **donated** movements.
 
@@ -292,7 +295,8 @@ Possible later rules: over/short beyond ±$3 two sale days running; margin drop 
   - **Deposits:** each sale day that week with volunteers, deposit amount and over/short.
   - **To reimburse:** per volunteer, number of receipts, claim numbers (linked to receipt photos), total, and a **"Mark [name] paid"** button.
   - **CSV ledger** attached.
-- Each button is a **one-time signed link** issued to the treasurer's account. It records the payment as the treasurer (audit trail shows who) and expires after 7 days.
+- Claims use their **net** (receipt minus refunds). The email shows net and notes a refund ("SS-002 $32.00, incl. $8.00 refund"). A claim at net $0 is left out of the email and gets no link. The CSV has a **Refunded** column and calls such a claim "Refunded".
+- Each button is a **one-time signed link** issued to the treasurer's account. It records the payment as the treasurer (audit trail shows who) and expires after 7 days. The link stores the total it was issued for. If a refund changes that total first, it refuses with "The amount changed since this email. Check before you send money; use next week's email."
 
 ### 5.10 Other rules
 

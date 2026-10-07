@@ -30,6 +30,7 @@ const report: Report = {
           purchased_on: '2026-09-18',
           store: 'Costco',
           total_cents: 4272,
+          refunded_cents: 0,
           receipt_path: 'c3/r.jpg',
         },
         {
@@ -37,7 +38,8 @@ const report: Report = {
           label: 'SS-004',
           purchased_on: '2026-09-25',
           store: 'Superstore',
-          total_cents: 3435,
+          total_cents: 2635,
+          refunded_cents: 800,
           receipt_path: 'c4/r.jpg',
         },
       ],
@@ -51,6 +53,7 @@ const report: Report = {
       store: 'Costco, "bulk"',
       buyer_name: 'Yuki',
       total_cents: 4272,
+      refunded_cents: 0,
       status: 'to_pay',
       paid_at: null,
       payment_ref: null,
@@ -61,6 +64,7 @@ const report: Report = {
       store: 'Costco',
       buyer_name: 'Calvin',
       total_cents: 5000,
+      refunded_cents: 0,
       status: 'paid',
       paid_at: '2026-09-12T18:00:00Z',
       payment_ref: 'E-transfer',
@@ -129,10 +133,34 @@ describe('buildEmail', () => {
 
   it('makes a CSV of the whole ledger, quoting commas and quotes', () => {
     expect(email.csv.split('\n')).toEqual([
-      'Claim,Date,Store,Volunteer,Total,Status,Paid on,Reference',
-      'SS-003,2026-09-18,"Costco, ""bulk""",Yuki,42.72,To pay,,',
-      'SS-001,2026-09-08,Costco,Calvin,50.00,Paid,2026-09-12,E-transfer',
+      'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Reference',
+      'SS-003,2026-09-18,"Costco, ""bulk""",Yuki,42.72,0.00,To pay,,',
+      'SS-001,2026-09-08,Costco,Calvin,50.00,0.00,Paid,2026-09-12,E-transfer',
     ])
+  })
+
+  it('notes a refund beside the net total, and says nothing when there is none', () => {
+    expect(email.html).toContain('Superstore, $26.35, incl. $8.00 refund')
+    expect(email.text).toContain('Superstore, $26.35, incl. $8.00 refund')
+    expect(email.html).toContain('Costco, $42.72)')
+  })
+
+  it('calls a claim refunded to $0 Refunded in the CSV', () => {
+    const csv = buildEmail(
+      {
+        ...report,
+        ledger: [
+          {
+            ...report.ledger[0],
+            total_cents: 0,
+            refunded_cents: 4272,
+            status: 'refunded',
+          },
+        ],
+      },
+      links,
+    ).csv
+    expect(csv.split('\n')[1]).toContain(',0.00,42.72,Refunded,')
   })
 
   it('escapes names so a store cannot inject markup', () => {

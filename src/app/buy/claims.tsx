@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronDown, Copy, Download, Receipt } from 'lucide-react'
+import { ChevronDown, Copy, Download, Receipt, Undo2 } from 'lucide-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
+import { RefundDialog } from '@/app/buy/refund-dialog'
+import { useAuth } from '@/lib/auth'
 import {
   claimsCsv,
   groupByBuyer,
+  isRefunded,
+  isToPay,
   receiptUrl,
   useClaims,
+  useUndoRefund,
   type Claim,
 } from '@/lib/claims'
 import { formatCents } from '@/lib/money'
@@ -16,11 +21,14 @@ export function Claims() {
   const claims = useClaims()
 
   const all = claims.data ?? []
-  const toPay = all.filter((claim) => claim.status === 'to_pay')
-  const paid = all.filter((claim) => claim.status === 'paid')
+  // A To pay claim refunded to $0 owes nothing, so it sits under Paid.
+  const toPay = all.filter(isToPay)
+  const paid = all.filter(
+    (claim) => claim.status === 'paid' || isRefunded(claim),
+  )
 
-  const owedCents = toPay.reduce((sum, claim) => sum + claim.totalCents, 0)
-  const paidCents = paid.reduce((sum, claim) => sum + claim.totalCents, 0)
+  const owedCents = toPay.reduce((sum, claim) => sum + claim.netCents, 0)
+  const paidCents = paid.reduce((sum, claim) => sum + claim.netCents, 0)
 
   async function copyLedger() {
     try {
@@ -100,8 +108,9 @@ export function Claims() {
               <li key={claim.id} className="flex flex-col p-2">
                 <ClaimRow claim={claim} />
                 <p className="text-muted-foreground px-1 text-sm">
-                  {claim.buyerName} · {claim.paymentRef ?? 'Paid'}
-                  {claim.paidAt && ` · ${claim.paidAt.slice(0, 10)}`}
+                  {isRefunded(claim)
+                    ? `${claim.buyerName} · Refunded`
+                    : `${claim.buyerName} · ${claim.paymentRef ?? 'Paid'}${claim.paidAt ? ` · ${claim.paidAt.slice(0, 10)}` : ''}`}
                 </p>
               </li>
             ))}
@@ -146,7 +155,27 @@ function Total({ label, cents }: { label: string; cents: number }) {
 
 function ClaimRow({ claim }: { claim: Claim }) {
   const [open, setOpen] = useState(false)
+  const [refunding, setRefunding] = useState(false)
+  const { profile, isCoordinator } = useAuth()
+  const undo = useUndoRefund()
   const panelId = `claim-${claim.id}`
+
+  const canRefund =
+    claim.status === 'to_pay' &&
+    !isRefunded(claim) &&
+    claim.lines.some((line) => line.piecesLeft > 0) &&
+    (isCoordinator || profile?.id === claim.buyerId)
+  // Only a To pay claim can still change. After that the treasurer owns it.
+  const canUndo =
+    claim.status === 'to_pay' &&
+    (isCoordinator || profile?.id === claim.buyerId)
+
+  function undoRefund(refundId: string) {
+    undo.mutate(refundId, {
+      onSuccess: () => toast.success('Refund undone. Pieces back in stock.'),
+      onError: (error) => toast.error(error.message),
+    })
+  }
 
   function openReceipt() {
     // The tab has to be opened inside the tap, before the signed URL is
@@ -190,7 +219,7 @@ function ClaimRow({ claim }: { claim: Claim }) {
             {claim.store} · {claim.purchasedOn}
           </span>
         </span>
-        <span className="tabular-nums">{formatCents(claim.totalCents)}</span>
+        <span className="tabular-nums">{formatCents(claim.netCents)}</span>
       </button>
       {open && (
         <div id={panelId} className="flex flex-col gap-3 p-1 pb-2">
@@ -201,13 +230,42 @@ function ClaimRow({ claim }: { claim: Claim }) {
             </p>
             <ul aria-label={`Lines on ${claim.label}`}>
               {claim.lines.map((line) => (
-                <li key={line.id} className="flex justify-between gap-2">
-                  <span>
-                    {line.item} ×{line.pieces}
-                  </span>
-                  <span className="tabular-nums">
-                    {formatCents(line.costCents)}
-                  </span>
+                <li key={line.id}>
+                  <p className="flex justify-between gap-2">
+                    <span>
+                      {line.item} ×{line.pieces}
+                    </span>
+                    <span className="tabular-nums">
+                      {formatCents(line.costCents)}
+                    </span>
+                  </p>
+                  {claim.refunds
+                    .filter((refund) => refund.lineId === line.id)
+                    .map((refund) => (
+                      <p
+                        key={refund.id}
+                        className="flex items-center justify-between gap-2 pl-3 text-red-700 dark:text-red-400"
+                      >
+                        <span>
+                          REFUND ×{refund.pieces}{' '}
+                          <span className="text-xs">{refund.refundedOn}</span>
+                        </span>
+                        <span className="flex items-center tabular-nums">
+                          −{formatCents(refund.amountCents)}
+                          {canUndo && (
+                            <button
+                              type="button"
+                              onClick={() => undoRefund(refund.id)}
+                              disabled={undo.isPending}
+                              aria-label={`Undo refund of ${refund.pieces} ${line.item}`}
+                              className="text-foreground ml-1 flex size-11 items-center justify-center"
+                            >
+                              <Undo2 className="size-4" aria-hidden="true" />
+                            </button>
+                          )}
+                        </span>
+                      </p>
+                    ))}
                 </li>
               ))}
             </ul>
@@ -215,23 +273,39 @@ function ClaimRow({ claim }: { claim: Claim }) {
               <span>
                 {claim.status === 'paid'
                   ? `PAID ${paidOn ?? ''}${claim.paymentRef ? ` · ${claim.paymentRef}` : ''}`.trim()
-                  : 'TO PAY'}
+                  : isRefunded(claim)
+                    ? 'REFUNDED'
+                    : 'TO PAY'}
               </span>
               <span className="tabular-nums">
-                {formatCents(claim.totalCents)}
+                {formatCents(claim.netCents)}
               </span>
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="text-foreground min-h-11"
-            onClick={openReceipt}
-          >
-            <Receipt className="size-4" aria-hidden="true" />
-            Photo
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="text-foreground min-h-11 flex-1"
+              onClick={openReceipt}
+            >
+              <Receipt className="size-4" aria-hidden="true" />
+              Photo
+            </Button>
+            {canRefund && (
+              <Button
+                type="button"
+                className="text-primary-foreground min-h-11 flex-1"
+                onClick={() => setRefunding(true)}
+              >
+                Refund
+              </Button>
+            )}
+          </div>
         </div>
+      )}
+      {refunding && (
+        <RefundDialog claim={claim} onClose={() => setRefunding(false)} />
       )}
     </div>
   )
