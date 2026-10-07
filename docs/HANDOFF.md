@@ -235,7 +235,7 @@ Output: band pill with the suggested price and margin; cost each; deals × price
 
 ### 5.5 Stock and the ledger
 
-- Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), sold (−), out during sale (−), missing (−), damaged (−), found (+), donated (−), correction (±).
+- Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), sold (−), out during sale (−), missing (−), damaged (−), found (+), donated (−), returned (−, a refund), correction (±, including the + that undoes a refund).
 - Current stock = sum of the item's rows.
 - Donations before summer are logged as **donated** movements.
 

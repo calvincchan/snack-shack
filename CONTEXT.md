@@ -129,7 +129,7 @@ Pieces on hand, the sum of an item's stock movements.
 _Avoid_: Inventory
 
 **Stock movement**:
-One recorded change to an item's stock: purchase, sold, out, missing, damaged, found, donated or correction.
+One recorded change to an item's stock: purchase, sold, out, missing, damaged, found, donated, returned (pieces taken back to the store in a refund) or correction.
 _Avoid_: Adjustment, transaction
 
 **Target stock**:
