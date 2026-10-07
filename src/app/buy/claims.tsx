@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Download, Receipt } from 'lucide-react'
+import { ChevronDown, Copy, Download, Receipt } from 'lucide-react'
+import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import {
   claimsCsv,
@@ -74,7 +76,7 @@ export function Claims() {
               >
                 {group.claims.map((claim) => (
                   <li key={claim.id}>
-                    <ClaimLine claim={claim} />
+                    <ClaimRow claim={claim} />
                   </li>
                 ))}
               </ul>
@@ -95,9 +97,9 @@ export function Claims() {
             className="border-border bg-card divide-border divide-y rounded-xl border"
           >
             {paid.map((claim) => (
-              <li key={claim.id} className="flex flex-col gap-1 p-3">
-                <ClaimLine claim={claim} />
-                <p className="text-muted-foreground text-sm">
+              <li key={claim.id} className="flex flex-col p-2">
+                <ClaimRow claim={claim} />
+                <p className="text-muted-foreground px-1 text-sm">
                   {claim.buyerName} · {claim.paymentRef ?? 'Paid'}
                   {claim.paidAt && ` · ${claim.paidAt.slice(0, 10)}`}
                 </p>
@@ -142,7 +144,10 @@ function Total({ label, cents }: { label: string; cents: number }) {
   )
 }
 
-function ClaimLine({ claim }: { claim: Claim }) {
+function ClaimRow({ claim }: { claim: Claim }) {
+  const [open, setOpen] = useState(false)
+  const panelId = `claim-${claim.id}`
+
   function openReceipt() {
     // The tab has to be opened inside the tap, before the signed URL is
     // fetched, or the browser treats it as a pop-up and blocks it. `noopener`
@@ -161,20 +166,73 @@ function ClaimLine({ claim }: { claim: Claim }) {
       })
   }
 
+  const paidOn = claim.paidAt?.slice(0, 10)
+
   return (
-    <div className="flex items-center justify-between gap-2 text-sm">
+    <div className="flex flex-col">
       <button
         type="button"
-        onClick={openReceipt}
-        className="text-foreground flex min-h-11 items-center gap-2 underline underline-offset-4"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="text-foreground flex min-h-11 w-full items-center gap-2 p-1 text-left text-sm"
       >
-        <Receipt className="size-4" aria-hidden="true" />
-        {claim.label}
-        <span className="text-muted-foreground">
-          {claim.store} · {claim.purchasedOn}
+        <ChevronDown
+          className={cn(
+            'size-4 shrink-0 transition-transform',
+            open && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+        <span className="flex-1">
+          <span className="font-medium">{claim.label}</span>{' '}
+          <span className="text-muted-foreground">
+            {claim.store} · {claim.purchasedOn}
+          </span>
         </span>
+        <span className="tabular-nums">{formatCents(claim.totalCents)}</span>
       </button>
-      <span className="tabular-nums">{formatCents(claim.totalCents)}</span>
+      {open && (
+        <div id={panelId} className="flex flex-col gap-3 p-1 pb-2">
+          <div className="bg-background border-border text-foreground rounded-lg border border-dashed p-3 font-mono text-sm">
+            <p className="text-center">{claim.store.toUpperCase()}</p>
+            <p className="text-muted-foreground mb-2 text-center text-xs">
+              {claim.purchasedOn} · {claim.label} · {claim.buyerName}
+            </p>
+            <ul aria-label={`Lines on ${claim.label}`}>
+              {claim.lines.map((line) => (
+                <li key={line.id} className="flex justify-between gap-2">
+                  <span>
+                    {line.item} ×{line.pieces}
+                  </span>
+                  <span className="tabular-nums">
+                    {formatCents(line.costCents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="border-border mt-2 flex justify-between gap-2 border-t border-dashed pt-2 font-bold">
+              <span>
+                {claim.status === 'paid'
+                  ? `PAID ${paidOn ?? ''}${claim.paymentRef ? ` · ${claim.paymentRef}` : ''}`.trim()
+                  : 'TO PAY'}
+              </span>
+              <span className="tabular-nums">
+                {formatCents(claim.totalCents)}
+              </span>
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-foreground min-h-11"
+            onClick={openReceipt}
+          >
+            <Receipt className="size-4" aria-hidden="true" />
+            Photo
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

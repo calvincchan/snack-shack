@@ -4,6 +4,15 @@ import { formatCents } from '@/lib/money'
 import type { Enums, Tables } from '@/lib/database.types'
 
 type ClaimRow = Tables<'claims'>
+type LineRow = Tables<'claim_lines'>
+
+/** One line of a claim, as printed on the receipt. */
+export type ReceiptLine = {
+  id: string
+  item: string
+  pieces: number
+  costCents: number
+}
 
 /** A row of the `claims` view, with the columns a view makes nullable narrowed. */
 export type Claim = {
@@ -18,9 +27,32 @@ export type Claim = {
   paidAt: string | null
   paymentRef: string | null
   receiptPath: string
+  lines: ReceiptLine[]
 }
 
-function toClaim(row: ClaimRow): Claim {
+function toLine(row: LineRow): ReceiptLine {
+  return {
+    id: row.id!,
+    item: row.item_name!,
+    pieces: row.pieces!,
+    costCents: row.cost_cents!,
+  }
+}
+
+/** Pairs each claim with its lines, in receipt order. */
+export function toClaims(rows: ClaimRow[], lineRows: LineRow[]): Claim[] {
+  const lines = new Map<string, LineRow[]>()
+  for (const line of [...lineRows].sort((a, b) => a.line_no! - b.line_no!)) {
+    lines.set(line.purchase_id!, [
+      ...(lines.get(line.purchase_id!) ?? []),
+      line,
+    ])
+  }
+
+  return rows.map((row) => toClaim(row, (lines.get(row.id!) ?? []).map(toLine)))
+}
+
+function toClaim(row: ClaimRow, lines: ReceiptLine[]): Claim {
   return {
     id: row.id!,
     label: row.claim_label!,
@@ -33,6 +65,7 @@ function toClaim(row: ClaimRow): Claim {
     paidAt: row.paid_at,
     paymentRef: row.payment_ref,
     receiptPath: row.receipt_path!,
+    lines,
   }
 }
 
@@ -40,13 +73,17 @@ export function useClaims() {
   return useQuery({
     queryKey: ['claims'],
     queryFn: async (): Promise<Claim[]> => {
-      const { data, error } = await supabase
-        .from('claims')
-        .select('*')
-        .order('claim_no', { ascending: false })
-      if (error) throw error
+      const [claims, lines] = await Promise.all([
+        supabase
+          .from('claims')
+          .select('*')
+          .order('claim_no', { ascending: false }),
+        supabase.from('claim_lines').select('*'),
+      ])
+      if (claims.error) throw claims.error
+      if (lines.error) throw lines.error
 
-      return data.map(toClaim)
+      return toClaims(claims.data, lines.data)
     },
   })
 }

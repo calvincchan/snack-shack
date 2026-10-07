@@ -795,6 +795,13 @@ export type Database = {
             foreignKeyName: 'stock_movements_purchase_line_id_fkey'
             columns: ['purchase_line_id']
             isOneToOne: false
+            referencedRelation: 'claim_lines'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'stock_movements_purchase_line_id_fkey'
+            columns: ['purchase_line_id']
+            isOneToOne: false
             referencedRelation: 'purchase_lines'
             referencedColumns: ['id']
           },
@@ -885,6 +892,32 @@ export type Database = {
           sale_day_id: string | null
         }
         Relationships: []
+      }
+      claim_lines: {
+        Row: {
+          cost_cents: number | null
+          id: string | null
+          item_name: string | null
+          line_no: number | null
+          pieces: number | null
+          purchase_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'purchase_lines_purchase_id_fkey'
+            columns: ['purchase_id']
+            isOneToOne: false
+            referencedRelation: 'claims'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_purchase_id_fkey'
+            columns: ['purchase_id']
+            isOneToOne: false
+            referencedRelation: 'purchases'
+            referencedColumns: ['id']
+          },
+        ]
       }
       claims: {
         Row: {

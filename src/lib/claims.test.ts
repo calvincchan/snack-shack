@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { claimsCsv, groupByBuyer, type Claim } from '@/lib/claims'
+import { claimsCsv, groupByBuyer, toClaims, type Claim } from '@/lib/claims'
+import type { Tables } from '@/lib/database.types'
 
 function claim(overrides: Partial<Claim> = {}): Claim {
   return {
@@ -14,6 +15,7 @@ function claim(overrides: Partial<Claim> = {}): Claim {
     paidAt: null,
     paymentRef: null,
     receiptPath: 'seed/costco-0908.jpg',
+    lines: [],
     ...overrides,
   }
 }
@@ -78,5 +80,48 @@ describe('claimsCsv', () => {
     const csv = claimsCsv([claim({ store: 'Superstore, Langley' })])
 
     expect(csv).toContain('"Superstore, Langley"')
+  })
+})
+
+describe('toClaims', () => {
+  const row = {
+    id: 'p1',
+    claim_label: 'SS-001',
+    purchased_on: '2026-09-08',
+    store: 'Costco',
+    buyer_id: 'yuki',
+    buyer_name: 'Yuki',
+    total_cents: 3000,
+    status: 'to_pay',
+    paid_at: null,
+    payment_ref: null,
+    receipt_path: 'r.jpg',
+  } as Tables<'claims'>
+
+  function line(id: string, purchaseId: string, lineNo: number) {
+    return {
+      id,
+      purchase_id: purchaseId,
+      line_no: lineNo,
+      item_name: `Item ${id}`,
+      pieces: 10,
+      cost_cents: 1500,
+    } as Tables<'claim_lines'>
+  }
+
+  it('gives each claim its own lines in receipt order', () => {
+    const [first, second] = toClaims(
+      [row, { ...row, id: 'p2' }],
+      [line('b', 'p1', 2), line('x', 'p2', 1), line('a', 'p1', 1)],
+    )
+
+    expect(first.lines.map((l) => l.id)).toEqual(['a', 'b'])
+    expect(second.lines.map((l) => l.id)).toEqual(['x'])
+    expect(first.lines[0]).toEqual({
+      id: 'a',
+      item: 'Item a',
+      pieces: 10,
+      costCents: 1500,
+    })
   })
 })

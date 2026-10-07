@@ -73,6 +73,7 @@ test('the claim it created links to the receipt photo', async ({
   // SS-006 is the receipt the first test logged, photo and all.
   const opened = context.waitForEvent('page')
   await page.getByRole('button', { name: /SS-006/ }).click()
+  await page.getByRole('button', { name: 'Photo' }).click()
   const receipt = await opened
   await receipt.waitForURL(/\/storage\/v1\/object\/sign\/receipts\//)
 

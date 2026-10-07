@@ -909,6 +909,18 @@ CREATE TABLE IF NOT EXISTS "public"."purchase_lines" (
 
 ALTER TABLE "public"."purchase_lines" OWNER TO "postgres";
 
+CREATE OR REPLACE VIEW "public"."claim_lines" WITH ("security_invoker"='true') AS
+ SELECT "l"."id",
+    "l"."purchase_id",
+    "l"."line_no",
+    "l"."pieces",
+    "l"."cost_cents",
+    "i"."name" AS "item_name"
+   FROM ("public"."purchase_lines" "l"
+     JOIN "public"."items" "i" ON (("i"."id" = "l"."item_id")));
+
+ALTER VIEW "public"."claim_lines" OWNER TO "postgres";
+
 CREATE TABLE IF NOT EXISTS "public"."purchases" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "claim_no" integer NOT NULL,
@@ -1898,6 +1910,10 @@ GRANT ALL ON TABLE "public"."change_history" TO "service_role";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "anon";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "authenticated";
 GRANT ALL ON TABLE "public"."purchase_lines" TO "service_role";
+
+GRANT ALL ON TABLE "public"."claim_lines" TO "anon";
+GRANT ALL ON TABLE "public"."claim_lines" TO "authenticated";
+GRANT ALL ON TABLE "public"."claim_lines" TO "service_role";
 
 GRANT ALL ON TABLE "public"."purchases" TO "anon";
 GRANT ALL ON TABLE "public"."purchases" TO "authenticated";
