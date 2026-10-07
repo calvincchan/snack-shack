@@ -5,7 +5,7 @@
  * the token from the email: `{ "token": "..." }`. The database checks the
  * token, marks the volunteer's claims paid as the treasurer and burns the link.
  * Answers `{ status: "paid", buyer_name, purchases_paid }`, or
- * `{ status: "invalid" | "used" | "expired", message }`.
+ * `{ status: "invalid" | "used" | "expired" | "changed", message }`.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
@@ -13,6 +13,7 @@ const failures: Record<string, string> = {
   SS001: 'invalid',
   SS002: 'used',
   SS003: 'expired',
+  SS004: 'changed',
 }
 
 const cors = {

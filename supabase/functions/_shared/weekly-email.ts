@@ -23,7 +23,9 @@ export type Report = {
       label: string
       purchased_on: string
       store: string
+      /** What is owed on the claim: the receipt total minus refunds. */
       total_cents: number
+      refunded_cents: number
       receipt_path: string
     }[]
   }[]
@@ -33,7 +35,10 @@ export type Report = {
     purchased_on: string
     store: string
     buyer_name: string
+    /** Net of refunds. */
     total_cents: number
+    refunded_cents: number
+    /** `to_pay`, `paid`, or `refunded` for a To pay claim refunded to $0. */
     status: string
     paid_at: string | null
     payment_ref: string | null
@@ -55,6 +60,13 @@ const dollars = new Intl.NumberFormat('en-CA', {
 })
 
 const money = (cents: number) => dollars.format(cents / 100)
+
+/** "$32.00" or "$32.00, incl. $8.00 refund" */
+function owed(claim: { total_cents: number; refunded_cents: number }): string {
+  return claim.refunded_cents > 0
+    ? `${money(claim.total_cents)}, incl. ${money(claim.refunded_cents)} refund`
+    : money(claim.total_cents)
+}
 
 /** "2026-09-21" to "Sep 21", read piece by piece so no time zone shifts it. */
 function shortDate(date: string): string {
@@ -94,6 +106,7 @@ function toCsv(ledger: Report['ledger']): string {
     'Store',
     'Volunteer',
     'Total',
+    'Refunded',
     'Status',
     'Paid on',
     'Reference',
@@ -104,7 +117,12 @@ function toCsv(ledger: Report['ledger']): string {
     claim.store,
     claim.buyer_name,
     (claim.total_cents / 100).toFixed(2),
-    claim.status === 'paid' ? 'Paid' : 'To pay',
+    (claim.refunded_cents / 100).toFixed(2),
+    claim.status === 'paid'
+      ? 'Paid'
+      : claim.status === 'refunded'
+        ? 'Refunded'
+        : 'To pay',
     claim.paid_at ? claim.paid_at.slice(0, 10) : '',
     claim.payment_ref ?? '',
   ])
@@ -136,7 +154,7 @@ export function buildEmail(report: Report, links: Links): Email {
                 const label = url
                   ? `<a href="${escapeHtml(url)}">${escapeHtml(claim.label)}</a>`
                   : escapeHtml(claim.label)
-                return `${label} (${escapeHtml(claim.store)}, ${money(claim.total_cents)})`
+                return `${label} (${escapeHtml(claim.store)}, ${owed(claim)})`
               })
               .join(', ')
             const link = links.markPaid[buyer.buyer_id]
@@ -167,7 +185,7 @@ export function buildEmail(report: Report, links: Links): Email {
             const claims = buyer.claims
               .map(
                 (c) =>
-                  `  ${c.label}${links.receipts[c.id] ? ` ${links.receipts[c.id]}` : ''} (${c.store}, ${money(c.total_cents)})`,
+                  `  ${c.label}${links.receipts[c.id] ? ` ${links.receipts[c.id]}` : ''} (${c.store}, ${owed(c)})`,
               )
               .join('\n')
             const link = links.markPaid[buyer.buyer_id]

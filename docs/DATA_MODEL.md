@@ -20,6 +20,7 @@ erDiagram
   items ||--o{ purchase_lines : ""
   items ||--o{ stock_movements : ""
   purchase_lines ||--o| stock_movements : "creates"
+  purchase_lines ||--o{ purchase_refunds : "refunded by"
   sale_days ||--|{ sale_day_items : lineup
   items ||--o{ sale_day_items : ""
   sale_days ||--|{ cash_counts : ""
@@ -39,7 +40,8 @@ erDiagram
 | `items` | What we sell | `name`, `type` (snack / treat), `storage` (shelf / freezer), `price_cents` (null = needs a price), `bundle_size` (pieces per deal), `unit_cost_cents` (weighted average), `archived`, `version`. Price options limited by a check constraint to $1 × 1/2/3 and $2 × 1. |
 | `purchases` | A receipt = a reimbursement claim | `claim_no` (SS-001…), `purchased_on`, `store`, `buyer_id`, `receipt_path`, `status` (to_pay / paid), `paid_at`, `paid_by`, `payment_ref` |
 | `purchase_lines` | Receipt lines | `item_id`, `pieces`, `cost_cents` (incl. tax) |
-| `stock_movements` | **Append-only stock ledger** | `item_id`, `qty` (±), `reason` (purchase, sold, out, missing, damaged, found, donated, correction; sign enforced), links to `purchase_line_id` or `sale_day_id` |
+| `purchase_refunds` | A refund on a claim line (ADR-0013). The purchase lines never change | `purchase_line_id`, `pieces` (≥ 1), `amount_cents` (> 0, incl. tax), `refunded_on`, `slip_path`, `note`, `created_by`. `id` is client-generated so a retry cannot duplicate. Audited. Written only by `refund_purchase_line()` and `undo_refund()` |
+| `stock_movements` | **Append-only stock ledger** | `item_id`, `qty` (±), `reason` (purchase, sold, out, missing, damaged, found, donated, returned, correction; sign enforced), links to `purchase_line_id` or `sale_day_id`; `refund_id` on `returned` movements and on the `correction` that undoes one (no foreign key: undo deletes the refund row) |
 | `sale_days` | One after-lunch sale | `sale_date`, `phase` (lineup → selling → counting → closed), `float_cents` (copied from settings), `helper_credits`, `note`, timestamps. **Only one open at a time.** |
 | `sale_day_items` | The lineup, and every count for it | `check_count`, `check_reason` (lineup phase); `start_count`, `locked_price_cents`, `locked_bundle_size`, `locked_type` (set by `start_sale`); `left_count`, `out_count` (counting phase) |
 | `cash_counts` | Cash by denomination | `denom_cents` (2000, 1000, 500, 200, 100, 25, 10, 5), `qty` |
@@ -60,7 +62,9 @@ All views use `security_invoker = true`, so row level security still applies.
 |---|---|
 | `item_stock` | Every item column plus `on_hand` (sum of the ledger) |
 | `item_overview` | What the Items tab reads: `item_stock` plus `days_out`, `is_new` (never in a finished lineup), `pieces_per_day_out`, who bought it last, and who edited it last (for the conflict prompt) |
-| `claims` | Purchases plus `claim_label` (SS-001), `total_cents`, `buyer_name` |
+| `claims` | Purchases plus `claim_label` (SS-001), `total_cents` (the receipt), `refunded_cents`, `net_cents` (receipt minus refunds; what is owed), `buyer_name`. A To pay claim at `net_cents = 0` is shown as Refunded; its `status` stays `to_pay` |
+| `claim_lines` | Every purchase line with `item_name`, plus `pieces_left` and `cents_left` after refunds |
+| `claim_refunds` | Each refund with its `purchase_id` and who logged it |
 | `sale_day_item_results` | Per lineup item: `sold_pieces = start − left − out`, `sales_cents = round(sold × locked price ÷ locked bundle)` |
 | `sale_day_totals` | Per sale day: `pieces_sold`, `treat_pieces_sold`, `sales_cents`, `expected_cents = float + sales − helper credits × 100`, `counted_cents`, `over_short_cents`, `deposit_cents = counted − float`, `signoffs`, `items_over_start`, `items_uncounted` |
 | `type_benchmarks` | Per type: what a piece usually costs and how fast one item of that type sells, for Deal check (HANDOFF §5.4) |
@@ -85,8 +89,10 @@ All are `security definer`, check that the caller is an active member, and keep 
 | `sign_off(sale_day)` | Adds the caller's sign-off | Only while counting; same person twice counts once |
 | `close_sale_day(sale_day)` | Posts `sold` and `out` movements, phase → closed | Counting; **1 sign-off**; no item above its start; every item counted; guarded update so a double tap fails cleanly |
 | `log_purchase(jsonb)` | One transaction: claim, new items, lines, purchase movements, weighted-average cost, optional price | Idempotent on the purchase `id`; receipt required; ≥ 1 line |
-| `issue_mark_paid_tokens(interval)` | For the weekly email: one token per volunteer owed money, issued to the treasurer | Service role only |
-| `redeem_action_token(token, ref)` | Marks that volunteer's claims paid, recorded as the treasurer | Service role only; single use; expires |
+| `refund_purchase_line(id, line, pieces, amount_cents, refunded_on, slip_path, note)` | Logs a refund and a `returned` movement in one transaction | Idempotent on `id`; To pay claim only ("Already paid. Ask the treasurer."); buyer or coordinator; pieces ≤ not yet refunded ("Only N left on this line."); pieces ≤ on hand ("Only N on hand."); item not in a selling or counting sale day ("Refund after today's sale closes."); amount ≤ cost left on the line. Unit cost is not recalculated |
+| `undo_refund(id)` | Removes the refund row (the audit log keeps it) and adds a `correction` (+) movement | To pay claim only; buyer or coordinator |
+| `issue_mark_paid_tokens(interval)` | For the weekly email: one token per volunteer owed money (net above $0), issued to the treasurer. Stores the total in the payload | Service role only |
+| `redeem_action_token(token, ref)` | Marks that volunteer's claims paid, recorded as the treasurer | Service role only; single use; expires; refuses if the claims' net total no longer matches the stored total (SS004). Tokens without a stored total redeem as before |
 
 The `log_purchase` payload shape is documented in the migration above the function.
 

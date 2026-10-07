@@ -334,6 +334,57 @@ export type Database = {
           },
         ]
       }
+      purchase_refunds: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          pieces: number
+          purchase_line_id: string
+          refunded_on: string
+          slip_path: string | null
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          pieces: number
+          purchase_line_id: string
+          refunded_on: string
+          slip_path?: string | null
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          pieces?: number
+          purchase_line_id?: string
+          refunded_on?: string
+          slip_path?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'purchase_refunds_purchase_line_id_fkey'
+            columns: ['purchase_line_id']
+            isOneToOne: false
+            referencedRelation: 'claim_lines'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'purchase_refunds_purchase_line_id_fkey'
+            columns: ['purchase_line_id']
+            isOneToOne: false
+            referencedRelation: 'purchase_lines'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       purchases: {
         Row: {
           buyer_id: string
@@ -710,6 +761,7 @@ export type Database = {
           purchase_line_id: string | null
           qty: number
           reason: Database['public']['Enums']['movement_reason']
+          refund_id: string | null
           sale_day_id: string | null
         }
         Insert: {
@@ -721,6 +773,7 @@ export type Database = {
           purchase_line_id?: string | null
           qty: number
           reason: Database['public']['Enums']['movement_reason']
+          refund_id?: string | null
           sale_day_id?: string | null
         }
         Update: {
@@ -732,6 +785,7 @@ export type Database = {
           purchase_line_id?: string | null
           qty?: number
           reason?: Database['public']['Enums']['movement_reason']
+          refund_id?: string | null
           sale_day_id?: string | null
         }
         Relationships: [
@@ -895,11 +949,13 @@ export type Database = {
       }
       claim_lines: {
         Row: {
+          cents_left: number | null
           cost_cents: number | null
           id: string | null
           item_name: string | null
           line_no: number | null
           pieces: number | null
+          pieces_left: number | null
           purchase_id: string | null
         }
         Relationships: [
@@ -919,6 +975,50 @@ export type Database = {
           },
         ]
       }
+      claim_refunds: {
+        Row: {
+          amount_cents: number | null
+          created_at: string | null
+          created_by_name: string | null
+          id: string | null
+          note: string | null
+          pieces: number | null
+          purchase_id: string | null
+          purchase_line_id: string | null
+          refunded_on: string | null
+          slip_path: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'purchase_lines_purchase_id_fkey'
+            columns: ['purchase_id']
+            isOneToOne: false
+            referencedRelation: 'claims'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_purchase_id_fkey'
+            columns: ['purchase_id']
+            isOneToOne: false
+            referencedRelation: 'purchases'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'purchase_refunds_purchase_line_id_fkey'
+            columns: ['purchase_line_id']
+            isOneToOne: false
+            referencedRelation: 'claim_lines'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'purchase_refunds_purchase_line_id_fkey'
+            columns: ['purchase_line_id']
+            isOneToOne: false
+            referencedRelation: 'purchase_lines'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       claims: {
         Row: {
           buyer_id: string | null
@@ -928,11 +1028,13 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: string | null
+          net_cents: number | null
           paid_at: string | null
           paid_by: string | null
           payment_ref: string | null
           purchased_on: string | null
           receipt_path: string | null
+          refunded_cents: number | null
           status: Database['public']['Enums']['claim_status'] | null
           store: string | null
           total_cents: number | null
@@ -1393,6 +1495,7 @@ export type Database = {
         Returns: Json
       }
       begin_count: { Args: { p_sale_day: string }; Returns: undefined }
+      cents_text: { Args: { p_cents: number }; Returns: string }
       close_sale_day: { Args: { p_sale_day: string }; Returns: undefined }
       create_sale_day: { Args: { p_date?: string }; Returns: string }
       has_role: {
@@ -1420,6 +1523,18 @@ export type Database = {
         Args: { p_payment_ref?: string; p_token: string }
         Returns: Json
       }
+      refund_purchase_line: {
+        Args: {
+          p_amount_cents: number
+          p_id: string
+          p_line: string
+          p_note?: string
+          p_pieces: number
+          p_refunded_on: string
+          p_slip_path?: string
+        }
+        Returns: string
+      }
       require_member: { Args: Record<PropertyKey, never>; Returns: undefined }
       sign_off: { Args: { p_sale_day: string }; Returns: undefined }
       start_sale: {
@@ -1437,6 +1552,7 @@ export type Database = {
         }[]
       }
       treasurer_report_week: { Args: { p_now?: string }; Returns: string }
+      undo_refund: { Args: { p_id: string }; Returns: undefined }
       weekly_treasurer_report: {
         Args: { p_week_start?: string }
         Returns: Json
@@ -1455,6 +1571,7 @@ export type Database = {
         | 'found'
         | 'donated'
         | 'correction'
+        | 'returned'
       sale_phase: 'lineup' | 'selling' | 'counting' | 'closed'
       storage_kind: 'shelf' | 'freezer'
       user_role: 'volunteer' | 'treasurer' | 'admin'
@@ -1597,6 +1714,7 @@ export const Constants = {
         'found',
         'donated',
         'correction',
+        'returned',
       ],
       sale_phase: ['lineup', 'selling', 'counting', 'closed'],
       storage_kind: ['shelf', 'freezer'],

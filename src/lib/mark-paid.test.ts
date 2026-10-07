@@ -31,6 +31,12 @@ describe('parseRedeem', () => {
     )
   })
 
+  it('keeps the database message when the amount changed', () => {
+    expect(
+      parseRedeem({ status: 'changed', message: 'The amount changed.' }),
+    ).toEqual({ status: 'changed', message: 'The amount changed.' })
+  })
+
   it('turns anything else into a plain error', () => {
     expect(parseRedeem({ error: 'boom' }).status).toBe('error')
     expect(parseRedeem(null).status).toBe('error')
