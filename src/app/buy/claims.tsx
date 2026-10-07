@@ -9,9 +9,16 @@ import {
   type Claim,
 } from '@/lib/claims'
 import { formatCents } from '@/lib/money'
+import { useSearchParams } from 'react-router'
+import { ClaimsPrototype } from '@/app/buy/claims.prototype'
 
 export function Claims() {
   const claims = useClaims()
+  // PROTOTYPE: ?variant=A|B|C swaps in the claim detail + refund prototype.
+  const [params] = useSearchParams()
+  const variant = params.get('variant')
+  if (import.meta.env.DEV && variant)
+    return <ClaimsPrototype variant={variant} />
 
   const all = claims.data ?? []
   const toPay = all.filter((claim) => claim.status === 'to_pay')

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LogPurchase, type PrefilledLine } from '@/app/buy/log-purchase'
@@ -7,7 +8,11 @@ import { WhatToBuy } from '@/app/buy/what-to-buy'
 import { Claims } from '@/app/buy/claims'
 
 export function BuyPage() {
-  const [segment, setSegment] = useState('what')
+  // PROTOTYPE: ?variant= opens straight on Claims.
+  const [params] = useSearchParams()
+  const [segment, setSegment] = useState(
+    params.has('variant') ? 'claims' : 'what',
+  )
   // "Bought it" carries the Deal check numbers into Log purchase. The key
   // remounts the form so it starts from them.
   const [prefill, setPrefill] = useState<PrefilledLine | null>(null)
