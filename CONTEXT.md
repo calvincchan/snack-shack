@@ -154,3 +154,7 @@ _Avoid_: Order
 **Claim**:
 A logged purchase waiting to be reimbursed, numbered SS-001, SS-002, …; either **To pay** or **Paid**.
 _Avoid_: Expense, invoice, reimbursement request
+
+**Refund**:
+Money back from the store for pieces returned from a To pay claim; the claim then owes the receipt total minus its refunds.
+_Avoid_: Return, credit
