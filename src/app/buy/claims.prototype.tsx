@@ -24,7 +24,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { PrototypeSwitcher } from '@/components/prototype-switcher'
-import { dollarStringToCents, formatCents } from '@/lib/money'
+import {
+  centsToDollarString,
+  dollarStringToCents,
+  formatCents,
+} from '@/lib/money'
 
 // ---------------------------------------------------------------------------
 // Mock model (the rules decided in the grilling session)
@@ -169,6 +173,8 @@ type RefundDraft = {
   refundedOn: string
   note: string
   slip: boolean
+  /** Once the volunteer types an amount, pieces stop recalculating it. */
+  amountEdited: boolean
 }
 const emptyDraft: RefundDraft = {
   pieces: '',
@@ -176,6 +182,22 @@ const emptyDraft: RefundDraft = {
   refundedOn: today,
   note: '',
   slip: false,
+  amountEdited: false,
+}
+
+/** Share of what's left on the line. All remaining pieces = all remaining cost, so no penny left over. */
+function prefillCents(left: { pieces: number; cents: number }, pieces: number) {
+  if (left.pieces === 0) return 0
+  return Math.round((left.cents * pieces) / left.pieces)
+}
+
+/** Prefilled with everything left on the line; the slip has the final word. */
+function draftFor(left: { pieces: number; cents: number }): RefundDraft {
+  return {
+    ...emptyDraft,
+    pieces: String(left.pieces),
+    amount: centsToDollarString(left.cents),
+  }
 }
 
 function useWorld() {
@@ -444,7 +466,20 @@ function RefundFields({
             className="min-h-11 tabular-nums"
             placeholder={`Up to ${left.pieces}`}
             value={draft.pieces}
-            onChange={(e) => setDraft({ ...draft, pieces: e.target.value })}
+            onChange={(e) => {
+              const pieces = e.target.value
+              const n = Number(pieces)
+              setDraft({
+                ...draft,
+                pieces,
+                amount:
+                  draft.amountEdited || !Number.isInteger(n) || n < 1
+                    ? draft.amount
+                    : centsToDollarString(
+                        prefillCents(left, Math.min(n, left.pieces)),
+                      ),
+              })
+            }}
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -455,13 +490,15 @@ function RefundFields({
             className="min-h-11 tabular-nums"
             placeholder="$0.00"
             value={draft.amount}
-            onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+            onChange={(e) =>
+              setDraft({ ...draft, amount: e.target.value, amountEdited: true })
+            }
           />
         </div>
       </div>
       <p className="text-muted-foreground -mt-1 text-xs">
-        Amount from the refund slip, tax included. Up to{' '}
-        {formatCents(left.cents)}.
+        Worked out from the receipt, tax included. Check it against the refund
+        slip. Up to {formatCents(left.cents)}.
       </p>
       <div className="flex flex-col gap-1">
         <Label htmlFor="rf-date">Refunded on</Label>
@@ -1119,11 +1156,13 @@ function VariantC({ api }: { api: Api }) {
                   className="text-primary-foreground min-h-11 flex-1"
                   onClick={() => {
                     setDialogClaim(claim.id)
-                    setLineId(
-                      claim.lines.find((l) => lineLeft(claim, l).pieces > 0)
-                        ?.id ?? '',
+                    const first = claim.lines.find(
+                      (l) => lineLeft(claim, l).pieces > 0,
                     )
-                    setDraft(emptyDraft)
+                    setLineId(first?.id ?? '')
+                    setDraft(
+                      first ? draftFor(lineLeft(claim, first)) : emptyDraft,
+                    )
                   }}
                 >
                   Refund
@@ -1184,7 +1223,13 @@ function VariantC({ api }: { api: Api }) {
                 <select
                   id="rf-line"
                   value={lineId}
-                  onChange={(e) => setLineId(e.target.value)}
+                  onChange={(e) => {
+                    setLineId(e.target.value)
+                    const next = dClaim.lines.find(
+                      (l) => l.id === e.target.value,
+                    )
+                    if (next) setDraft(draftFor(lineLeft(dClaim, next)))
+                  }}
                   className="border-input bg-background text-foreground min-h-11 rounded-md border px-2"
                 >
                   {dClaim.lines.map((l) => (
