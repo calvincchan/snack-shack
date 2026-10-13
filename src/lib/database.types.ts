@@ -1505,6 +1505,11 @@ export type Database = {
       cents_text: { Args: { p_cents: number }; Returns: string }
       close_sale_day: { Args: { p_sale_day: string }; Returns: undefined }
       create_sale_day: { Args: { p_date?: string }; Returns: string }
+      display_name_check: {
+        Args: { p_invite: string; p_name: string; p_profile: string }
+        Returns: undefined
+      }
+      full_name_check: { Args: { p_full_name: string }; Returns: undefined }
       has_role: {
         Args: { r: Database['public']['Enums']['user_role'] }
         Returns: boolean
@@ -1543,6 +1548,10 @@ export type Database = {
         Returns: string
       }
       require_member: { Args: Record<PropertyKey, never>; Returns: undefined }
+      set_member_active: {
+        Args: { p_active: boolean; p_id: string }
+        Returns: undefined
+      }
       sign_off: { Args: { p_sale_day: string }; Returns: undefined }
       start_sale: {
         Args: { p_float_cents?: number; p_sale_day: string }
@@ -1560,6 +1569,28 @@ export type Database = {
       }
       treasurer_report_week: { Args: { p_now?: string }; Returns: string }
       undo_refund: { Args: { p_id: string }; Returns: undefined }
+      update_invite: {
+        Args: {
+          p_display_name: string
+          p_full_name: string
+          p_id: string
+          p_role: Database['public']['Enums']['user_role']
+        }
+        Returns: undefined
+      }
+      update_my_profile: {
+        Args: { p_display_name: string; p_full_name?: string }
+        Returns: undefined
+      }
+      update_team_member: {
+        Args: {
+          p_display_name: string
+          p_full_name: string
+          p_id: string
+          p_role: Database['public']['Enums']['user_role']
+        }
+        Returns: undefined
+      }
       weekly_treasurer_report: {
         Args: { p_week_start?: string }
         Returns: Json

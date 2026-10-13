@@ -98,10 +98,11 @@ CREATE OR REPLACE FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "
     SET "search_path" TO ''
     AS $$
 declare
-  v_email text := lower(trim(p_email));
-  v_name  text := trim(p_name);
-  v_full  text := nullif(trim(p_full_name), '');
-  v_uid   uuid;
+  v_email   text := lower(trim(p_email));
+  v_name    text := trim(p_name);
+  v_full    text := nullif(trim(p_full_name), '');
+  v_uid     uuid;
+  v_profile public.profiles;
 begin
   if not public.has_role('admin') then
     raise exception 'Only the coordinator can add volunteers.';
@@ -109,30 +110,31 @@ begin
   if position('@' in v_email) < 2 then
     raise exception 'Enter an email address.';
   end if;
-  if v_name = '' then
-    raise exception 'Enter a name.';
+
+  select * into v_profile from public.profiles where lower(email) = v_email;
+  if v_profile.id is not null and v_profile.active then
+    raise exception 'Already on the team. Tap their name to edit.';
+  elsif v_profile.id is not null then
+    raise exception 'Removed from the team. Tap Add back.';
   end if;
+  if exists (select 1 from public.volunteer_invites
+              where lower(email) = v_email and accepted_at is null) then
+    raise exception 'Already invited. Tap the invite to edit.';
+  end if;
+
+  perform public.display_name_check(v_name, null, null);
+  perform public.full_name_check(v_full);
 
   select id into v_uid from auth.users where lower(email) = v_email;
 
   if v_uid is not null then
     insert into public.profiles (id, email, display_name, full_name, role, active)
-    values (v_uid, v_email, v_name, v_full, p_role, true)
-    on conflict (id) do update
-      set email        = excluded.email,
-          display_name = excluded.display_name,
-          full_name    = coalesce(excluded.full_name, public.profiles.full_name),
-          role         = excluded.role,
-          active       = true;
+    values (v_uid, v_email, v_name, v_full, p_role, true);
     return jsonb_build_object('status', 'added', 'profile_id', v_uid);
   end if;
 
   insert into public.volunteer_invites (email, display_name, full_name, role)
-  values (v_email, v_name, v_full, p_role)
-  on conflict (lower(email)) where accepted_at is null do update
-    set display_name = excluded.display_name,
-        full_name    = excluded.full_name,
-        role         = excluded.role;
+  values (v_email, v_name, v_full, p_role);
   return jsonb_build_object('status', 'invited');
 end $$;
 
@@ -267,6 +269,30 @@ end $$;
 
 ALTER FUNCTION "public"."create_sale_day"("p_date" "date") OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."display_name_check"("p_name" "text", "p_profile" "uuid", "p_invite" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+begin
+  if p_name is null or p_name = '' then
+    raise exception 'Enter a name.';
+  end if;
+  if char_length(p_name) > 30 then
+    raise exception 'Keep the name to 30 characters or fewer.';
+  end if;
+  if exists (select 1 from public.profiles
+              where lower(display_name) = lower(p_name)
+                and id is distinct from p_profile)
+     or exists (select 1 from public.volunteer_invites
+                 where lower(display_name) = lower(p_name)
+                   and accepted_at is null
+                   and id is distinct from p_invite) then
+    raise exception 'Someone on the team already uses that name.';
+  end if;
+end $$;
+
+ALTER FUNCTION "public"."display_name_check"("p_name" "text", "p_profile" "uuid", "p_invite" "uuid") OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."forbid_change"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -275,6 +301,18 @@ begin
 end $$;
 
 ALTER FUNCTION "public"."forbid_change"() OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."full_name_check"("p_full_name" "text") RETURNS "void"
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO ''
+    AS $$
+begin
+  if char_length(p_full_name) > 100 then
+    raise exception 'Keep the full name to 100 characters or fewer.';
+  end if;
+end $$;
+
+ALTER FUNCTION "public"."full_name_check"("p_full_name" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."handle_new_auth_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -288,7 +326,7 @@ begin
   if not exists (select 1 from public.profiles) then
     insert into public.profiles (id, email, display_name, role, active)
     values (new.id, v_email,
-            coalesce(nullif(split_part(coalesce(v_email, ''), '@', 1), ''), 'Coordinator'),
+            left(coalesce(nullif(split_part(coalesce(v_email, ''), '@', 1), ''), 'Coordinator'), 30),
             'admin', true)
     on conflict (id) do nothing;
     return new;
@@ -663,6 +701,24 @@ end $$;
 
 ALTER FUNCTION "public"."sale_days_guard"() OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+begin
+  if not public.has_role('admin') then
+    raise exception 'Only the coordinator can edit the team.';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_id) then
+    raise exception 'That person is not on the team list.';
+  end if;
+
+  -- profiles_guard stops you removing yourself or the last coordinator.
+  update public.profiles set active = p_active where id = p_id;
+end $$;
+
+ALTER FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."settings_touch"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO ''
@@ -814,6 +870,77 @@ end $$;
 
 ALTER FUNCTION "public"."undo_refund"("p_id" "uuid") OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."update_invite"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_name text := trim(p_display_name);
+  v_full text := nullif(trim(p_full_name), '');
+begin
+  if not public.has_role('admin') then
+    raise exception 'Only the coordinator can edit the team.';
+  end if;
+  if not exists (select 1 from public.volunteer_invites
+                  where id = p_id and accepted_at is null) then
+    raise exception 'That invite is gone. They may have signed in already.';
+  end if;
+  perform public.display_name_check(v_name, null, p_id);
+  perform public.full_name_check(v_full);
+
+  update public.volunteer_invites
+     set display_name = v_name, full_name = v_full, role = p_role
+   where id = p_id;
+end $$;
+
+ALTER FUNCTION "public"."update_invite"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."update_my_profile"("p_display_name" "text", "p_full_name" "text" DEFAULT NULL::"text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_name text := trim(p_display_name);
+  v_full text := nullif(trim(p_full_name), '');
+begin
+  if not public.is_member() then
+    raise exception 'Ask the coordinator to add you to the team.';
+  end if;
+  perform public.display_name_check(v_name, auth.uid(), null);
+  perform public.full_name_check(v_full);
+
+  update public.profiles
+     set display_name = v_name, full_name = v_full
+   where id = auth.uid();
+end $$;
+
+ALTER FUNCTION "public"."update_my_profile"("p_display_name" "text", "p_full_name" "text") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."update_team_member"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_name text := trim(p_display_name);
+  v_full text := nullif(trim(p_full_name), '');
+begin
+  if not public.has_role('admin') then
+    raise exception 'Only the coordinator can edit the team.';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_id) then
+    raise exception 'That person is not on the team list.';
+  end if;
+  perform public.display_name_check(v_name, p_id, null);
+  perform public.full_name_check(v_full);
+
+  -- profiles_guard still keeps at least one coordinator.
+  update public.profiles
+     set display_name = v_name, full_name = v_full, role = p_role
+   where id = p_id;
+end $$;
+
+ALTER FUNCTION "public"."update_team_member"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date" DEFAULT "public"."treasurer_report_week"()) RETURNS "jsonb"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -942,7 +1069,9 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "email" "text",
     "full_name" "text",
     CONSTRAINT "profiles_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0)),
-    CONSTRAINT "profiles_full_name_check" CHECK ((("full_name" IS NULL) OR ("length"(TRIM(BOTH FROM "full_name")) > 0)))
+    CONSTRAINT "profiles_display_name_length" CHECK (("char_length"("display_name") <= 30)),
+    CONSTRAINT "profiles_full_name_check" CHECK ((("full_name" IS NULL) OR ("length"(TRIM(BOTH FROM "full_name")) > 0))),
+    CONSTRAINT "profiles_full_name_length" CHECK (("char_length"("full_name") <= 100))
 );
 
 ALTER TABLE "public"."profiles" OWNER TO "postgres";
@@ -1666,8 +1795,10 @@ CREATE TABLE IF NOT EXISTS "public"."volunteer_invites" (
     "accepted_by" "uuid",
     "full_name" "text",
     CONSTRAINT "volunteer_invites_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0)),
+    CONSTRAINT "volunteer_invites_display_name_length" CHECK (("char_length"("display_name") <= 30)),
     CONSTRAINT "volunteer_invites_email_check" CHECK ((POSITION(('@'::"text") IN ("email")) > 1)),
-    CONSTRAINT "volunteer_invites_full_name_check" CHECK ((("full_name" IS NULL) OR ("length"(TRIM(BOTH FROM "full_name")) > 0)))
+    CONSTRAINT "volunteer_invites_full_name_check" CHECK ((("full_name" IS NULL) OR ("length"(TRIM(BOTH FROM "full_name")) > 0))),
+    CONSTRAINT "volunteer_invites_full_name_length" CHECK (("char_length"("full_name") <= 100))
 );
 
 ALTER TABLE "public"."volunteer_invites" OWNER TO "postgres";
@@ -1728,6 +1859,8 @@ ALTER TABLE ONLY "public"."volunteer_invites"
 
 CREATE INDEX "audit_log_table_name_row_pk_idx" ON "public"."audit_log" USING "btree" ("table_name", "row_pk");
 
+CREATE UNIQUE INDEX "profiles_display_name_key" ON "public"."profiles" USING "btree" ("lower"("display_name"));
+
 CREATE UNIQUE INDEX "profiles_email_key" ON "public"."profiles" USING "btree" ("lower"("email"));
 
 CREATE INDEX "purchase_refunds_purchase_line_id_idx" ON "public"."purchase_refunds" USING "btree" ("purchase_line_id");
@@ -1739,6 +1872,8 @@ CREATE UNIQUE INDEX "shopping_trips_one_open" ON "public"."shopping_trips" USING
 CREATE INDEX "stock_movements_item_id_idx" ON "public"."stock_movements" USING "btree" ("item_id");
 
 CREATE INDEX "stock_movements_sale_day_id_idx" ON "public"."stock_movements" USING "btree" ("sale_day_id");
+
+CREATE UNIQUE INDEX "volunteer_invites_display_name_open" ON "public"."volunteer_invites" USING "btree" ("lower"("display_name")) WHERE ("accepted_at" IS NULL);
 
 CREATE UNIQUE INDEX "volunteer_invites_open" ON "public"."volunteer_invites" USING "btree" ("lower"("email")) WHERE ("accepted_at" IS NULL);
 
@@ -1860,11 +1995,7 @@ ALTER TABLE "public"."action_tokens" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "admin_delete" ON "public"."volunteer_invites" FOR DELETE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role"));
 
-CREATE POLICY "admin_insert" ON "public"."profiles" FOR INSERT TO "authenticated" WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
-
 CREATE POLICY "admin_read" ON "public"."volunteer_invites" FOR SELECT TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role"));
-
-CREATE POLICY "admin_update" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role")) WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
 
 CREATE POLICY "admin_write" ON "public"."settings" FOR UPDATE TO "authenticated" USING ("public"."has_role"('admin'::"public"."user_role")) WITH CHECK ("public"."has_role"('admin'::"public"."user_role"));
 
@@ -1989,9 +2120,15 @@ GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "anon";
 GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."display_name_check"("p_name" "text", "p_profile" "uuid", "p_invite" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."display_name_check"("p_name" "text", "p_profile" "uuid", "p_invite" "uuid") TO "service_role";
+
 GRANT ALL ON FUNCTION "public"."forbid_change"() TO "anon";
 GRANT ALL ON FUNCTION "public"."forbid_change"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."forbid_change"() TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."full_name_check"("p_full_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."full_name_check"("p_full_name" "text") TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "anon";
 GRANT ALL ON FUNCTION "public"."handle_new_auth_user"() TO "authenticated";
@@ -2050,6 +2187,10 @@ GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) TO "service_role";
+
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "anon";
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "service_role";
@@ -2073,6 +2214,18 @@ GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with ti
 REVOKE ALL ON FUNCTION "public"."undo_refund"("p_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."undo_refund"("p_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."undo_refund"("p_id" "uuid") TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."update_invite"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."update_invite"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_invite"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."update_my_profile"("p_display_name" "text", "p_full_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."update_my_profile"("p_display_name" "text", "p_full_name" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_my_profile"("p_display_name" "text", "p_full_name" "text") TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."update_team_member"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."update_team_member"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_team_member"("p_id" "uuid", "p_display_name" "text", "p_full_name" "text", "p_role" "public"."user_role") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."weekly_treasurer_report"("p_week_start" "date") TO "service_role";

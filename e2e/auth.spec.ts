@@ -36,16 +36,39 @@ test('an invited volunteer joins the team by signing in', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Sale day' })).toBeVisible()
 })
 
-test('the coordinator corrects a full name', async ({ page }) => {
+test('the coordinator edits a team member', async ({ page }) => {
   await signIn(page, COORDINATOR_EMAIL)
   await page.goto('/admin')
 
   await expect(page.getByText('Daniel Smith')).toBeVisible()
-  await page.getByRole('button', { name: 'Full name for Dan' }).click()
-  await page.getByLabel('Full name', { exact: true }).fill('Daniel Smith-Jones')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Edit Dan' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Full name (optional)').fill('Daniel Smith-Jones')
+  await dialog.getByRole('radio', { name: 'Treasurer' }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
 
   await expect(page.getByText('Daniel Smith-Jones')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Edit Dan' }).locator('..'),
+  ).toContainText('Treasurer')
+})
+
+test('a volunteer edits their own profile', async ({ page }) => {
+  await signIn(page, NEW_VOLUNTEER_EMAIL)
+
+  await page.getByRole('button', { name: 'Signed in as Dan' }).click()
+  await page.getByRole('button', { name: 'Edit profile' }).click()
+  await page.getByLabel('Name', { exact: true }).fill('Calvin')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(
+    page.getByText('Someone on the team already uses that name.'),
+  ).toBeVisible()
+
+  await page.getByLabel('Name', { exact: true }).fill('Danny')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Signed in as Danny' }),
+  ).toBeVisible()
 })
 
 test('the coordinator changes a setting', async ({ page }) => {

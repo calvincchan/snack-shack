@@ -164,13 +164,13 @@ Read-only, term to date.
 
 - One screen: an email box and **Send me a link**. Following the link signs the volunteer in and keeps them signed in, on that phone, all term.
 - Signed in but not on the team: **"Ask the coordinator to add you"** and nothing else. Same screen for a volunteer who has been taken off the team.
-- The header has the signed-in volunteer's name, a way to sign out, and, for the coordinator, **Team and settings**.
+- The header has the signed-in volunteer's name, **Edit profile** (their own display name and full name, never their role), a way to sign out, and, for the coordinator, **Team and settings**.
 
 ### 4.7 Team and settings (coordinator only)
 
 Reached from the header, not the tab bar, because it is rarely used. Two segments:
 
-- **Team.** Add a volunteer with email, name and role (Volunteer / Coordinator / Treasurer). Someone who has never signed in shows under **Waiting to sign in** until they do; the coordinator can cancel that invite. **Remove** takes a volunteer off the team; they stay in the list under **Off the team** so the audit trail keeps their name, and **Add back** returns them. The coordinator cannot remove themselves, and the team always keeps one coordinator.
+- **Team.** Add a volunteer with email, name and role (Volunteer / Coordinator / Treasurer). Someone who has never signed in shows under **Waiting to sign in** until they do; the coordinator can cancel that invite. **Remove** takes a volunteer off the team; they stay in the list under **Off the team** so the audit trail keeps their name, and **Add back** returns them. The coordinator cannot remove themselves, and the team always keeps one coordinator. Tapping a person or an invite opens **Edit** for display name, full name and role. Adding an email that is already on the team, off the team or invited is refused and points at Edit or Add back instead. Display names are at most 30 characters and unique across the team and open invites, ignoring case; full names at most 100 (ADR-0014).
 - **Settings.** Change float, target stock in sale days, the two over/short thresholds, GST rate, kid limits and the treasurer email (§5.10).
 
 Everyone else who opens the screen is told only the coordinator can change these, and row level security refuses the writes anyway.
@@ -293,7 +293,7 @@ Possible later rules: over/short beyond ±$3 two sale days running; margin drop 
 - **Weekly email** (Monday morning) to the treasurer:
   - Subject: "ATTN: Treasurer".
   - **Deposits:** each sale day that week with volunteers, deposit amount and over/short.
-  - **To reimburse:** per volunteer (display name plus full name when set, e.g. "Calvin C (Chun Yu Chan)"; the coordinator sets the full name in Admin → Team), number of receipts, claim numbers (linked to receipt photos) with store and amount, total, and a **"Click here to mark [name] paid"** button.
+  - **To reimburse:** per volunteer (display name plus full name when set, e.g. "Calvin C (Chun Yu Chan)"; the volunteer sets it in Edit profile, or the coordinator in Admin → Team), number of receipts, claim numbers (linked to receipt photos) with store and amount, total, and a **"Click here to mark [name] paid"** button.
   - **Receipt photos** attached, named by claim number ("SS-003.jpg"), so the email stays a record after the links expire.
   - **CSV ledger** attached.
 - Claims use their **net** (receipt minus refunds). The email shows net and notes a refund ("SS-002 $32.00, incl. $8.00 refund"). A claim at net $0 is left out of the email and gets no link. The CSV has a **Refunded** column and calls such a claim "Refunded".

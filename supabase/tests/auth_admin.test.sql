@@ -1,7 +1,7 @@
 -- Sign-in, the team list and the admin-only rules (pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(28);
+select plan(31);
 
 -- The seed fills the database for local development. These tests describe
 -- behaviour from an empty start, so clear it inside the transaction.
@@ -47,8 +47,10 @@ select is((select public.add_volunteer('Yuki@Example.com ', ' Yuki ') ->> 'statu
 select is((select email from public.volunteer_invites), 'yuki@example.com',
           'the email is stored lowercased and trimmed');
 select is((select display_name from public.volunteer_invites), 'Yuki', 'the name is trimmed');
-select lives_ok($$ select public.add_volunteer('yuki@example.com', 'Yuki Tanaka', 'volunteer', ' Yukiko Tanaka ') $$,
-                'adding the same email again corrects the invite');
+select throws_like($$ select public.add_volunteer('yuki@example.com', 'Yuki Tanaka') $$,
+                   '%Already invited%', 'adding the same email again points at the invite');
+select lives_ok($$ select public.update_invite((select id from public.volunteer_invites), 'Yuki Tanaka', ' Yukiko Tanaka ', 'volunteer') $$,
+                'the coordinator corrects the invite');
 select is((select count(*)::int from public.volunteer_invites), 1, 'still one invite');
 select is((select display_name from public.volunteer_invites), 'Yuki Tanaka', 'the name was corrected');
 select is((select full_name from public.volunteer_invites), 'Yukiko Tanaka', 'the invite keeps the full name, trimmed');
@@ -88,6 +90,8 @@ select is((select count(*)::int from public.volunteer_invites), 0, 'volunteers c
 update public.profiles set active = false where id = '00000000-0000-0000-0000-00000000000d';
 select is((select active from public.profiles where id = '00000000-0000-0000-0000-00000000000d'),
           true, 'RLS ignores a volunteer deactivating someone');
+select throws_like($$ select public.set_member_active('00000000-0000-0000-0000-00000000000d', false) $$,
+                   '%Only the coordinator%', 'volunteers cannot remove anyone');
 update public.settings set float_cents = 5000;
 select is((select float_cents from public.settings), 3000, 'RLS ignores a volunteer editing settings');
 
@@ -96,11 +100,14 @@ select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 update public.settings set float_cents = 5000;
 select is((select float_cents from public.settings), 5000, 'the coordinator changes the change float');
 
-select throws_like($$ update public.profiles set active = false
-                       where id = '00000000-0000-0000-0000-00000000000a' $$,
+select throws_like($$ select public.set_member_active('00000000-0000-0000-0000-00000000000a', false) $$,
                    '%cannot remove yourself%', 'the coordinator cannot remove themselves');
 
-update public.profiles set active = false where id = '00000000-0000-0000-0000-00000000000b';
+update public.profiles set display_name = 'Direct' where id = '00000000-0000-0000-0000-00000000000b';
+select is((select display_name from public.profiles where id = '00000000-0000-0000-0000-00000000000b'),
+          'Yuki Tanaka', 'even the coordinator cannot write profiles directly');
+
+select public.set_member_active('00000000-0000-0000-0000-00000000000b', false);
 select is((select active from public.profiles where id = '00000000-0000-0000-0000-00000000000b'),
           false, 'the coordinator deactivates a volunteer');
 

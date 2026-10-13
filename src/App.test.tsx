@@ -14,6 +14,7 @@ const {
   signedInWithoutProfile,
   signInWithOtp,
   verifyOtp,
+  supabase,
 } = await import('@/test/fake-supabase')
 const { AuthProvider } = await import('@/lib/auth')
 const App = (await import('./App')).default
@@ -144,5 +145,41 @@ describe('App', () => {
     expect(
       await screen.findByRole('link', { name: 'Team and settings' }),
     ).toBeInTheDocument()
+  })
+
+  it('lets a volunteer edit their own names, not their role', async () => {
+    signedInAs({ role: 'volunteer', display_name: 'Yuki' })
+    renderApp()
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Signed in as Yuki' }),
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit profile' }))
+
+    expect(await screen.findByLabelText('Name')).toHaveValue('Yuki')
+    expect(screen.queryByText('Role')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: '  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Enter a name.')).toBeInTheDocument()
+    expect(supabase.rpc).not.toHaveBeenCalledWith(
+      'update_my_profile',
+      expect.anything(),
+    )
+
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: ' Yuki T ' },
+    })
+    fireEvent.change(screen.getByLabelText('Full name (optional)'), {
+      target: { value: 'Yukiko Tanaka' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith('update_my_profile', {
+        p_display_name: 'Yuki T',
+        p_full_name: 'Yukiko Tanaka',
+      }),
+    )
   })
 })
