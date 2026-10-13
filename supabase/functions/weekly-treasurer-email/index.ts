@@ -18,12 +18,27 @@ import { buildEmail, type Report } from '../_shared/weekly-email.ts'
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60
 
-function base64(text: string): string {
+function base64(bytes: Uint8Array): string {
   let binary = ''
-  for (const byte of new TextEncoder().encode(text)) {
-    binary += String.fromCharCode(byte)
+  // In chunks: spreading a whole photo into one call overflows the stack.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   }
   return btoa(binary)
+}
+
+const EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'application/pdf': 'pdf',
+}
+
+/** "SS-003.jpg": the claim number, with the photo's own extension. */
+function receiptFileName(label: string, path: string, type: string): string {
+  const fromPath = path.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase()
+  return `${label}.${fromPath ?? EXTENSIONS[type] ?? 'jpg'}`
 }
 
 // The test button calls this from the browser, which sends a preflight first.
@@ -141,8 +156,31 @@ Deno.serve(async (request) => {
     }
   }
 
-  const email = buildEmail(facts, { markPaid, receipts })
-  if (body.dryRun) return json({ to: recipient, ...email })
+  // The photos travel with the email too, so it stays a record after the
+  // links expire. A photo that will not download still has its link.
+  const attachments: Record<string, string> = {}
+  const photos: { filename: string; content: string }[] = []
+  for (const claim of claims) {
+    const { data: blob } = await admin.storage
+      .from('receipts')
+      .download(claim.receipt_path)
+    if (!blob) continue
+    const filename = receiptFileName(claim.label, claim.receipt_path, blob.type)
+    attachments[claim.id] = filename
+    photos.push({
+      filename,
+      content: base64(new Uint8Array(await blob.arrayBuffer())),
+    })
+  }
+
+  const email = buildEmail(facts, { markPaid, receipts, attachments })
+  if (body.dryRun) {
+    return json({
+      to: recipient,
+      ...email,
+      attachments: photos.map((photo) => photo.filename),
+    })
+  }
 
   const sent = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -160,8 +198,9 @@ Deno.serve(async (request) => {
       attachments: [
         {
           filename: `snack-shack-ledger-${facts.week_start}.csv`,
-          content: base64(email.csv),
+          content: base64(new TextEncoder().encode(email.csv)),
         },
+        ...photos,
       ],
     }),
   })

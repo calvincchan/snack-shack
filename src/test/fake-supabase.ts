@@ -26,6 +26,7 @@ export function signedInAs(profile: Partial<Profile> = {}) {
   const full: Profile = {
     id: 'user-1',
     display_name: 'Yuki',
+    full_name: null,
     email: 'yuki@example.com',
     role: 'volunteer',
     active: true,

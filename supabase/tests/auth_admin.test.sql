@@ -1,7 +1,7 @@
 -- Sign-in, the team list and the admin-only rules (pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(25);
+select plan(28);
 
 -- The seed fills the database for local development. These tests describe
 -- behaviour from an empty start, so clear it inside the transaction.
@@ -47,10 +47,11 @@ select is((select public.add_volunteer('Yuki@Example.com ', ' Yuki ') ->> 'statu
 select is((select email from public.volunteer_invites), 'yuki@example.com',
           'the email is stored lowercased and trimmed');
 select is((select display_name from public.volunteer_invites), 'Yuki', 'the name is trimmed');
-select lives_ok($$ select public.add_volunteer('yuki@example.com', 'Yuki Tanaka') $$,
+select lives_ok($$ select public.add_volunteer('yuki@example.com', 'Yuki Tanaka', 'volunteer', ' Yukiko Tanaka ') $$,
                 'adding the same email again corrects the invite');
 select is((select count(*)::int from public.volunteer_invites), 1, 'still one invite');
 select is((select display_name from public.volunteer_invites), 'Yuki Tanaka', 'the name was corrected');
+select is((select full_name from public.volunteer_invites), 'Yukiko Tanaka', 'the invite keeps the full name, trimmed');
 
 select throws_like($$ select public.add_volunteer('nope', 'Nobody') $$,
                    '%Enter an email address%', 'the email must look like an email');
@@ -63,16 +64,20 @@ values ('00000000-0000-0000-0000-00000000000b', 'yuki@example.com');
 
 select is((select display_name from public.profiles where id = '00000000-0000-0000-0000-00000000000b'),
           'Yuki Tanaka', 'signing in turns the invite into a profile');
+select is((select full_name from public.profiles where id = '00000000-0000-0000-0000-00000000000b'),
+          'Yukiko Tanaka', 'the profile gets the full name from the invite');
 select isnt((select accepted_at from public.volunteer_invites), null, 'the invite is marked accepted');
 
 -- The coordinator adds someone who is already signed in -----------------------
 set local role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 
-select is((select public.add_volunteer('stranger@example.com', 'Sam', 'volunteer') ->> 'status'),
+select is((select public.add_volunteer('stranger@example.com', 'Sam', 'volunteer', 'Samuel Lee') ->> 'status'),
           'added', 'adding an email that already signed in creates the profile directly');
 select is((select display_name from public.profiles where id = '00000000-0000-0000-0000-00000000000d'),
           'Sam', 'Sam is on the team now');
+select is((select full_name from public.profiles where id = '00000000-0000-0000-0000-00000000000d'),
+          'Samuel Lee', 'with the full name');
 
 -- Only the coordinator can manage people and settings -------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');

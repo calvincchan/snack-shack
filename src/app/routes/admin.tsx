@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -15,6 +15,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
@@ -90,6 +97,7 @@ const addSchema = z.object({
     .min(1, 'Enter an email.')
     .email('That does not look like an email.'),
   name: z.string().trim().min(1, 'Enter a name.'),
+  fullName: z.string().trim(),
   role: z.enum(['volunteer', 'admin', 'treasurer']),
 })
 
@@ -132,7 +140,7 @@ function TeamSection() {
 
   const form = useForm<AddValues>({
     resolver: zodResolver(addSchema),
-    defaultValues: { email: '', name: '', role: 'volunteer' },
+    defaultValues: { email: '', name: '', fullName: '', role: 'volunteer' },
   })
 
   const addVolunteer = useMutation({
@@ -141,6 +149,7 @@ function TeamSection() {
         p_email: values.email,
         p_name: values.name,
         p_role: values.role,
+        p_full_name: values.fullName || undefined,
       })
       if (error) throw error
       return data as { status: 'added' | 'invited' }
@@ -151,7 +160,7 @@ function TeamSection() {
           ? `${values.name} is on the team.`
           : `${values.name} is invited. They join the team when they sign in.`,
       )
-      form.reset({ email: '', name: '', role: values.role })
+      form.reset({ email: '', name: '', fullName: '', role: values.role })
       refresh()
     },
     onError: (error) => toast.error(say(error)),
@@ -231,6 +240,23 @@ function TeamSection() {
                   {form.formState.errors.name.message}
                 </p>
               )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="add-full-name">Full name (optional)</Label>
+              <Input
+                id="add-full-name"
+                autoComplete="off"
+                className="min-h-12"
+                aria-describedby="add-full-name-hint"
+                {...form.register('fullName')}
+              />
+              <p
+                id="add-full-name-hint"
+                className="text-muted-foreground text-sm"
+              >
+                The name on their bank account, for the treasurer email.
+              </p>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -352,17 +378,33 @@ function PersonRow({
   busy: boolean
   onToggle: () => void
 }) {
+  const [editing, setEditing] = useState(false)
+
   return (
     <div className="border-border bg-card flex items-center gap-3 rounded-lg border p-3">
-      <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        className="text-foreground min-h-11 min-w-0 flex-1 text-left"
+        aria-label={`Full name for ${person.display_name}`}
+        onClick={() => setEditing(true)}
+      >
         <p className="truncate font-medium">
           {person.display_name}
           {isYou && (
             <span className="text-muted-foreground font-normal"> (you)</span>
           )}
         </p>
+        <p
+          className={
+            person.full_name
+              ? 'text-muted-foreground truncate text-sm'
+              : 'text-primary truncate text-sm underline'
+          }
+        >
+          {person.full_name ?? 'Add full name'}
+        </p>
         <p className="text-muted-foreground truncate text-sm">{person.email}</p>
-      </div>
+      </button>
       <Badge variant={person.role === 'admin' ? 'default' : 'secondary'}>
         {roleLabels[person.role]}
       </Badge>
@@ -377,7 +419,75 @@ function PersonRow({
           {person.active ? 'Remove' : 'Add back'}
         </Button>
       )}
+      {editing && (
+        <FullNameDialog person={person} onClose={() => setEditing(false)} />
+      )}
     </div>
+  )
+}
+
+function FullNameDialog({
+  person,
+  onClose,
+}: {
+  person: Profile
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [value, setValue] = useState(person.full_name ?? '')
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: value.trim() === '' ? null : value.trim() })
+        .eq('id', person.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['profiles'] })
+      onClose()
+    },
+    onError: (error) => toast.error(say(error)),
+  })
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Full name for {person.display_name}</DialogTitle>
+          <DialogDescription>
+            The name on their bank account. The treasurer email shows it beside
+            {` ${person.display_name}`}.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            save.mutate()
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="full-name">Full name</Label>
+            <Input
+              id="full-name"
+              autoComplete="off"
+              className="min-h-12"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={save.isPending}
+            className="text-primary-foreground min-h-12"
+          >
+            {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
