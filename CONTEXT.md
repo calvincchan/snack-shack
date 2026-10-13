@@ -18,6 +18,14 @@ _Avoid_: Manager, owner
 The PAC treasurer who reimburses claims from a weekly email and never opens the app.
 _Avoid_: Approver, accountant
 
+**Display name**:
+The short name the team knows someone by, shown on sign-offs, claims and change history. At most 30 characters and unique on the team.
+_Avoid_: Nickname, username
+
+**Full name**:
+The name on someone's bank account, optional, shown only in the treasurer email so the e-transfer goes to the right person.
+_Avoid_: Legal name, bank name, real name
+
 **Student helper**:
 A student who helps at the table on a sale day and earns a helper credit.
 _Avoid_: Kid volunteer

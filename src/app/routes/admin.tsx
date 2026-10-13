@@ -9,31 +9,24 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { centsToDollarString, dollarStringToCents } from '@/lib/money'
-import type { Enums, Tables } from '@/lib/database.types'
+import type { Tables } from '@/lib/database.types'
+import {
+  displayNameSchema,
+  fullNameSchema,
+  roleLabels,
+  type Role,
+} from '@/lib/people'
+import { EditPersonDialog, type PersonValues } from '@/app/edit-person-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
-type Role = Enums<'user_role'>
 type Profile = Tables<'profiles'>
 type Invite = Tables<'volunteer_invites'>
-
-const roleLabels: Record<Role, string> = {
-  volunteer: 'Volunteer',
-  admin: 'Coordinator',
-  treasurer: 'Treasurer',
-}
 
 /** Turn a Postgres error into something a volunteer can read. */
 function say(error: unknown): string {
@@ -96,8 +89,8 @@ const addSchema = z.object({
     .trim()
     .min(1, 'Enter an email.')
     .email('That does not look like an email.'),
-  name: z.string().trim().min(1, 'Enter a name.'),
-  fullName: z.string().trim(),
+  name: displayNameSchema,
+  fullName: fullNameSchema,
   role: z.enum(['volunteer', 'admin', 'treasurer']),
 })
 
@@ -168,10 +161,10 @@ function TeamSection() {
 
   const setActive = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ active })
-        .eq('id', id)
+      const { error } = await supabase.rpc('set_member_active', {
+        p_id: id,
+        p_active: active,
+      })
       if (error) throw error
     },
     onSuccess: refresh,
@@ -324,27 +317,12 @@ function TeamSection() {
             Waiting to sign in
           </h2>
           {invites.data.map((invite) => (
-            <div
+            <InviteRow
               key={invite.id}
-              className="border-border bg-card flex items-center gap-3 rounded-lg border p-3"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{invite.display_name}</p>
-                <p className="text-muted-foreground truncate text-sm">
-                  {invite.email}
-                </p>
-              </div>
-              <Badge variant="secondary">{roleLabels[invite.role]}</Badge>
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-foreground min-h-11"
-                disabled={cancelInvite.isPending}
-                onClick={() => cancelInvite.mutate(invite.id)}
-              >
-                Cancel
-              </Button>
-            </div>
+              invite={invite}
+              busy={cancelInvite.isPending}
+              onCancel={() => cancelInvite.mutate(invite.id)}
+            />
           ))}
         </section>
       )}
@@ -385,7 +363,7 @@ function PersonRow({
       <button
         type="button"
         className="text-foreground min-h-11 min-w-0 flex-1 text-left"
-        aria-label={`Full name for ${person.display_name}`}
+        aria-label={`Edit ${person.display_name}`}
         onClick={() => setEditing(true)}
       >
         <p className="truncate font-medium">
@@ -420,13 +398,13 @@ function PersonRow({
         </Button>
       )}
       {editing && (
-        <FullNameDialog person={person} onClose={() => setEditing(false)} />
+        <EditMemberDialog person={person} onClose={() => setEditing(false)} />
       )}
     </div>
   )
 }
 
-function FullNameDialog({
+function EditMemberDialog({
   person,
   onClose,
 }: {
@@ -434,60 +412,113 @@ function FullNameDialog({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const [value, setValue] = useState(person.full_name ?? '')
 
   const save = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: value.trim() === '' ? null : value.trim() })
-        .eq('id', person.id)
+    mutationFn: async (values: PersonValues) => {
+      const { error } = await supabase.rpc('update_team_member', {
+        p_id: person.id,
+        p_display_name: values.name,
+        p_full_name: values.fullName,
+        p_role: values.role,
+      })
       if (error) throw error
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['profiles'] })
+      void queryClient.invalidateQueries({ queryKey: ['profile'] })
       onClose()
     },
     onError: (error) => toast.error(say(error)),
   })
 
   return (
-    <Dialog open onOpenChange={(next) => !next && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Full name for {person.display_name}</DialogTitle>
-          <DialogDescription>
-            The name on their bank account. The treasurer email shows it beside
-            {` ${person.display_name}`}.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault()
-            save.mutate()
+    <EditPersonDialog
+      title={`Edit ${person.display_name}`}
+      description={person.email ?? ''}
+      initial={{
+        name: person.display_name,
+        fullName: person.full_name ?? '',
+        role: person.role,
+      }}
+      showRole
+      saving={save.isPending}
+      onSave={(values) => save.mutate(values)}
+      onClose={onClose}
+    />
+  )
+}
+
+function InviteRow({
+  invite,
+  busy,
+  onCancel,
+}: {
+  invite: Invite
+  busy: boolean
+  onCancel: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+
+  const save = useMutation({
+    mutationFn: async (values: PersonValues) => {
+      const { error } = await supabase.rpc('update_invite', {
+        p_id: invite.id,
+        p_display_name: values.name,
+        p_full_name: values.fullName,
+        p_role: values.role,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['volunteer-invites'] })
+      setEditing(false)
+    },
+    onError: (error) => toast.error(say(error)),
+  })
+
+  return (
+    <div className="border-border bg-card flex items-center gap-3 rounded-lg border p-3">
+      <button
+        type="button"
+        className="text-foreground min-h-11 min-w-0 flex-1 text-left"
+        aria-label={`Edit invite for ${invite.display_name}`}
+        onClick={() => setEditing(true)}
+      >
+        <p className="truncate font-medium">{invite.display_name}</p>
+        {invite.full_name && (
+          <p className="text-muted-foreground truncate text-sm">
+            {invite.full_name}
+          </p>
+        )}
+        <p className="text-muted-foreground truncate text-sm">{invite.email}</p>
+      </button>
+      <Badge variant="secondary">{roleLabels[invite.role]}</Badge>
+      <Button
+        type="button"
+        variant="ghost"
+        className="text-foreground min-h-11"
+        disabled={busy}
+        onClick={onCancel}
+      >
+        Cancel
+      </Button>
+      {editing && (
+        <EditPersonDialog
+          title={`Edit invite for ${invite.display_name}`}
+          description={invite.email}
+          initial={{
+            name: invite.display_name,
+            fullName: invite.full_name ?? '',
+            role: invite.role,
           }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="full-name">Full name</Label>
-            <Input
-              id="full-name"
-              autoComplete="off"
-              className="min-h-12"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={save.isPending}
-            className="text-primary-foreground min-h-12"
-          >
-            {save.isPending ? 'Saving…' : 'Save'}
-          </Button>
-        </form>
-      </DialogContent>
-    </Dialog>
+          showRole
+          saving={save.isPending}
+          onSave={(values) => save.mutate(values)}
+          onClose={() => setEditing(false)}
+        />
+      )}
+    </div>
   )
 }
 
