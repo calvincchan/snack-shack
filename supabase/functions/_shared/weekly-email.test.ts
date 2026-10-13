@@ -78,15 +78,28 @@ const links = {
     c3: 'https://files.test/c3?sig=1',
     c4: 'https://files.test/c4?sig=2',
   },
+  attachments: { c3: 'SS-003.jpg', c4: 'SS-004.jpg' },
 }
 
 describe('buildEmail', () => {
   const email = buildEmail(report, links)
 
-  it('puts the week and both totals in the subject', () => {
-    expect(email.subject).toBe(
-      'Snack Shack week of Sep 21: $283.00 deposited, $75.70 to reimburse',
+  it('flags the email for the treasurer', () => {
+    expect(email.subject).toBe('ATTN: Treasurer')
+  })
+
+  it('adds the full name for a buyer the treasurer pays by legal name', () => {
+    const named = buildEmail(
+      {
+        ...report,
+        to_reimburse: [{ ...report.to_reimburse[0], buyer_name: 'Calvin C' }],
+        ledger: [{ ...report.ledger[0], buyer_name: 'Calvin C' }],
+      },
+      links,
     )
+    expect(named.html).toContain('<h3>Calvin C (Chun Yu Chan):')
+    expect(named.text).toContain('Calvin C (Chun Yu Chan):')
+    expect(named.csv.split('\n')[1]).toContain(',Calvin C (Chun Yu Chan),')
   })
 
   it('lists each deposit with volunteers and the over/short', () => {
@@ -110,7 +123,7 @@ describe('buildEmail', () => {
 
   it('gives each volunteer a Mark paid button', () => {
     expect(email.html).toContain('href="https://app.test/mark-paid?token=abc"')
-    expect(email.html).toContain('Mark Yuki paid')
+    expect(email.html).toContain('Click here to mark Yuki paid')
   })
 
   it('stops a store name from running as a spreadsheet formula', () => {
@@ -126,7 +139,7 @@ describe('buildEmail', () => {
 
   it('repeats the links in the plain text version', () => {
     expect(email.text).toContain(
-      'Mark Yuki paid: https://app.test/mark-paid?token=abc',
+      'Click here to mark Yuki paid: https://app.test/mark-paid?token=abc',
     )
     expect(email.text).toContain('SS-003 https://files.test/c3?sig=1')
   })
@@ -143,6 +156,17 @@ describe('buildEmail', () => {
     expect(email.html).toContain('Superstore, $26.35, incl. $8.00 refund')
     expect(email.text).toContain('Superstore, $26.35, incl. $8.00 refund')
     expect(email.html).toContain('Costco, $42.72)')
+  })
+
+  it('says the receipt photos are attached only when they are', () => {
+    expect(email.html).toContain(
+      'Receipt photos are attached, named by claim number.',
+    )
+    expect(email.text).toContain(
+      'Receipt photos are attached, named by claim number.',
+    )
+    const bare = buildEmail(report, { ...links, attachments: {} })
+    expect(bare.text).not.toContain('Receipt photos')
   })
 
   it('calls a claim refunded to $0 Refunded in the CSV', () => {
@@ -186,11 +210,9 @@ describe('buildEmail', () => {
         to_reimburse: [],
         to_reimburse_cents: 0,
       },
-      { markPaid: {}, receipts: {} },
+      { markPaid: {}, receipts: {}, attachments: {} },
     )
-    expect(quiet.subject).toBe(
-      'Snack Shack week of Sep 21: $0.00 deposited, $0.00 to reimburse',
-    )
+    expect(quiet.subject).toBe('ATTN: Treasurer')
     expect(quiet.html).toContain('No sale days that week.')
     expect(quiet.html).toContain('Nothing to reimburse.')
   })

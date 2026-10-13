@@ -291,9 +291,10 @@ Possible later rules: over/short beyond ±$3 two sale days running; margin drop 
 
 - Claim status: **To pay** → **Paid** (no Approve step).
 - **Weekly email** (Monday morning) to the treasurer:
-  - Subject: "Snack Shack week of Sep 21: $283.00 deposited, $75.70 to reimburse".
+  - Subject: "ATTN: Treasurer".
   - **Deposits:** each sale day that week with volunteers, deposit amount and over/short.
-  - **To reimburse:** per volunteer, number of receipts, claim numbers (linked to receipt photos), total, and a **"Mark [name] paid"** button.
+  - **To reimburse:** per volunteer (display name plus full name, e.g. "Calvin C (Chun Yu Chan)"), number of receipts, claim numbers (linked to receipt photos) with store and amount, total, and a **"Click here to mark [name] paid"** button.
+  - **Receipt photos** attached, named by claim number ("SS-003.jpg"), so the email stays a record after the links expire.
   - **CSV ledger** attached.
 - Claims use their **net** (receipt minus refunds). The email shows net and notes a refund ("SS-002 $32.00, incl. $8.00 refund"). A claim at net $0 is left out of the email and gets no link. The CSV has a **Refunded** column and calls such a claim "Refunded".
 - Each button is a **one-time signed link** issued to the treasurer's account. It records the payment as the treasurer (audit trail shows who) and expires after 7 days. The link stores the total it was issued for. If a refund changes that total first, it refuses with "The amount changed since this email. Check before you send money; use next week's email."

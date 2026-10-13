@@ -50,6 +50,8 @@ export type Links = {
   markPaid: Record<string, string>
   /** Claim id to a signed receipt photo URL. */
   receipts: Record<string, string>
+  /** Claim id to the attached receipt photo's file name, e.g. "SS-003.jpg". */
+  attachments: Record<string, string>
 }
 
 export type Email = { subject: string; html: string; text: string; csv: string }
@@ -60,6 +62,21 @@ const dollars = new Intl.NumberFormat('en-CA', {
 })
 
 const money = (cents: number) => dollars.format(cents / 100)
+
+/**
+ * The treasurer pays by legal name, which profiles do not store yet. Stopgap
+ * until the data model gains a full name: keyed by display name.
+ */
+const FULL_NAMES: Record<string, string> = {
+  'Calvin C': 'Chun Yu Chan',
+  'Jennifer H': 'Jennifer Hwang',
+}
+
+/** "Calvin C (Chun Yu Chan)", or the display name alone when unknown. */
+function buyerLabel(name: string): string {
+  const full = FULL_NAMES[name]
+  return full ? `${name} (${full})` : name
+}
 
 /** "$32.00" or "$32.00, incl. $8.00 refund" */
 function owed(claim: { total_cents: number; refunded_cents: number }): string {
@@ -115,7 +132,7 @@ function toCsv(ledger: Report['ledger']): string {
     claim.label,
     claim.purchased_on,
     claim.store,
-    claim.buyer_name,
+    buyerLabel(claim.buyer_name),
     (claim.total_cents / 100).toFixed(2),
     (claim.refunded_cents / 100).toFixed(2),
     claim.status === 'paid'
@@ -131,7 +148,7 @@ function toCsv(ledger: Report['ledger']): string {
 
 export function buildEmail(report: Report, links: Links): Email {
   const week = shortDate(report.week_start)
-  const subject = `Snack Shack week of ${week}: ${money(report.deposited_cents)} deposited, ${money(report.to_reimburse_cents)} to reimburse`
+  const subject = 'ATTN: Treasurer'
 
   const depositHtml =
     report.deposits.length === 0
@@ -159,13 +176,18 @@ export function buildEmail(report: Report, links: Links): Email {
               .join(', ')
             const link = links.markPaid[buyer.buyer_id]
             const button = link
-              ? `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 18px;background:#F2A900;color:#1f1f1f;text-decoration:none;border-radius:8px;font-weight:bold">Mark ${escapeHtml(buyer.buyer_name)} paid</a></p>`
+              ? `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 18px;background:#F2A900;color:#1f1f1f;text-decoration:none;border-radius:8px;font-weight:bold">Click here to mark ${escapeHtml(buyer.buyer_name)} paid</a></p>`
               : ''
-            return `<h3>${escapeHtml(buyer.buyer_name)}: ${money(buyer.total_cents)}</h3><p>${buyer.claims.length} ${buyer.claims.length === 1 ? 'receipt' : 'receipts'}: ${claims}</p>${button}`
+            return `<h3>${escapeHtml(buyerLabel(buyer.buyer_name))}: ${money(buyer.total_cents)}</h3><p>${buyer.claims.length} ${buyer.claims.length === 1 ? 'receipt' : 'receipts'}: ${claims}</p>${button}`
           })
           .join('')
 
-  const html = `<div style="font-family:sans-serif;max-width:560px"><h2>Snack Shack, week of ${week}</h2><h3>Deposits: ${money(report.deposited_cents)}</h3>${depositHtml}<h2>To reimburse: ${money(report.to_reimburse_cents)}</h2>${buyerHtml}<p style="color:#666;font-size:13px">The CSV ledger is attached. Each button works once and expires in 7 days.</p></div>`
+  const photos =
+    Object.keys(links.attachments).length > 0
+      ? 'Receipt photos are attached, named by claim number. '
+      : ''
+
+  const html = `<div style="font-family:sans-serif;max-width:560px"><h2>Snack Shack, week of ${week}</h2><h3>Deposits: ${money(report.deposited_cents)}</h3>${depositHtml}<h2>To reimburse: ${money(report.to_reimburse_cents)}</h2>${buyerHtml}<p style="color:#666;font-size:13px">${photos}The CSV ledger is attached. Each button works once and expires in 7 days.</p></div>`
 
   const depositText =
     report.deposits.length === 0
@@ -189,11 +211,11 @@ export function buildEmail(report: Report, links: Links): Email {
               )
               .join('\n')
             const link = links.markPaid[buyer.buyer_id]
-            return `${buyer.buyer_name}: ${money(buyer.total_cents)}\n${claims}${link ? `\n  Mark ${buyer.buyer_name} paid: ${link}` : ''}`
+            return `${buyerLabel(buyer.buyer_name)}: ${money(buyer.total_cents)}\n${claims}${link ? `\n  Click here to mark ${buyer.buyer_name} paid: ${link}` : ''}`
           })
           .join('\n\n')
 
-  const text = `Snack Shack, week of ${week}\n\nDeposits: ${money(report.deposited_cents)}\n${depositText}\n\nTo reimburse: ${money(report.to_reimburse_cents)}\n${buyerText}\n\nThe CSV ledger is attached. Each link works once and expires in 7 days.`
+  const text = `Snack Shack, week of ${week}\n\nDeposits: ${money(report.deposited_cents)}\n${depositText}\n\nTo reimburse: ${money(report.to_reimburse_cents)}\n${buyerText}\n\n${photos}The CSV ledger is attached. Each link works once and expires in 7 days.`
 
   return { subject, html, text, csv: toCsv(report.ledger) }
 }
