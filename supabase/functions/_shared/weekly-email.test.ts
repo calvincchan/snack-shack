@@ -22,6 +22,7 @@ const report: Report = {
     {
       buyer_id: 'b-yuki',
       buyer_name: 'Yuki',
+      buyer_full_name: null,
       total_cents: 7707,
       claims: [
         {
@@ -52,6 +53,7 @@ const report: Report = {
       purchased_on: '2026-09-18',
       store: 'Costco, "bulk"',
       buyer_name: 'Yuki',
+      buyer_full_name: null,
       total_cents: 4272,
       refunded_cents: 0,
       status: 'to_pay',
@@ -63,6 +65,7 @@ const report: Report = {
       purchased_on: '2026-09-08',
       store: 'Costco',
       buyer_name: 'Calvin',
+      buyer_full_name: null,
       total_cents: 5000,
       refunded_cents: 0,
       status: 'paid',
@@ -88,18 +91,35 @@ describe('buildEmail', () => {
     expect(email.subject).toBe('ATTN: Treasurer')
   })
 
-  it('adds the full name for a buyer the treasurer pays by legal name', () => {
+  it('adds the full name the treasurer pays by', () => {
     const named = buildEmail(
       {
         ...report,
-        to_reimburse: [{ ...report.to_reimburse[0], buyer_name: 'Calvin C' }],
-        ledger: [{ ...report.ledger[0], buyer_name: 'Calvin C' }],
+        to_reimburse: [
+          {
+            ...report.to_reimburse[0],
+            buyer_name: 'Calvin C',
+            buyer_full_name: 'Chun Yu Chan',
+          },
+        ],
+        ledger: [
+          {
+            ...report.ledger[0],
+            buyer_name: 'Calvin C',
+            buyer_full_name: 'Chun Yu Chan',
+          },
+        ],
       },
       links,
     )
     expect(named.html).toContain('<h3>Calvin C (Chun Yu Chan):')
     expect(named.text).toContain('Calvin C (Chun Yu Chan):')
     expect(named.csv.split('\n')[1]).toContain(',Calvin C (Chun Yu Chan),')
+    expect(named.html).toContain('Click here to mark Calvin C paid')
+  })
+
+  it('shows the display name alone when there is no full name', () => {
+    expect(email.html).toContain('<h3>Yuki:')
   })
 
   it('lists each deposit with volunteers and the over/short', () => {

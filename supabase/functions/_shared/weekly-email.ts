@@ -17,6 +17,7 @@ export type Report = {
   to_reimburse: {
     buyer_id: string
     buyer_name: string
+    buyer_full_name: string | null
     total_cents: number
     claims: {
       id: string
@@ -35,6 +36,7 @@ export type Report = {
     purchased_on: string
     store: string
     buyer_name: string
+    buyer_full_name: string | null
     /** Net of refunds. */
     total_cents: number
     refunded_cents: number
@@ -64,18 +66,16 @@ const dollars = new Intl.NumberFormat('en-CA', {
 const money = (cents: number) => dollars.format(cents / 100)
 
 /**
- * The treasurer pays by legal name, which profiles do not store yet. Stopgap
- * until the data model gains a full name: keyed by display name.
+ * "Calvin C (Chun Yu Chan)": the treasurer pays the name on the bank account.
+ * The display name alone when no full name is set.
  */
-const FULL_NAMES: Record<string, string> = {
-  'Calvin C': 'Chun Yu Chan',
-  'Jennifer H': 'Jennifer Hwang',
-}
-
-/** "Calvin C (Chun Yu Chan)", or the display name alone when unknown. */
-function buyerLabel(name: string): string {
-  const full = FULL_NAMES[name]
-  return full ? `${name} (${full})` : name
+function buyerLabel(buyer: {
+  buyer_name: string
+  buyer_full_name: string | null
+}): string {
+  return buyer.buyer_full_name
+    ? `${buyer.buyer_name} (${buyer.buyer_full_name})`
+    : buyer.buyer_name
 }
 
 /** "$32.00" or "$32.00, incl. $8.00 refund" */
@@ -132,7 +132,7 @@ function toCsv(ledger: Report['ledger']): string {
     claim.label,
     claim.purchased_on,
     claim.store,
-    buyerLabel(claim.buyer_name),
+    buyerLabel(claim),
     (claim.total_cents / 100).toFixed(2),
     (claim.refunded_cents / 100).toFixed(2),
     claim.status === 'paid'
@@ -178,7 +178,7 @@ export function buildEmail(report: Report, links: Links): Email {
             const button = link
               ? `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 18px;background:#F2A900;color:#1f1f1f;text-decoration:none;border-radius:8px;font-weight:bold">Click here to mark ${escapeHtml(buyer.buyer_name)} paid</a></p>`
               : ''
-            return `<h3>${escapeHtml(buyerLabel(buyer.buyer_name))}: ${money(buyer.total_cents)}</h3><p>${buyer.claims.length} ${buyer.claims.length === 1 ? 'receipt' : 'receipts'}: ${claims}</p>${button}`
+            return `<h3>${escapeHtml(buyerLabel(buyer))}: ${money(buyer.total_cents)}</h3><p>${buyer.claims.length} ${buyer.claims.length === 1 ? 'receipt' : 'receipts'}: ${claims}</p>${button}`
           })
           .join('')
 
@@ -211,7 +211,7 @@ export function buildEmail(report: Report, links: Links): Email {
               )
               .join('\n')
             const link = links.markPaid[buyer.buyer_id]
-            return `${buyerLabel(buyer.buyer_name)}: ${money(buyer.total_cents)}\n${claims}${link ? `\n  Click here to mark ${buyer.buyer_name} paid: ${link}` : ''}`
+            return `${buyerLabel(buyer)}: ${money(buyer.total_cents)}\n${claims}${link ? `\n  Click here to mark ${buyer.buyer_name} paid: ${link}` : ''}`
           })
           .join('\n\n')
 

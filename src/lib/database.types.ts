@@ -215,6 +215,7 @@ export type Database = {
           created_at: string
           display_name: string
           email: string | null
+          full_name: string | null
           id: string
           role: Database['public']['Enums']['user_role']
         }
@@ -223,6 +224,7 @@ export type Database = {
           created_at?: string
           display_name: string
           email?: string | null
+          full_name?: string | null
           id: string
           role?: Database['public']['Enums']['user_role']
         }
@@ -231,6 +233,7 @@ export type Database = {
           created_at?: string
           display_name?: string
           email?: string | null
+          full_name?: string | null
           id?: string
           role?: Database['public']['Enums']['user_role']
         }
@@ -897,6 +900,7 @@ export type Database = {
           created_by: string | null
           display_name: string
           email: string
+          full_name: string | null
           id: string
           role: Database['public']['Enums']['user_role']
         }
@@ -907,6 +911,7 @@ export type Database = {
           created_by?: string | null
           display_name: string
           email: string
+          full_name?: string | null
           id?: string
           role?: Database['public']['Enums']['user_role']
         }
@@ -917,6 +922,7 @@ export type Database = {
           created_by?: string | null
           display_name?: string
           email?: string
+          full_name?: string | null
           id?: string
           role?: Database['public']['Enums']['user_role']
         }
@@ -1489,6 +1495,7 @@ export type Database = {
       add_volunteer: {
         Args: {
           p_email: string
+          p_full_name?: string
           p_name: string
           p_role?: Database['public']['Enums']['user_role']
         }

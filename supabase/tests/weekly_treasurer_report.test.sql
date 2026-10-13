@@ -1,7 +1,7 @@
 -- What the weekly treasurer email is built from (pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(13);
+select plan(15);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items, public.sale_days cascade;
@@ -15,12 +15,12 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'calvin@example.com'),
   ('00000000-0000-0000-0000-00000000000b', 'yuki@example.com'),
   ('00000000-0000-0000-0000-00000000000d', 'treasurer@example.com');
-insert into public.profiles (id, display_name, role) values
-  ('00000000-0000-0000-0000-00000000000a', 'Calvin', 'admin'),
-  ('00000000-0000-0000-0000-00000000000b', 'Yuki', 'volunteer'),
-  ('00000000-0000-0000-0000-00000000000d', 'Treasurer', 'treasurer')
+insert into public.profiles (id, display_name, full_name, role) values
+  ('00000000-0000-0000-0000-00000000000a', 'Calvin', 'Chun Yu Chan', 'admin'),
+  ('00000000-0000-0000-0000-00000000000b', 'Yuki', null, 'volunteer'),
+  ('00000000-0000-0000-0000-00000000000d', 'Treasurer', null, 'treasurer')
 on conflict (id) do update
-  set display_name = excluded.display_name, role = excluded.role;
+  set display_name = excluded.display_name, full_name = excluded.full_name, role = excluded.role;
 
 create function pg_temp.history_day(
   p_date date, p_note text, p_credits int, p_over_short int, p_rows jsonb
@@ -142,6 +142,8 @@ select is((select r #>> '{to_reimburse,0,buyer_name}' from report), 'Calvin', 'g
 select is((select (r ->> 'to_reimburse_cents')::int from report), 6000, 'everything still to pay: $50.00 and $10.00');
 select is(jsonb_array_length((select r #> '{to_reimburse,1,claims}' from report)), 1, 'Yuki has one claim');
 select is(jsonb_array_length((select r -> 'ledger' from report)), 2, 'the ledger lists every claim');
+select is((select r #>> '{to_reimburse,0,buyer_full_name}' from report), 'Chun Yu Chan', 'a group carries the full name');
+select is((select r #>> '{ledger,0,buyer_full_name}' from report), 'Chun Yu Chan', 'so does the ledger');
 
 select * from finish();
 rollback;

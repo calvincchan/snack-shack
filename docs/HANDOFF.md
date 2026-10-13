@@ -293,7 +293,7 @@ Possible later rules: over/short beyond ±$3 two sale days running; margin drop 
 - **Weekly email** (Monday morning) to the treasurer:
   - Subject: "ATTN: Treasurer".
   - **Deposits:** each sale day that week with volunteers, deposit amount and over/short.
-  - **To reimburse:** per volunteer (display name plus full name, e.g. "Calvin C (Chun Yu Chan)"), number of receipts, claim numbers (linked to receipt photos) with store and amount, total, and a **"Click here to mark [name] paid"** button.
+  - **To reimburse:** per volunteer (display name plus full name when set, e.g. "Calvin C (Chun Yu Chan)"; the coordinator sets the full name in Admin → Team), number of receipts, claim numbers (linked to receipt photos) with store and amount, total, and a **"Click here to mark [name] paid"** button.
   - **Receipt photos** attached, named by claim number ("SS-003.jpg"), so the email stays a record after the links expire.
   - **CSV ledger** attached.
 - Claims use their **net** (receipt minus refunds). The email shows net and notes a refund ("SS-002 $32.00, incl. $8.00 refund"). A claim at net $0 is left out of the email and gets no link. The CSV has a **Refunded** column and calls such a claim "Refunded".

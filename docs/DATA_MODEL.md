@@ -35,8 +35,8 @@ erDiagram
 | Table | Purpose | Key columns / rules |
 |---|---|---|
 | `settings` | One row of app settings (admin) | `float_cents` 3000, `target_sale_days` 2, `over_short_ok_cents` 300, `over_short_warn_cents` 1000, `gst_rate` 0.05, `max_items_per_kid` 3, `max_treats_per_kid` 1, `treasurer_email` |
-| `profiles` | One per signed-in person | `email`, `display_name`, `role` (volunteer / treasurer / admin), `active`. Volunteers are deactivated, never deleted. |
-| `volunteer_invites` | Someone the coordinator added who has not signed in yet | `email` (one open invite each), `display_name`, `role`, `accepted_at`. Admin only. See ADR-0011. |
+| `profiles` | One per signed-in person | `email`, `display_name`, `full_name` (optional; the name on their bank account, shown only in the treasurer email), `role` (volunteer / treasurer / admin), `active`. Volunteers are deactivated, never deleted. |
+| `volunteer_invites` | Someone the coordinator added who has not signed in yet | `email` (one open invite each), `display_name`, `full_name` (copied to the profile), `role`, `accepted_at`. Admin only. See ADR-0011. |
 | `items` | What we sell | `name`, `type` (snack / treat), `storage` (shelf / freezer), `price_cents` (null = needs a price), `bundle_size` (pieces per deal), `unit_cost_cents` (weighted average), `archived`, `version`. Price options limited by a check constraint to $1 × 1/2/3 and $2 × 1. |
 | `purchases` | A receipt = a reimbursement claim | `claim_no` (SS-001…), `purchased_on`, `store`, `buyer_id`, `receipt_path`, `status` (to_pay / paid), `paid_at`, `paid_by`, `payment_ref` |
 | `purchase_lines` | Receipt lines | `item_id`, `pieces`, `cost_cents` (incl. tax) |

@@ -93,13 +93,14 @@ $$;
 
 ALTER FUNCTION "public"."actor"() OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role" DEFAULT 'volunteer'::"public"."user_role") RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role" DEFAULT 'volunteer'::"public"."user_role", "p_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
 declare
   v_email text := lower(trim(p_email));
   v_name  text := trim(p_name);
+  v_full  text := nullif(trim(p_full_name), '');
   v_uid   uuid;
 begin
   if not public.has_role('admin') then
@@ -115,25 +116,27 @@ begin
   select id into v_uid from auth.users where lower(email) = v_email;
 
   if v_uid is not null then
-    insert into public.profiles (id, email, display_name, role, active)
-    values (v_uid, v_email, v_name, p_role, true)
+    insert into public.profiles (id, email, display_name, full_name, role, active)
+    values (v_uid, v_email, v_name, v_full, p_role, true)
     on conflict (id) do update
       set email        = excluded.email,
           display_name = excluded.display_name,
+          full_name    = coalesce(excluded.full_name, public.profiles.full_name),
           role         = excluded.role,
           active       = true;
     return jsonb_build_object('status', 'added', 'profile_id', v_uid);
   end if;
 
-  insert into public.volunteer_invites (email, display_name, role)
-  values (v_email, v_name, p_role)
+  insert into public.volunteer_invites (email, display_name, full_name, role)
+  values (v_email, v_name, v_full, p_role)
   on conflict (lower(email)) where accepted_at is null do update
     set display_name = excluded.display_name,
+        full_name    = excluded.full_name,
         role         = excluded.role;
   return jsonb_build_object('status', 'invited');
 end $$;
 
-ALTER FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") OWNER TO "postgres";
+ALTER FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role", "p_full_name" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."audit_row"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -302,8 +305,8 @@ begin
     return new;
   end if;
 
-  insert into public.profiles (id, email, display_name, role, active)
-  values (new.id, v_email, v_invite.display_name, v_invite.role, true)
+  insert into public.profiles (id, email, display_name, full_name, role, active)
+  values (new.id, v_email, v_invite.display_name, v_invite.full_name, v_invite.role, true)
   on conflict (id) do nothing;
 
   update public.volunteer_invites
@@ -825,14 +828,16 @@ CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "da
      where t.phase = 'closed'
        and t.sale_date between p_week_start and p_week_start + 6
   ), owed as (
-    select c.buyer_id, c.buyer_name, sum(c.net_cents)::int as total_cents,
+    select c.buyer_id, c.buyer_name, pr.full_name as buyer_full_name,
+           sum(c.net_cents)::int as total_cents,
            jsonb_agg(jsonb_build_object(
              'id', c.id, 'label', c.claim_label, 'purchased_on', c.purchased_on,
              'store', c.store, 'total_cents', c.net_cents, 'refunded_cents', c.refunded_cents,
              'receipt_path', c.receipt_path) order by c.claim_no) as claims
       from public.claims c
+      join public.profiles pr on pr.id = c.buyer_id
      where c.status = 'to_pay' and c.net_cents > 0
-     group by c.buyer_id, c.buyer_name
+     group by c.buyer_id, c.buyer_name, pr.full_name
   )
   select jsonb_build_object(
     'week_start', p_week_start,
@@ -843,10 +848,12 @@ CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "da
     'ledger', coalesce((
       select jsonb_agg(jsonb_build_object(
         'label', c.claim_label, 'purchased_on', c.purchased_on, 'store', c.store,
-        'buyer_name', c.buyer_name, 'total_cents', c.net_cents, 'refunded_cents', c.refunded_cents,
+        'buyer_name', c.buyer_name, 'buyer_full_name', pr.full_name,
+        'total_cents', c.net_cents, 'refunded_cents', c.refunded_cents,
         'status', case when c.status = 'to_pay' and c.net_cents = 0 then 'refunded' else c.status::text end,
         'paid_at', c.paid_at, 'payment_ref', c.payment_ref) order by c.claim_no)
-      from public.claims c), '[]')
+      from public.claims c
+      join public.profiles pr on pr.id = c.buyer_id), '[]')
   )
 $$;
 
@@ -933,7 +940,9 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "active" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "email" "text",
-    CONSTRAINT "profiles_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0))
+    "full_name" "text",
+    CONSTRAINT "profiles_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0)),
+    CONSTRAINT "profiles_full_name_check" CHECK ((("full_name" IS NULL) OR ("length"(TRIM(BOTH FROM "full_name")) > 0)))
 );
 
 ALTER TABLE "public"."profiles" OWNER TO "postgres";
@@ -1655,8 +1664,10 @@ CREATE TABLE IF NOT EXISTS "public"."volunteer_invites" (
     "created_by" "uuid" DEFAULT "public"."actor"(),
     "accepted_at" timestamp with time zone,
     "accepted_by" "uuid",
+    "full_name" "text",
     CONSTRAINT "volunteer_invites_display_name_check" CHECK (("length"(TRIM(BOTH FROM "display_name")) > 0)),
-    CONSTRAINT "volunteer_invites_email_check" CHECK ((POSITION(('@'::"text") IN ("email")) > 1))
+    CONSTRAINT "volunteer_invites_email_check" CHECK ((POSITION(('@'::"text") IN ("email")) > 1)),
+    CONSTRAINT "volunteer_invites_full_name_check" CHECK ((("full_name" IS NULL) OR ("length"(TRIM(BOTH FROM "full_name")) > 0)))
 );
 
 ALTER TABLE "public"."volunteer_invites" OWNER TO "postgres";
@@ -1946,9 +1957,9 @@ GRANT ALL ON FUNCTION "public"."actor"() TO "anon";
 GRANT ALL ON FUNCTION "public"."actor"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."actor"() TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "anon";
-GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role") TO "service_role";
+GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role", "p_full_name" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role", "p_full_name" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."add_volunteer"("p_email" "text", "p_name" "text", "p_role" "public"."user_role", "p_full_name" "text") TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "anon";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "authenticated";
