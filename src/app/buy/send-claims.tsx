@@ -118,10 +118,6 @@ export function SendClaims({ hasClaims }: { hasClaims: boolean }) {
                   {name}
                 </li>
               ))}
-              <li className="flex items-center gap-1">
-                <Paperclip className="size-3.5" aria-hidden="true" />
-                snack-shack-ledger.csv
-              </li>
             </ul>
             <Button
               type="button"

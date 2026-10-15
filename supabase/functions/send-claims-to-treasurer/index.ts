@@ -93,6 +93,11 @@ Deno.serve(async (request) => {
     recipient = settings.treasurer_email
   }
 
+  const today = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Vancouver',
+  })
+  const csvName = `snack-shack-ledger-${today}.csv`
+
   if (body.preview) {
     const attachments = Object.fromEntries(
       claims.map((claim) => [
@@ -103,7 +108,7 @@ Deno.serve(async (request) => {
     return json({
       to: recipient,
       ...buildEmail(facts, attachments),
-      attachments: Object.values(attachments),
+      attachments: [...Object.values(attachments), csvName],
     })
   }
 
@@ -134,9 +139,6 @@ Deno.serve(async (request) => {
   }
 
   const email = buildEmail(facts, attachments)
-  const today = new Date().toLocaleDateString('en-CA', {
-    timeZone: 'America/Vancouver',
-  })
   const sent = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -153,7 +155,7 @@ Deno.serve(async (request) => {
       text: email.text,
       attachments: [
         {
-          filename: `snack-shack-ledger-${today}.csv`,
+          filename: csvName,
           content: base64(new TextEncoder().encode(email.csv)),
         },
         ...photos,
