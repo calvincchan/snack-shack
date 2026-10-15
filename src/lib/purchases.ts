@@ -39,9 +39,6 @@ export type PurchaseLine = {
   newItem: NewItem | null
   pieces: number
   costCents: number
-  /** null keeps an existing item's price, or leaves a new one needing one. */
-  priceCents: number | null
-  bundleSize: number
 }
 
 export type Purchase = {
@@ -58,6 +55,8 @@ export type Purchase = {
  * Log one receipt: upload the photo, then hand the whole thing to
  * `log_purchase()`, which creates the claim, any new items, the lines, the
  * stock movements and the weighted-average costs in one transaction.
+ * Prices are not sent: an existing item keeps its price and a new one waits
+ * under Needs a price on the Items tab.
  *
  * Both halves are safe to retry with the same purchase id.
  */
@@ -92,8 +91,6 @@ export function useLogPurchase() {
               : null,
             pieces: line.pieces,
             cost_cents: line.costCents,
-            price_cents: line.priceCents,
-            bundle_size: line.bundleSize,
           })),
         },
       })

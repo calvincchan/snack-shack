@@ -16,8 +16,6 @@ export type BoughtIt = {
   type: Enums<'item_type'>
   pieces: number
   costCents: number
-  priceCents: number
-  bundleSize: number
 }
 
 function useSettings() {
@@ -216,8 +214,6 @@ export function DealCheck({
                 type,
                 pieces: Number(pieces),
                 costCents: deal.totalCents,
-                priceCents: deal.suggested.priceCents,
-                bundleSize: deal.suggested.bundleSize,
               })
             }
           >

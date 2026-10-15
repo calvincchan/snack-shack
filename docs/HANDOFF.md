@@ -100,7 +100,7 @@ Three segments: **Log purchase · Claims · Deal check**.
 **Log purchase** (one receipt = one claim)
 - Date, store (Costco / Superstore / Walmart / Other), **Bought by** (the volunteer to reimburse). Volunteers log their own; only the coordinator sees the picker and can log for someone else.
 - One card per receipt line: pick an existing item or **＋ New item** (name, Snack/Treat, Shelf/❄ Freezer), **pieces in total**, **cost incl. tax**. Assorted variety packs are **one item** (e.g. "Chips, assorted").
-- Once pieces and cost are entered: cost per piece, a margin band pill, and price options ($1, $2, 2 for $1, 3 for $1) each with band and margin, one marked **Suggested**. New items can pick **Decide later** (they wait on the Items tab under *Needs a price*).
+- Once pieces and cost are entered: cost per piece as plain text. No price is set here. A new item waits on the Items tab under *Needs a price*; an existing item keeps its price.
 - Receipt photo is **required**, shrunk on the phone to about 1600 px JPEG before upload. Only snack lines are logged; personal items on the same receipt are left off.
 - **Save and claim reimbursement:** adds the pieces to stock, updates item costs, creates the claim.
 
@@ -117,7 +117,7 @@ Three segments: **Log purchase · Claims · Deal check**.
 
 ### 4.3 Items
 
-- **Needs a price:** new items logged with "Decide later". One tap on a price option prices the item.
+- **Needs a price:** new items logged in Log purchase. Each shows cost per piece and the price options with band, margin and a **Suggested** marker. One tap on a price option prices the item.
 - **All items:** name, New tag, ❄ label, stock ("Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48"), cost per piece, margin %, band pill, price. Tap to open the editor:
   - **Price:** the four options with band and margin; current one highlighted, suggested one marked.
   - **Type:** Snack / Treat.

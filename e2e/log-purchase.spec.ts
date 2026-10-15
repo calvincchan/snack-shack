@@ -34,11 +34,9 @@ test('logging a receipt adds the stock, the cost and the claim', async ({
   await page.getByLabel('Pieces in total').fill('130')
   await page.getByLabel('Cost incl. tax').fill('17.99')
 
-  // 13.84¢ a piece, so 2 for $1 is suggested at 72% (HANDOFF §5.3).
+  // 13.84¢ a piece. No price options here; the Items tab prices it.
   await expect(page.getByText('Cost $0.14 a piece (13.8¢)')).toBeVisible()
-  await page
-    .getByRole('button', { name: '2 for $1 Suggested Great deal · 72% margin' })
-    .click()
+  await expect(page.getByText('Suggested')).toHaveCount(0)
 
   await expect(page.getByText('Receipt total')).toBeVisible()
   await expect(page.getByText('$17.99')).toBeVisible()
@@ -54,7 +52,16 @@ test('logging a receipt adds the stock, the cost and the claim', async ({
     page.getByRole('heading', { name: 'Receipt logged' }),
   ).toBeVisible()
 
+  // A new item has no price yet, so it waits on the Items tab.
   await page.getByRole('link', { name: /^Items/ }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Needs a price' }),
+  ).toBeVisible()
+  // 13.84¢ a piece, so 2 for $1 is suggested at 72% (HANDOFF §5.3).
+  await page
+    .getByRole('button', { name: '2 for $1 Suggested Great deal · 72% margin' })
+    .click()
+
   const row = allItems(page).filter({ hasText: 'Wafer bars, assorted' })
   await expect(row).toContainText('130 on hand')
   await expect(row).toContainText('$0.14 a piece')
@@ -147,9 +154,7 @@ test('a second receipt line tops up an item that is already stocked', async ({
   await page.getByLabel('Cost incl. tax').fill('22.80')
 
   // Same cost per piece as the seeded box, so the weighted average holds.
-  await expect(
-    page.getByRole('button', { name: /^Keep the price/ }),
-  ).toBeVisible()
+  await expect(page.getByText('Keep the price')).toHaveCount(0)
 
   await page
     .getByLabel('Attach a photo of the receipt')

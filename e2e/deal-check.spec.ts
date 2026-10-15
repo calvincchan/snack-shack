@@ -40,9 +40,7 @@ test('deal check works out the box and carries it into Log purchase', async ({
   await expect(
     page.getByRole('radio', { name: 'Treat (sugary)' }),
   ).toHaveAttribute('aria-checked', 'true')
-  await expect(
-    page.getByRole('button', { name: /^2 for \$1/ }),
-  ).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Decide later')).toHaveCount(0)
 })
 
 test('adding GST changes the numbers', async ({ page }) => {
