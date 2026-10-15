@@ -258,6 +258,27 @@ export type Database = {
             foreignKeyName: 'purchase_lines_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_low_margin_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_counts'
             referencedColumns: ['item_id']
           },
@@ -553,6 +574,27 @@ export type Database = {
             foreignKeyName: 'stock_movements_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_low_margin_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_counts'
             referencedColumns: ['item_id']
           },
@@ -768,6 +810,88 @@ export type Database = {
             referencedColumns: ['id']
           },
         ]
+      }
+      insights_best_month: {
+        Row: {
+          claims_cents: number | null
+          difference_cents: number | null
+          month: string | null
+          revenue_cents: number | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
+      insights_items: {
+        Row: {
+          bundle_size: number | null
+          item_id: string | null
+          last_counted_at: string | null
+          margin: number | null
+          name: string | null
+          pieces_gone: number | null
+          price_cents: number | null
+          revenue_estimate_cents: number | null
+          unit_cost_cents: number | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
+      insights_low_margin_items: {
+        Row: {
+          bought_since: number | null
+          item_id: string | null
+          margin: number | null
+          name: string | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
+      insights_months: {
+        Row: {
+          claims_cents: number | null
+          difference_cents: number | null
+          month: string | null
+          revenue_cents: number | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
+      insights_open_count_off: {
+        Row: {
+          sale_days: number | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
+      insights_revenue_trend: {
+        Row: {
+          difference_cents: number | null
+          revenue_cents: number | null
+          sale_date: string | null
+          usual_cents: number | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
+      insights_slowest_item: {
+        Row: {
+          item_id: string | null
+          name: string | null
+          pieces_gone: number | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
+      insights_term: {
+        Row: {
+          claims_cents: number | null
+          difference_cents: number | null
+          revenue_cents: number | null
+          revenue_per_day_cents: number | null
+          sale_days: number | null
+        }
+        ComputedFields: never
+        Relationships: []
       }
       item_counts: {
         Row: {

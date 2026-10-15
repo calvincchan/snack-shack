@@ -1,22 +1,32 @@
 import { formatCents } from '@/lib/money'
 import { formatSaleDate, formatSaleDateShort } from '@/lib/time'
 import { openDiffLabel, type SaleDay } from '@/lib/sale-day'
-import { useClosedSaleDays } from '@/lib/insights'
+import { formatMargin } from '@/lib/pricing'
+import {
+  monthLabel,
+  sentences,
+  signedCents,
+  useInsights,
+  type CountedItem,
+  type Month,
+  type Term,
+} from '@/lib/insights'
 
 export function InsightsPage() {
-  const days = useClosedSaleDays()
+  const insights = useInsights()
 
-  if (days.isPending) {
+  if (insights.isPending) {
     return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
   }
-  if (days.isError) {
+  if (insights.isError) {
     return (
       <p role="alert" className="text-bad p-4 text-sm">
         Could not load Insights. Check your Wi-Fi and try again.
       </p>
     )
   }
-  if (days.data.length === 0) {
+  const { term, days, months, items, rules } = insights.data
+  if (days.length === 0) {
     return (
       <div className="p-4">
         <h1 className="font-heading text-xl font-semibold">Insights</h1>
@@ -27,20 +37,32 @@ export function InsightsPage() {
     )
   }
 
-  const notes = days.data.filter((day) => day.closeNote)
+  const notes = days.filter((day) => day.closeNote)
+  const says = sentences(rules)
 
   return (
     <div className="flex flex-col gap-4 p-4">
       <div>
         <h1 className="font-heading text-xl font-semibold">Insights</h1>
         <p className="text-muted-foreground text-sm">
-          This term · {days.data.length}{' '}
-          {days.data.length === 1 ? 'sale day' : 'sale days'}
+          This term · {days.length}{' '}
+          {days.length === 1 ? 'sale day' : 'sale days'}
         </p>
       </div>
 
-      <Tiles days={days.data} />
-      <RevenueChart days={days.data} />
+      <Tiles term={term} />
+      <RevenueChart days={days} />
+      <ByMonth months={months} />
+      {says.length > 0 && (
+        <Section title="What the numbers say">
+          <ul className="flex flex-col gap-2 text-sm">
+            {says.map((sentence) => (
+              <li key={sentence}>{sentence}</li>
+            ))}
+          </ul>
+        </Section>
+      )}
+      <ItemsSinceCount items={items} />
       {notes.length > 0 && (
         <Section title="Sale day notes">
           <ul className="divide-border divide-y">
@@ -52,7 +74,7 @@ export function InsightsPage() {
           </ul>
         </Section>
       )}
-      <CashHistory days={days.data} />
+      <CashHistory days={days} />
     </div>
   )
 }
@@ -65,7 +87,10 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="border-border bg-card flex flex-col gap-2 rounded-xl border p-4">
+    <section
+      aria-label={title}
+      className="border-border bg-card flex flex-col gap-2 rounded-xl border p-4"
+    >
       <h2 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
         {title}
       </h2>
@@ -94,21 +119,28 @@ function Tile({
   )
 }
 
-function Tiles({ days }: { days: SaleDay[] }) {
-  const revenue = days.reduce((sum, day) => sum + day.revenueCents, 0)
-  const deposits = days.reduce((sum, day) => sum + (day.depositCents ?? 0), 0)
-
+function Tiles({ term }: { term: Term }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <Tile
         label="Revenue"
-        value={formatCents(revenue)}
-        detail={`${formatCents(Math.round(revenue / days.length))} per sale day`}
+        value={formatCents(term.revenueCents)}
+        detail="from cash counts"
       />
       <Tile
-        label="Deposited"
-        value={formatCents(deposits)}
-        detail="sealed in deposit bags"
+        label="Spent on stock"
+        value={formatCents(term.claimsCents)}
+        detail="claims, after refunds"
+      />
+      <Tile
+        label="Revenue − spending"
+        value={signedCents(term.differenceCents)}
+        detail="before anything else"
+      />
+      <Tile
+        label="Average revenue"
+        value={formatCents(term.revenuePerDayCents)}
+        detail="per sale day"
       />
     </div>
   )
@@ -144,6 +176,77 @@ function RevenueChart({ days }: { days: SaleDay[] }) {
           </li>
         ))}
       </ul>
+    </Section>
+  )
+}
+
+function ByMonth({ months }: { months: Month[] }) {
+  return (
+    <Section title="By month">
+      <table className="w-full text-sm tabular-nums">
+        <thead className="text-muted-foreground text-xs">
+          <tr>
+            <th className="py-1 text-left font-medium">Month</th>
+            <th className="py-1 text-right font-medium">Revenue</th>
+            <th className="py-1 text-right font-medium">Claims</th>
+            <th className="py-1 text-right font-medium">Difference</th>
+          </tr>
+        </thead>
+        <tbody className="divide-border divide-y">
+          {months.map((month) => (
+            <tr key={month.month}>
+              <td className="py-2">{monthLabel(month.month)}</td>
+              <td className="py-2 text-right">
+                {formatCents(month.revenueCents)}
+              </td>
+              <td className="py-2 text-right">
+                {formatCents(month.claimsCents)}
+              </td>
+              <td className="py-2 text-right font-semibold">
+                {signedCents(month.differenceCents)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Section>
+  )
+}
+
+function ItemsSinceCount({ items }: { items: CountedItem[] }) {
+  return (
+    <Section title="Items since the last stock count">
+      {items.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          Count stock twice to see what sells.
+        </p>
+      ) : (
+        <ul className="divide-border divide-y">
+          {items.map((item) => (
+            <li
+              key={item.id}
+              className="flex items-center justify-between gap-3 py-2 text-sm"
+            >
+              <div className="flex flex-col">
+                <b>{item.name}</b>
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {item.piecesGone} gone
+                  {item.revenueEstimateCents !== null &&
+                    ` · about ${formatCents(item.revenueEstimateCents)}`}
+                </span>
+              </div>
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {item.margin === null
+                  ? 'Needs a price'
+                  : `${formatMargin(item.margin)} margin`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-muted-foreground text-xs">
+        An estimate: it can't tell sold from lost, and uses today's prices.
+      </p>
     </Section>
   )
 }

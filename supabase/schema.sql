@@ -1125,6 +1125,95 @@ CREATE OR REPLACE VIEW "public"."claims" WITH ("security_invoker"='true') AS
 
 ALTER VIEW "public"."claims" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."sale_days" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "sale_date" "date" NOT NULL,
+    "phase" "public"."sale_phase" DEFAULT 'open'::"public"."sale_phase" NOT NULL,
+    "open_note" "text",
+    "close_note" "text",
+    "selling_at" timestamp with time zone,
+    "selling_by" "uuid",
+    "left_in_box_cents" integer,
+    "closed_at" timestamp with time zone,
+    "closed_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "sale_days_left_in_box_cents_check" CHECK (("left_in_box_cents" >= 0))
+);
+
+ALTER TABLE "public"."sale_days" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."sale_day_cash" WITH ("security_invoker"='true') AS
+ WITH "totals" AS (
+         SELECT "cash_counts"."sale_day_id",
+            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")) FILTER (WHERE ("cash_counts"."kind" = 'open'::"public"."cash_count_kind")))::integer AS "open_cents",
+            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")) FILTER (WHERE ("cash_counts"."kind" = 'close'::"public"."cash_count_kind")))::integer AS "close_cents"
+           FROM "public"."cash_counts"
+          GROUP BY "cash_counts"."sale_day_id"
+        )
+ SELECT "d"."id" AS "sale_day_id",
+    "d"."sale_date",
+    "d"."phase",
+    "d"."selling_at",
+    "d"."closed_at",
+    "t"."open_cents",
+    "t"."close_cents",
+    ("t"."close_cents" - "t"."open_cents") AS "revenue_cents",
+    "d"."left_in_box_cents",
+    ("t"."close_cents" - "d"."left_in_box_cents") AS "deposit_cents",
+    "prev"."left_in_box_cents" AS "expected_open_cents",
+    ("t"."open_cents" - "prev"."left_in_box_cents") AS "open_diff_cents",
+    "d"."open_note",
+    "d"."close_note",
+    "sb"."display_name" AS "opened_by_name",
+    "cb"."display_name" AS "closed_by_name"
+   FROM (((("public"."sale_days" "d"
+     JOIN "totals" "t" ON (("t"."sale_day_id" = "d"."id")))
+     LEFT JOIN LATERAL ( SELECT "p"."left_in_box_cents"
+           FROM "public"."sale_days" "p"
+          WHERE (("p"."phase" = 'closed'::"public"."sale_phase") AND ("p"."sale_date" < "d"."sale_date"))
+          ORDER BY "p"."sale_date" DESC
+         LIMIT 1) "prev" ON (true))
+     LEFT JOIN "public"."profiles" "sb" ON (("sb"."id" = "d"."selling_by")))
+     LEFT JOIN "public"."profiles" "cb" ON (("cb"."id" = "d"."closed_by")));
+
+ALTER VIEW "public"."sale_day_cash" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_months" WITH ("security_invoker"='true') AS
+ WITH "rev" AS (
+         SELECT ("date_trunc"('month'::"text", ("sale_day_cash"."sale_date")::timestamp with time zone))::"date" AS "month",
+            ("sum"("sale_day_cash"."revenue_cents"))::integer AS "revenue_cents"
+           FROM "public"."sale_day_cash"
+          WHERE ("sale_day_cash"."phase" = 'closed'::"public"."sale_phase")
+          GROUP BY (("date_trunc"('month'::"text", ("sale_day_cash"."sale_date")::timestamp with time zone))::"date")
+        ), "spent" AS (
+         SELECT ("date_trunc"('month'::"text", ("claims"."purchased_on")::timestamp with time zone))::"date" AS "month",
+            ("sum"("claims"."net_cents"))::integer AS "claims_cents"
+           FROM "public"."claims"
+          GROUP BY (("date_trunc"('month'::"text", ("claims"."purchased_on")::timestamp with time zone))::"date")
+        )
+ SELECT COALESCE("r"."month", "s"."month") AS "month",
+    COALESCE("r"."revenue_cents", 0) AS "revenue_cents",
+    COALESCE("s"."claims_cents", 0) AS "claims_cents",
+    (COALESCE("r"."revenue_cents", 0) - COALESCE("s"."claims_cents", 0)) AS "difference_cents"
+   FROM ("rev" "r"
+     FULL JOIN "spent" "s" ON (("s"."month" = "r"."month")));
+
+ALTER VIEW "public"."insights_months" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_best_month" WITH ("security_invoker"='true') AS
+ SELECT "month",
+    "revenue_cents",
+    "claims_cents",
+    "difference_cents"
+   FROM "public"."insights_months"
+  WHERE (( SELECT "count"(*) AS "count"
+           FROM "public"."insights_months" "insights_months_1") >= 2)
+  ORDER BY "difference_cents" DESC, "month" DESC
+ LIMIT 1;
+
+ALTER VIEW "public"."insights_best_month" OWNER TO "postgres";
+
 CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "item_id" "uuid" NOT NULL,
@@ -1176,6 +1265,100 @@ CREATE OR REPLACE VIEW "public"."item_counts" WITH ("security_invoker"='true') A
      LEFT JOIN "last_count" "lc" ON (("lc"."item_id" = "i"."id")));
 
 ALTER VIEW "public"."item_counts" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true') AS
+ SELECT "i"."id" AS "item_id",
+    "i"."name",
+    "i"."price_cents",
+    "i"."bundle_size",
+    "i"."unit_cost_cents",
+    "c"."last_counted_at",
+    "c"."pieces_gone",
+        CASE
+            WHEN ("i"."price_cents" IS NOT NULL) THEN ("round"(((("c"."pieces_gone")::numeric * ("i"."price_cents")::numeric) / ("i"."bundle_size")::numeric)))::integer
+            ELSE NULL::integer
+        END AS "revenue_estimate_cents",
+        CASE
+            WHEN ("i"."price_cents" IS NOT NULL) THEN ((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric))
+            ELSE NULL::numeric
+        END AS "margin"
+   FROM ("public"."items" "i"
+     JOIN "public"."item_counts" "c" ON (("c"."item_id" = "i"."id")))
+  WHERE (("c"."pieces_gone" IS NOT NULL) AND (NOT "i"."archived"));
+
+ALTER VIEW "public"."insights_items" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_low_margin_items" WITH ("security_invoker"='true') AS
+ SELECT "i"."id" AS "item_id",
+    "i"."name",
+    "c"."bought_since",
+    ((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) AS "margin"
+   FROM ("public"."items" "i"
+     JOIN "public"."item_counts" "c" ON (("c"."item_id" = "i"."id")))
+  WHERE ((NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("c"."bought_since" > 0) AND (((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) < 0.3));
+
+ALTER VIEW "public"."insights_low_margin_items" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_open_count_off" WITH ("security_invoker"='true') AS
+ SELECT ("count"(*))::integer AS "sale_days"
+   FROM "public"."sale_day_cash"
+  WHERE (("phase" = 'closed'::"public"."sale_phase") AND ("open_diff_cents" IS NOT NULL) AND ("open_diff_cents" <> 0))
+ HAVING ("count"(*) > 0);
+
+ALTER VIEW "public"."insights_open_count_off" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_revenue_trend" WITH ("security_invoker"='true') AS
+ WITH "days" AS (
+         SELECT "sale_day_cash"."sale_date",
+            "sale_day_cash"."revenue_cents",
+            "row_number"() OVER (ORDER BY "sale_day_cash"."sale_date" DESC) AS "rn"
+           FROM "public"."sale_day_cash"
+          WHERE ("sale_day_cash"."phase" = 'closed'::"public"."sale_phase")
+        ), "usual" AS (
+         SELECT ("round"("avg"("days"."revenue_cents")))::integer AS "usual_cents"
+           FROM "days"
+          WHERE ("days"."rn" > 1)
+        )
+ SELECT "d"."sale_date",
+    "d"."revenue_cents",
+    "u"."usual_cents",
+    ("d"."revenue_cents" - "u"."usual_cents") AS "difference_cents"
+   FROM "days" "d",
+    "usual" "u"
+  WHERE (("d"."rn" = 1) AND ("u"."usual_cents" IS NOT NULL) AND ("d"."revenue_cents" <> "u"."usual_cents"));
+
+ALTER VIEW "public"."insights_revenue_trend" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_slowest_item" WITH ("security_invoker"='true') AS
+ SELECT "item_id",
+    "name",
+    "pieces_gone"
+   FROM "public"."insights_items"
+  WHERE (( SELECT "count"(*) AS "count"
+           FROM "public"."insights_items" "insights_items_1") >= 2)
+  ORDER BY "pieces_gone", "name"
+ LIMIT 1;
+
+ALTER VIEW "public"."insights_slowest_item" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."insights_term" WITH ("security_invoker"='true') AS
+ SELECT (( SELECT "count"(*) AS "count"
+           FROM "public"."sale_day_cash"
+          WHERE ("sale_day_cash"."phase" = 'closed'::"public"."sale_phase")))::integer AS "sale_days",
+    (COALESCE(( SELECT "sum"("sale_day_cash"."revenue_cents") AS "sum"
+           FROM "public"."sale_day_cash"
+          WHERE ("sale_day_cash"."phase" = 'closed'::"public"."sale_phase")), (0)::bigint))::integer AS "revenue_cents",
+    (COALESCE(( SELECT "sum"("claims"."net_cents") AS "sum"
+           FROM "public"."claims"), (0)::bigint))::integer AS "claims_cents",
+    ((COALESCE(( SELECT "sum"("sale_day_cash"."revenue_cents") AS "sum"
+           FROM "public"."sale_day_cash"
+          WHERE ("sale_day_cash"."phase" = 'closed'::"public"."sale_phase")), (0)::bigint) - COALESCE(( SELECT "sum"("claims"."net_cents") AS "sum"
+           FROM "public"."claims"), (0)::bigint)))::integer AS "difference_cents",
+    ( SELECT ("round"("avg"("sale_day_cash"."revenue_cents")))::integer AS "round"
+           FROM "public"."sale_day_cash"
+          WHERE ("sale_day_cash"."phase" = 'closed'::"public"."sale_phase")) AS "revenue_per_day_cents";
+
+ALTER VIEW "public"."insights_term" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."item_stock" AS
 SELECT
@@ -1255,60 +1438,6 @@ ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS
     NO MAXVALUE
     CACHE 1
 );
-
-CREATE TABLE IF NOT EXISTS "public"."sale_days" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "sale_date" "date" NOT NULL,
-    "phase" "public"."sale_phase" DEFAULT 'open'::"public"."sale_phase" NOT NULL,
-    "open_note" "text",
-    "close_note" "text",
-    "selling_at" timestamp with time zone,
-    "selling_by" "uuid",
-    "left_in_box_cents" integer,
-    "closed_at" timestamp with time zone,
-    "closed_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    CONSTRAINT "sale_days_left_in_box_cents_check" CHECK (("left_in_box_cents" >= 0))
-);
-
-ALTER TABLE "public"."sale_days" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."sale_day_cash" WITH ("security_invoker"='true') AS
- WITH "totals" AS (
-         SELECT "cash_counts"."sale_day_id",
-            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")) FILTER (WHERE ("cash_counts"."kind" = 'open'::"public"."cash_count_kind")))::integer AS "open_cents",
-            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")) FILTER (WHERE ("cash_counts"."kind" = 'close'::"public"."cash_count_kind")))::integer AS "close_cents"
-           FROM "public"."cash_counts"
-          GROUP BY "cash_counts"."sale_day_id"
-        )
- SELECT "d"."id" AS "sale_day_id",
-    "d"."sale_date",
-    "d"."phase",
-    "d"."selling_at",
-    "d"."closed_at",
-    "t"."open_cents",
-    "t"."close_cents",
-    ("t"."close_cents" - "t"."open_cents") AS "revenue_cents",
-    "d"."left_in_box_cents",
-    ("t"."close_cents" - "d"."left_in_box_cents") AS "deposit_cents",
-    "prev"."left_in_box_cents" AS "expected_open_cents",
-    ("t"."open_cents" - "prev"."left_in_box_cents") AS "open_diff_cents",
-    "d"."open_note",
-    "d"."close_note",
-    "sb"."display_name" AS "opened_by_name",
-    "cb"."display_name" AS "closed_by_name"
-   FROM (((("public"."sale_days" "d"
-     JOIN "totals" "t" ON (("t"."sale_day_id" = "d"."id")))
-     LEFT JOIN LATERAL ( SELECT "p"."left_in_box_cents"
-           FROM "public"."sale_days" "p"
-          WHERE (("p"."phase" = 'closed'::"public"."sale_phase") AND ("p"."sale_date" < "d"."sale_date"))
-          ORDER BY "p"."sale_date" DESC
-         LIMIT 1) "prev" ON (true))
-     LEFT JOIN "public"."profiles" "sb" ON (("sb"."id" = "d"."selling_by")))
-     LEFT JOIN "public"."profiles" "cb" ON (("cb"."id" = "d"."closed_by")));
-
-ALTER VIEW "public"."sale_day_cash" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."settings" (
     "id" boolean DEFAULT true NOT NULL,
@@ -1775,6 +1904,22 @@ GRANT ALL ON TABLE "public"."claims" TO "anon";
 GRANT ALL ON TABLE "public"."claims" TO "authenticated";
 GRANT ALL ON TABLE "public"."claims" TO "service_role";
 
+GRANT ALL ON TABLE "public"."sale_days" TO "anon";
+GRANT ALL ON TABLE "public"."sale_days" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_days" TO "service_role";
+
+GRANT ALL ON TABLE "public"."sale_day_cash" TO "anon";
+GRANT ALL ON TABLE "public"."sale_day_cash" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_day_cash" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_months" TO "anon";
+GRANT ALL ON TABLE "public"."insights_months" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_months" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_best_month" TO "anon";
+GRANT ALL ON TABLE "public"."insights_best_month" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_best_month" TO "service_role";
+
 GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
 GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
 GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
@@ -1782,6 +1927,30 @@ GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
 GRANT ALL ON TABLE "public"."item_counts" TO "anon";
 GRANT ALL ON TABLE "public"."item_counts" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_counts" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_items" TO "anon";
+GRANT ALL ON TABLE "public"."insights_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_items" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_low_margin_items" TO "anon";
+GRANT ALL ON TABLE "public"."insights_low_margin_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_low_margin_items" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_open_count_off" TO "anon";
+GRANT ALL ON TABLE "public"."insights_open_count_off" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_open_count_off" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_revenue_trend" TO "anon";
+GRANT ALL ON TABLE "public"."insights_revenue_trend" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_revenue_trend" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_slowest_item" TO "anon";
+GRANT ALL ON TABLE "public"."insights_slowest_item" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_slowest_item" TO "service_role";
+
+GRANT ALL ON TABLE "public"."insights_term" TO "anon";
+GRANT ALL ON TABLE "public"."insights_term" TO "authenticated";
+GRANT ALL ON TABLE "public"."insights_term" TO "service_role";
 
 GRANT ALL ON TABLE "public"."item_stock" TO "anon";
 GRANT ALL ON TABLE "public"."item_stock" TO "authenticated";
@@ -1798,14 +1967,6 @@ GRANT ALL ON TABLE "public"."last_claims_send" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_days" TO "anon";
-GRANT ALL ON TABLE "public"."sale_days" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_days" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_day_cash" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_cash" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_cash" TO "service_role";
 
 GRANT ALL ON TABLE "public"."settings" TO "anon";
 GRANT ALL ON TABLE "public"."settings" TO "authenticated";

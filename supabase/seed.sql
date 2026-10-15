@@ -154,6 +154,21 @@ select pg_temp.cash_day('2026-09-22', 3000, 11325, 3000, 'Two kids asked for Poc
 select pg_temp.cash_day('2026-09-24', 3000, 14200, 3000,
   'Gummies went first. A few kids asked for popcorn after it ran out last time.', '00000000-0000-0000-0000-00000000000a');
 
+-- Stock counts on two days, so Insights has something to show. Back-dated: the
+-- ledger stamps now(), so the rows are written directly with chosen dates.
+insert into public.stock_movements (item_id, qty, reason, created_at)
+select i.id, v.qty, 'count', (v.on_day + time '12:00') at time zone 'America/Vancouver'
+  from (values
+    ('Chips, assorted',   -20, date '2026-09-26'),
+    ('Granola bar',    -10, date '2026-09-26'),
+    ('Cheddar crackers',  -30, date '2026-09-26'),
+    ('Chips, assorted',   -40, date '2026-10-09'),
+    ('Granola bar',     -5, date '2026-10-09'),
+    ('Cheddar crackers',  -20, date '2026-10-09')
+  ) as v (name, qty, on_day)
+  join public.items i on i.name = v.name
+ order by v.on_day;
+
 select set_config('request.jwt.claims', '', true);
 
 commit;
