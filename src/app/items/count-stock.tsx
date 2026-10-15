@@ -129,9 +129,7 @@ function CountRow({
           variant="outline"
           className="text-foreground"
           aria-label={`Count ${item.name}`}
-          onClick={() =>
-            onChange((item.lastCountedPieces ?? 0) + item.boughtSince)
-          }
+          onClick={() => onChange(Math.max(0, item.onHand))}
         >
           Count
         </Button>

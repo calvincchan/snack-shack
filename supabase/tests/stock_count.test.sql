@@ -1,7 +1,7 @@
 -- Occasional stock counts (ADR-0016, pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(17);
+select plan(23);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items cascade;
@@ -75,11 +75,35 @@ select is((select pieces_gone from public.item_counts where item_id = (select id
 select is((select last_counted_pieces || ' ' || bought_since from public.item_overview where name = 'Chips'),
   '30 0', 'Items reads the counts');
 
+select is((select pieces_gone from public.item_overview where name = 'Chips'), 6, 'Items reads pieces gone');
+
+-- Saving again straight away posts only the new difference (none).
+select public.save_stock_count(format('[{"item_id":"%s","pieces":30}]', (select id from ids where name = 'Chips'))::jsonb);
+select is((select qty from public.stock_movements where reason = 'count' order by seq desc limit 1),
+  0, 'a repeat save posts a zero difference');
+
 -- Rules.
+select throws_ok(
+  format('select public.save_stock_count(%L::jsonb)', format('[{"item_id":"%1$s","pieces":1},{"item_id":"%1$s","pieces":2}]', (select id from ids where name = 'Chips'))),
+  'P0001', 'Each item can be counted once per save.', 'an item twice in one save is refused');
+select throws_ok(
+  $$select public.save_stock_count('[{"item_id":"99999999-0000-0000-0000-000000000000","pieces":1}]'::jsonb)$$,
+  'P0001', 'That item no longer exists.', 'an unknown item is refused');
+reset role;
+update public.items set archived = true where name = 'Pretzels';
+set local role authenticated;
+select throws_ok(
+  format('select public.save_stock_count(%L::jsonb)', format('[{"item_id":"%s","pieces":1}]', (select id from ids where name = 'Pretzels'))),
+  'P0001', 'That item is archived.', 'an archived item is refused');
 select throws_ok(
   format('select public.save_stock_count(%L::jsonb)', format('[{"item_id":"%s","pieces":-1}]', (select id from ids where name = 'Chips'))),
   'P0001', 'Pieces must be 0 or more.', 'no negative counts');
 select throws_ok($$select public.save_stock_count('[]'::jsonb)$$, 'P0001', 'Count at least one item.', 'an empty count is refused');
+
+select set_config('request.jwt.claims', json_build_object('sub', '00000000-0000-0000-0000-0000000000ff', 'role', 'authenticated')::text, true);
+select throws_ok(
+  format('select public.save_stock_count(%L::jsonb)', format('[{"item_id":"%s","pieces":1}]', (select id from ids where name = 'Chips'))),
+  'P0001', 'Not signed in as a Snack Shack volunteer.', 'only the team may count');
 
 select * from finish();
 rollback;

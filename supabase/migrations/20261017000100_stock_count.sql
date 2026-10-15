@@ -91,6 +91,8 @@ declare
   v_seen uuid[] := '{}';
 begin
   perform public.require_member();
+  -- One save at a time, so each difference is taken from the ledger as it stands.
+  perform pg_advisory_xact_lock(hashtext('save_stock_count'));
   if p_counts is null or jsonb_typeof(p_counts) <> 'array' or jsonb_array_length(p_counts) = 0 then
     raise exception 'Count at least one item.';
   end if;
@@ -104,6 +106,9 @@ begin
 
     select on_hand into v_on_hand from public.item_stock where id = v_item;
     if not found then raise exception 'That item no longer exists.'; end if;
+    if exists (select 1 from public.items where id = v_item and archived) then
+      raise exception 'That item is archived.';
+    end if;
 
     insert into public.stock_movements (item_id, qty, reason)
     values (v_item, v_pieces - v_on_hand, 'count');
