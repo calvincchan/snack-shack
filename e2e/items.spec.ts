@@ -17,7 +17,7 @@ test('the items list shows stock, cost, margin and band', async ({ page }) => {
   const miniBars = allItems(page).filter({
     hasText: 'Nestlé mini bars, assorted',
   })
-  await expect(miniBars).toContainText('130 on hand')
+  await expect(miniBars).toContainText('Not counted · bought 130')
   await expect(miniBars).toContainText('$0.14 a piece')
   await expect(miniBars).toContainText('72%')
   await expect(miniBars).toContainText('Great deal')
@@ -41,7 +41,7 @@ test('tapping a price option activates an item that needs a price', async ({
   ).toBeVisible()
 
   await expect(
-    page.getByText('50 pieces · $0.30 a piece · logged by Yuki'),
+    page.getByText('Bought 50 · $0.30 a piece · logged by Yuki'),
   ).toBeVisible()
 
   // 29.98¢ a piece, so the four options read as they do in the prototype and
@@ -66,6 +66,25 @@ test('tapping a price option activates an item that needs a price', async ({
   ).toBeHidden()
 
   const row = allItems(page).filter({ hasText: 'Rice crackers' })
-  await expect(row).toContainText('50 on hand')
+  await expect(row).toContainText('Not counted · bought 50')
   await expect(row).toContainText('70%')
+})
+
+test('a stock count replaces "not counted" and skipped items post nothing', async ({
+  page,
+}) => {
+  await signIn(page, COORDINATOR_EMAIL)
+  await page.getByRole('link', { name: 'Items' }).click()
+  await page.getByRole('button', { name: 'Count stock' }).click()
+
+  await page.getByRole('button', { name: 'Count Rice crackers' }).click()
+  await page.getByRole('textbox', { name: 'Rice crackers' }).fill('20')
+  await page.getByRole('button', { name: 'Save count' }).click()
+
+  await expect(page.getByText('Saved 1 item')).toBeVisible()
+  const row = allItems(page).filter({ hasText: 'Rice crackers' })
+  await expect(row).toContainText(/Counted 20 on \w+ \d+ · bought 0 since/)
+  await expect(
+    allItems(page).filter({ hasText: 'Nestlé mini bars, assorted' }),
+  ).toContainText('Not counted')
 })

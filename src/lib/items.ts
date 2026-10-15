@@ -14,7 +14,14 @@ export type Item = {
   bundleSize: number
   /** Weighted-average cost of one piece, in cents, possibly fractional. */
   costPerPieceCents: number
+  /** The ledger total. Only exact right after a stock count. */
   onHand: number
+  lastCountedAt: string | null
+  lastCountedPieces: number | null
+  /** Purchases minus returns since the last count (all of them if never counted). */
+  boughtSince: number
+  /** Pieces gone between the last two counts; null until counted twice. */
+  piecesGone: number | null
   isNew: boolean
   archived: boolean
   version: number
@@ -33,6 +40,10 @@ function toItem(row: OverviewRow): Item {
     bundleSize: row.bundle_size ?? 1,
     costPerPieceCents: Number(row.unit_cost_cents ?? 0),
     onHand: row.on_hand ?? 0,
+    lastCountedAt: row.last_counted_at,
+    lastCountedPieces: row.last_counted_pieces,
+    boughtSince: row.bought_since ?? 0,
+    piecesGone: row.pieces_gone,
     isNew: row.is_new ?? true,
     archived: row.archived ?? false,
     version: row.version!,
@@ -40,6 +51,28 @@ function toItem(row: OverviewRow): Item {
     updatedByName: row.updated_by_name,
     updatedAt: row.updated_at,
   }
+}
+
+const shortDate = (when: string) =>
+  new Date(when).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
+
+/** "Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48". */
+export function stockLine(
+  item: Pick<Item, 'lastCountedAt' | 'lastCountedPieces' | 'boughtSince'>,
+): string {
+  if (item.lastCountedAt === null || item.lastCountedPieces === null) {
+    return `Not counted · bought ${item.boughtSince}`
+  }
+  return `Counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)} · bought ${item.boughtSince} since`
+}
+
+/** "Last counted 24 on Oct 1", or null when never counted. */
+export function lastCountedLine(
+  item: Pick<Item, 'lastCountedAt' | 'lastCountedPieces'>,
+): string | null {
+  if (item.lastCountedAt === null || item.lastCountedPieces === null)
+    return null
+  return `Last counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)}`
 }
 
 export const itemsQueryKey = ['items'] as const
@@ -136,6 +169,22 @@ export function useSetArchived() {
         .update({ archived })
         .eq('id', id)
       if (error) throw error
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: itemsQueryKey }),
+  })
+}
+
+/** Save a stock count: only the items given post a movement. Returns how many. */
+export function useSaveStockCount() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (counts: { itemId: string; pieces: number }[]) => {
+      const { data, error } = await supabase.rpc('save_stock_count', {
+        p_counts: counts.map((c) => ({ item_id: c.itemId, pieces: c.pieces })),
+      })
+      if (error) throw error
+      return data
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: itemsQueryKey }),
   })

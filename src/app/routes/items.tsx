@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { cn } from 'cn'
+import { Button } from '@/components/ui/button'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
 import { ItemEditor } from '@/app/items/item-editor'
-import { useItems, useSaveItem, type Item } from '@/lib/items'
+import { CountStock } from '@/app/items/count-stock'
+import { stockLine, useItems, useSaveItem, type Item } from '@/lib/items'
 import { formatCents } from '@/lib/money'
 import {
   formatMargin,
@@ -16,6 +18,7 @@ import {
 export function ItemsPage() {
   const [showArchived, setShowArchived] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
+  const [counting, setCounting] = useState(false)
 
   const items = useItems({ includeArchived: showArchived })
 
@@ -28,9 +31,26 @@ export function ItemsPage() {
   )
   const archived = all.filter((item) => item.archived)
 
+  if (counting) {
+    return (
+      <CountStock
+        items={priced.concat(needPrice)}
+        onDone={() => setCounting(false)}
+      />
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6 p-4 pb-8">
       <h1 className="sr-only">Items</h1>
+
+      <Button
+        variant="outline"
+        className="text-foreground min-h-12 self-start"
+        onClick={() => setCounting(true)}
+      >
+        Count stock
+      </Button>
 
       {items.isPending && (
         <p className="text-muted-foreground text-sm">Loading…</p>
@@ -43,10 +63,7 @@ export function ItemsPage() {
 
       {needPrice.length > 0 && (
         <section className="flex flex-col gap-3">
-          <SectionHeading
-            title="Needs a price"
-            note="Can't go in a lineup until priced"
-          />
+          <SectionHeading title="Needs a price" note="Tap a price to set it" />
           {needPrice.map((item) => (
             <NeedsPriceCard key={item.id} item={item} />
           ))}
@@ -153,8 +170,8 @@ function ItemRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <ItemName item={item} />
           <p className="text-muted-foreground text-sm tabular-nums">
-            {item.onHand} on hand · {formatCents(item.costPerPieceCents)} a
-            piece · {formatMargin(margin)}
+            {stockLine(item)} · {formatCents(item.costPerPieceCents)} a piece ·{' '}
+            {formatMargin(margin)}
           </p>
           <span className="flex flex-wrap items-center gap-2">
             <BandPill band={marginBand(margin)} />
@@ -178,7 +195,8 @@ function NeedsPriceCard({ item }: { item: Item }) {
         <div className="flex min-w-0 flex-col gap-0.5">
           <ItemName item={item} />
           <p className="text-muted-foreground text-sm tabular-nums">
-            {item.onHand} pieces · {formatCents(item.costPerPieceCents)} a piece
+            Bought {item.boughtSince} · {formatCents(item.costPerPieceCents)} a
+            piece
             {item.lastBoughtBy && ` · logged by ${item.lastBoughtBy}`}
           </p>
         </div>
