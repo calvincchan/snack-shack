@@ -20,7 +20,6 @@ export function useVolunteers() {
         .from('profiles')
         .select('id, display_name')
         .eq('active', true)
-        .neq('role', 'treasurer')
         .order('display_name')
       if (error) throw error
       return data

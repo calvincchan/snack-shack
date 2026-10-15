@@ -1,7 +1,7 @@
 -- Refunds on a To pay claim (ADR-0013, pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(37);
+select plan(33);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items, public.sale_days cascade;
@@ -134,34 +134,19 @@ select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 select public.refund_purchase_line('20000000-0000-0000-0000-000000000004', (select id from lines where name = 'Crackers'), 15, 500, '2026-10-06');
 select is((select net_cents from public.claims where claim_no = 2), 0, 'a fully refunded claim nets to $0');
 
+-- Mark paid refuses when the total changed since the list was loaded.
 reset role;
-select is((select jsonb_array_length(public.weekly_treasurer_report() -> 'to_reimburse'))::int, 1, 'net $0 drops out of the weekly email');
-select is((select (public.weekly_treasurer_report() ->> 'to_reimburse_cents')::int), 3000, 'the email total is net');
-
--- Mark paid links store their total and refuse when it has changed.
-set local role service_role;
-create temp table issued as select * from public.issue_mark_paid_tokens();
-select is((select count(*)::int from issued), 1, 'no link for a net $0 claim');
-select is((select (payload ->> 'total_cents')::int from public.action_tokens), 3000, 'the link stores the total it was issued for');
-
-reset role;
--- Yuki refunds more before the treasurer taps.
 set local role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select public.refund_purchase_line(gen_random_uuid(), (select id from lines where name = 'Gummies'), 2, 120, '2026-10-06');
-reset role;
-set local role service_role;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
 select throws_ok(
-  format('select public.redeem_action_token(%L)', (select token from issued)),
-  'SS004', 'The amount changed since this email. Check before you send money; use next week''s email.',
-  'a changed total refuses the link');
-select is((select count(*)::int from public.claims where status = 'paid'), 0, 'the refused link pays nothing');
-
--- A link without a stored total redeems as before.
-reset role;
-update public.action_tokens set payload = payload - 'total_cents';
-set local role service_role;
-select is((select (public.redeem_action_token((select token from issued)) ->> 'purchases_paid')::int), 1, 'a link with no stored total still redeems');
+  $$select public.mark_claims_paid(array[(select id from public.purchases where claim_no = 1)], 3000, '2026-10-06')$$,
+  'P0001', 'A claim changed since you loaded this list. Check it and try again.',
+  'a changed total refuses mark paid');
+select is((select count(*)::int from public.claims where status = 'paid'), 0, 'the refused mark paid pays nothing');
+select is(public.mark_claims_paid(array[(select id from public.purchases where claim_no = 1)], 2880, '2026-10-06', 'Cheque #7'), 1,
+  'the coordinator marks the claim paid at the new total');
 
 -- Paid claims take no refund and no undo.
 reset role;

@@ -44,13 +44,13 @@ test('the coordinator edits a team member', async ({ page }) => {
   await page.getByRole('button', { name: 'Edit Dan' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Full name (optional)').fill('Daniel Smith-Jones')
-  await dialog.getByRole('radio', { name: 'Treasurer' }).click()
+  await dialog.getByRole('radio', { name: 'Coordinator' }).click()
   await dialog.getByRole('button', { name: 'Save' }).click()
 
   await expect(page.getByText('Daniel Smith-Jones')).toBeVisible()
   await expect(
     page.getByRole('button', { name: 'Edit Dan' }).locator('..'),
-  ).toContainText('Treasurer')
+  ).toContainText('Coordinator')
 })
 
 test('a volunteer edits their own profile', async ({ page }) => {

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { BandPill } from '@/components/item-bits'
+import { useAuth } from '@/lib/auth'
 import { useItems, type Item } from '@/lib/items'
 import {
   STORES,
@@ -110,6 +111,7 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
   const [problem, setProblem] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
 
+  const { profile, isCoordinator } = useAuth()
   const items = useItems()
   const volunteers = useVolunteers()
   const log = useLogPurchase()
@@ -137,7 +139,9 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
   function save() {
     setProblem(null)
 
-    if (!buyerId) return setProblem('Pick who is being reimbursed.')
+    // Volunteers log their own; only the coordinator picks someone else.
+    const buyer = isCoordinator ? buyerId : (profile?.id ?? '')
+    if (!buyer) return setProblem('Pick who is being reimbursed.')
     if (!receipt) return setProblem('Attach a photo of the receipt.')
 
     const payload: PurchaseLine[] = []
@@ -174,7 +178,7 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
         id: purchaseId,
         purchasedOn,
         store,
-        buyerId,
+        buyerId: buyer,
         receipt: receipt,
         lines: payload,
       },
@@ -224,22 +228,24 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="buyer">Bought by (reimbursed later)</Label>
-          <select
-            id="buyer"
-            className="border-input bg-card text-foreground min-h-12 rounded-md border px-3"
-            value={buyerId}
-            onChange={(event) => setBuyerId(event.target.value)}
-          >
-            <option value="">Pick a volunteer</option>
-            {(volunteers.data ?? []).map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.display_name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {isCoordinator && (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="buyer">Bought by (reimbursed later)</Label>
+            <select
+              id="buyer"
+              className="border-input bg-card text-foreground min-h-12 rounded-md border px-3"
+              value={buyerId}
+              onChange={(event) => setBuyerId(event.target.value)}
+            >
+              <option value="">Pick a volunteer</option>
+              {(volunteers.data ?? []).map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.display_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </section>
 
       {lines.map((line, index) => (

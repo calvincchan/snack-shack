@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { buildEmail, type Report } from './weekly-email'
+import { buildEmail, type Report } from './claims-email'
 
 const report: Report = {
-  week_start: '2026-09-21',
+  since: '2026-09-21T16:00:00Z',
   deposits: [
     {
       sale_date: '2026-09-22',
@@ -58,7 +58,7 @@ const report: Report = {
       refunded_cents: 0,
       status: 'to_pay',
       paid_at: null,
-      payment_ref: null,
+      payment_note: null,
     },
     {
       label: 'SS-001',
@@ -70,25 +70,18 @@ const report: Report = {
       refunded_cents: 0,
       status: 'paid',
       paid_at: '2026-09-12T18:00:00Z',
-      payment_ref: 'E-transfer',
+      payment_note: 'Cheque #118',
     },
   ],
 }
 
-const links = {
-  markPaid: { 'b-yuki': 'https://app.test/mark-paid?token=abc' },
-  receipts: {
-    c3: 'https://files.test/c3?sig=1',
-    c4: 'https://files.test/c4?sig=2',
-  },
-  attachments: { c3: 'SS-003.jpg', c4: 'SS-004.jpg' },
-}
+const attachments = { c3: 'SS-003.jpg', c4: 'SS-004.jpg' }
 
 describe('buildEmail', () => {
-  const email = buildEmail(report, links)
+  const email = buildEmail(report, attachments)
 
   it('flags the email for the treasurer', () => {
-    expect(email.subject).toBe('ATTN: Treasurer')
+    expect(email.subject).toBe('ATTN: Treasurer: Snack Shack claims')
   })
 
   it('adds the full name the treasurer pays by', () => {
@@ -110,16 +103,21 @@ describe('buildEmail', () => {
           },
         ],
       },
-      links,
+      attachments,
     )
-    expect(named.html).toContain('<h3>Calvin C (Chun Yu Chan):')
-    expect(named.text).toContain('Calvin C (Chun Yu Chan):')
+    expect(named.html).toContain('<h3>Calvin C (Chun Yu Chan): cheque for')
+    expect(named.text).toContain('Calvin C (Chun Yu Chan): cheque for')
     expect(named.csv.split('\n')[1]).toContain(',Calvin C (Chun Yu Chan),')
-    expect(named.html).toContain('Click here to mark Calvin C paid')
   })
 
   it('shows the display name alone when there is no full name', () => {
-    expect(email.html).toContain('<h3>Yuki:')
+    expect(email.html).toContain('<h3>Yuki: cheque for $77.07')
+  })
+
+  it('says which sale days the deposits cover', () => {
+    expect(email.html).toContain('since the last email on Sep 21.')
+    const first = buildEmail({ ...report, since: null }, attachments)
+    expect(first.html).toContain('Every sale day closed so far.')
   })
 
   it('lists each deposit with who closed it and the revenue', () => {
@@ -130,20 +128,16 @@ describe('buildEmail', () => {
     expect(email.html).toContain('revenue $85.00')
   })
 
-  it('groups reimbursements per volunteer with linked claim numbers', () => {
-    expect(email.html).toContain('Yuki')
+  it('groups reimbursements per volunteer with each claim number, date and store', () => {
     expect(email.html).toContain('$77.07')
-    expect(email.html).toContain(
-      '<a href="https://files.test/c3?sig=1">SS-003</a>',
-    )
-    expect(email.html).toContain(
-      '<a href="https://files.test/c4?sig=2">SS-004</a>',
-    )
+    expect(email.html).toContain('SS-003 (Sep 18, Costco, $42.72)')
+    expect(email.text).toContain('SS-004 (Sep 25, Superstore, $26.35')
   })
 
-  it('gives each volunteer a Mark paid button', () => {
-    expect(email.html).toContain('href="https://app.test/mark-paid?token=abc"')
-    expect(email.html).toContain('Click here to mark Yuki paid')
+  it('has no links and no Mark paid buttons', () => {
+    expect(email.html).not.toContain('href=')
+    expect(email.text).not.toContain('http')
+    expect(email.html).not.toContain('mark')
   })
 
   it('stops a store name from running as a spreadsheet formula', () => {
@@ -152,23 +146,16 @@ describe('buildEmail', () => {
         ...report,
         ledger: [{ ...report.ledger[0], store: '=SUM(A1)' }],
       },
-      links,
+      attachments,
     ).csv
     expect(csv.split('\n')[1]).toContain(",'=SUM(A1),")
   })
 
-  it('repeats the links in the plain text version', () => {
-    expect(email.text).toContain(
-      'Click here to mark Yuki paid: https://app.test/mark-paid?token=abc',
-    )
-    expect(email.text).toContain('SS-003 https://files.test/c3?sig=1')
-  })
-
   it('makes a CSV of the whole ledger, quoting commas and quotes', () => {
     expect(email.csv.split('\n')).toEqual([
-      'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Reference',
+      'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Paid note',
       'SS-003,2026-09-18,"Costco, ""bulk""",Yuki,42.72,0.00,To pay,,',
-      'SS-001,2026-09-08,Costco,Calvin,50.00,0.00,Paid,2026-09-12,E-transfer',
+      'SS-001,2026-09-08,Costco,Calvin,50.00,0.00,Paid,2026-09-12,Cheque #118',
     ])
   })
 
@@ -185,7 +172,7 @@ describe('buildEmail', () => {
     expect(email.text).toContain(
       'Receipt photos are attached, named by claim number.',
     )
-    const bare = buildEmail(report, { ...links, attachments: {} })
+    const bare = buildEmail(report, {})
     expect(bare.text).not.toContain('Receipt photos')
   })
 
@@ -202,7 +189,7 @@ describe('buildEmail', () => {
           },
         ],
       },
-      links,
+      attachments,
     ).csv
     expect(csv.split('\n')[1]).toContain(',0.00,42.72,Refunded,')
   })
@@ -215,7 +202,7 @@ describe('buildEmail', () => {
           { ...report.to_reimburse[0], buyer_name: '<b>Yuki</b>' },
         ],
       },
-      links,
+      attachments,
     )
     expect(tricky.html).not.toContain('<b>Yuki</b>')
     expect(tricky.html).toContain('&lt;b&gt;Yuki&lt;/b&gt;')
@@ -230,10 +217,10 @@ describe('buildEmail', () => {
         to_reimburse: [],
         to_reimburse_cents: 0,
       },
-      { markPaid: {}, receipts: {}, attachments: {} },
+      {},
     )
-    expect(quiet.subject).toBe('ATTN: Treasurer')
-    expect(quiet.html).toContain('No sale days that week.')
+    expect(quiet.subject).toBe('ATTN: Treasurer: Snack Shack claims')
+    expect(quiet.html).toContain('No sale days closed.')
     expect(quiet.html).toContain('Nothing to reimburse.')
   })
 })

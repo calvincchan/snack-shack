@@ -39,13 +39,16 @@ export type Claim = {
   store: string
   buyerId: string
   buyerName: string
+  /** The name on their cheque, when the coordinator has set one. */
+  buyerFullName: string | null
   /** The receipt total. `netCents` is what is owed. */
   totalCents: number
   refundedCents: number
   netCents: number
   status: Enums<'claim_status'>
   paidAt: string | null
-  paymentRef: string | null
+  /** What the coordinator noted when marking paid, e.g. "Cheque #142". */
+  paymentNote: string | null
   receiptPath: string
   lines: ReceiptLine[]
   refunds: Refund[]
@@ -130,12 +133,13 @@ function toClaim(
     store: row.store!,
     buyerId: row.buyer_id!,
     buyerName: row.buyer_name!,
+    buyerFullName: row.buyer_full_name,
     totalCents: row.total_cents!,
     refundedCents: row.refunded_cents!,
     netCents: row.net_cents!,
     status: row.status!,
     paidAt: row.paid_at,
-    paymentRef: row.payment_ref,
+    paymentNote: row.payment_note,
     receiptPath: row.receipt_path!,
     lines,
     refunds,
@@ -172,9 +176,20 @@ export async function receiptUrl(path: string): Promise<string> {
   return data.signedUrl
 }
 
+/** "Calvin C (Chun Yu Chan)": the display name, then the name on the cheque. */
+export function buyerLabel(buyer: {
+  buyerName: string
+  buyerFullName: string | null
+}): string {
+  return buyer.buyerFullName
+    ? `${buyer.buyerName} (${buyer.buyerFullName})`
+    : buyer.buyerName
+}
+
 export type BuyerGroup = {
   buyerId: string
   buyerName: string
+  buyerFullName: string | null
   claims: Claim[]
   totalCents: number
 }
@@ -186,6 +201,7 @@ export function groupByBuyer(claims: Claim[]): BuyerGroup[] {
     const group = groups.get(claim.buyerId) ?? {
       buyerId: claim.buyerId,
       buyerName: claim.buyerName,
+      buyerFullName: claim.buyerFullName,
       claims: [],
       totalCents: 0,
     }
@@ -213,7 +229,7 @@ export function claimsCsv(claims: Claim[]): string {
     'Refunded',
     'Status',
     'Paid on',
-    'Reference',
+    'Paid note',
   ]
 
   const rows = claims.map((claim) => [
@@ -229,7 +245,7 @@ export function claimsCsv(claims: Claim[]): string {
         ? 'Refunded'
         : 'To pay',
     claim.paidAt ? claim.paidAt.slice(0, 10) : '',
-    claim.paymentRef ?? '',
+    claim.paymentNote ?? '',
   ])
 
   return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n')
@@ -318,5 +334,104 @@ export function useUndoRefund() {
       if (error) throw error
     },
     onSuccess: refresh,
+  })
+}
+
+/** Coordinator only; the database refuses anyone else. */
+export function useMarkClaimsPaid() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (paid: {
+      claims: Claim[]
+      paidOn: string
+      note: string
+    }) => {
+      const { error } = await supabase.rpc('mark_claims_paid', {
+        p_purchase_ids: paid.claims.map((claim) => claim.id),
+        p_expected_cents: paid.claims.reduce(
+          (sum, claim) => sum + claim.netCents,
+          0,
+        ),
+        p_paid_on: paid.paidOn,
+        p_note: paid.note.trim() || undefined,
+      })
+      if (error) throw error
+    },
+    // A refused mark paid means the list is stale, so reload it either way.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['claims'] }),
+  })
+}
+
+export function useMarkClaimUnpaid() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (claimId: string) => {
+      const { error } = await supabase.rpc('mark_claim_unpaid', {
+        p_purchase_id: claimId,
+      })
+      if (error) throw error
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['claims'] }),
+  })
+}
+
+const lastSendKey = ['claims', 'last-send'] as const
+
+/** The latest send to the treasurer: "Last sent on Oct 13 by Calvin". */
+export function useLastSend() {
+  return useQuery({
+    queryKey: lastSendKey,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('last_claims_send')
+        .select('sent_at, sent_to, sent_by_name')
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+export type ClaimsEmail = {
+  to: string
+  subject: string
+  html: string
+  text: string
+  /** File names of the receipt photos and the CSV that go with it. */
+  attachments: string[]
+}
+
+/** The function's own message sits inside the failed response. */
+async function functionError(error: unknown): Promise<Error> {
+  const detail = await (error as { context?: Response }).context
+    ?.json()
+    .catch(() => null)
+  return new Error(
+    detail?.error ?? (error as Error).message ?? 'Something went wrong.',
+  )
+}
+
+async function callSendFunction<T>(body: Record<string, boolean>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke<T>(
+    'send-claims-to-treasurer',
+    { body },
+  )
+  if (error) throw await functionError(error)
+  return data as T
+}
+
+/** Builds the email without sending it. */
+export function usePreviewClaimsEmail() {
+  return useMutation({
+    mutationFn: () => callSendFunction<ClaimsEmail>({ preview: true }),
+  })
+}
+
+export function useSendClaimsEmail() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      callSendFunction<{ sent: true; to: string; warning?: string }>({}),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: lastSendKey }),
   })
 }

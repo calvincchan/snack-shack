@@ -34,47 +34,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      action_tokens: {
-        Row: {
-          created_at: string
-          expires_at: string
-          id: string
-          issued_to: string
-          payload: NonNullable<Json>
-          purpose: string
-          token_hash: string
-          used_at: string | null
-        }
-        Insert: {
-          created_at?: string
-          expires_at: string
-          id?: string
-          issued_to: string
-          payload: NonNullable<Json>
-          purpose: string
-          token_hash: string
-          used_at?: string | null
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          issued_to?: string
-          payload?: NonNullable<Json>
-          purpose?: string
-          token_hash?: string
-          used_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'action_tokens_issued_to_fkey'
-            columns: ['issued_to']
-            isOneToOne: false
-            referencedRelation: 'profiles'
-            referencedColumns: ['id']
-          },
-        ]
-      }
       audit_log: {
         Row: {
           action: string
@@ -146,6 +105,41 @@ export type Database = {
             columns: ['sale_day_id']
             isOneToOne: false
             referencedRelation: 'sale_days'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      claim_sends: {
+        Row: {
+          claim_count: number
+          id: string
+          sent_at: string
+          sent_by: string
+          sent_to: string
+          total_cents: number
+        }
+        Insert: {
+          claim_count: number
+          id?: string
+          sent_at?: string
+          sent_by: string
+          sent_to: string
+          total_cents: number
+        }
+        Update: {
+          claim_count?: number
+          id?: string
+          sent_at?: string
+          sent_by?: string
+          sent_to?: string
+          total_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'claim_sends_sent_by_fkey'
+            columns: ['sent_by']
+            isOneToOne: false
+            referencedRelation: 'profiles'
             referencedColumns: ['id']
           },
         ]
@@ -351,7 +345,7 @@ export type Database = {
           id: string
           paid_at: string | null
           paid_by: string | null
-          payment_ref: string | null
+          payment_note: string | null
           purchased_on: string
           receipt_path: string
           status: Database['public']['Enums']['claim_status']
@@ -365,7 +359,7 @@ export type Database = {
           id?: string
           paid_at?: string | null
           paid_by?: string | null
-          payment_ref?: string | null
+          payment_note?: string | null
           purchased_on: string
           receipt_path: string
           status?: Database['public']['Enums']['claim_status']
@@ -379,7 +373,7 @@ export type Database = {
           id?: string
           paid_at?: string | null
           paid_by?: string | null
-          payment_ref?: string | null
+          payment_note?: string | null
           purchased_on?: string
           receipt_path?: string
           status?: Database['public']['Enums']['claim_status']
@@ -706,6 +700,7 @@ export type Database = {
       }
       claims: {
         Row: {
+          buyer_full_name: string | null
           buyer_id: string | null
           buyer_name: string | null
           claim_label: string | null
@@ -716,7 +711,7 @@ export type Database = {
           net_cents: number | null
           paid_at: string | null
           paid_by: string | null
-          payment_ref: string | null
+          payment_note: string | null
           purchased_on: string | null
           receipt_path: string | null
           refunded_cents: number | null
@@ -783,6 +778,17 @@ export type Database = {
         }
         Relationships: []
       }
+      last_claims_send: {
+        Row: {
+          claim_count: number | null
+          id: string | null
+          sent_at: string | null
+          sent_by_name: string | null
+          sent_to: string | null
+          total_cents: number | null
+        }
+        Relationships: []
+      }
       sale_day_cash: {
         Row: {
           close_cents: number | null
@@ -825,6 +831,7 @@ export type Database = {
       }
       cancel_sale_day: { Args: { p_sale_day: string }; Returns: undefined }
       cents_text: { Args: { p_cents: number }; Returns: string }
+      claims_report: { Args: Record<PropertyKey, never>; Returns: Json }
       close_sale_day: {
         Args: {
           p_left_in_box_cents: number
@@ -843,27 +850,27 @@ export type Database = {
         Returns: boolean
       }
       in_fn: { Args: Record<PropertyKey, never>; Returns: boolean }
-      invoke_weekly_treasurer_email: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
       is_member: { Args: Record<PropertyKey, never>; Returns: boolean }
-      issue_mark_paid_tokens: {
-        Args: { p_valid?: string }
-        Returns: {
-          buyer_id: string
-          buyer_name: string
-          purchase_ids: string[]
-          token: string
-          total_cents: number
-        }[]
-      }
       local_today: { Args: Record<PropertyKey, never>; Returns: string }
       log_purchase: { Args: { p: Json }; Returns: string }
+      mark_claim_unpaid: { Args: { p_purchase_id: string }; Returns: undefined }
+      mark_claims_paid: {
+        Args: {
+          p_expected_cents: number
+          p_note?: string
+          p_paid_on: string
+          p_purchase_ids: string[]
+        }
+        Returns: number
+      }
       open_sale_day: { Args: { p_date?: string }; Returns: string }
-      redeem_action_token: {
-        Args: { p_payment_ref?: string; p_token: string }
-        Returns: Json
+      record_claims_send: {
+        Args: {
+          p_claim_count: number
+          p_sent_to: string
+          p_total_cents: number
+        }
+        Returns: string
       }
       refund_purchase_line: {
         Args: {
@@ -877,6 +884,10 @@ export type Database = {
         }
         Returns: string
       }
+      require_coordinator: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       require_member: { Args: Record<PropertyKey, never>; Returns: undefined }
       set_member_active: {
         Args: { p_active: boolean; p_id: string }
@@ -886,7 +897,6 @@ export type Database = {
         Args: { p_note?: string; p_sale_day: string }
         Returns: undefined
       }
-      treasurer_report_week: { Args: { p_now?: string }; Returns: string }
       undo_refund: { Args: { p_id: string }; Returns: undefined }
       update_invite: {
         Args: {
@@ -909,10 +919,6 @@ export type Database = {
           p_role: Database['public']['Enums']['user_role']
         }
         Returns: undefined
-      }
-      weekly_treasurer_report: {
-        Args: { p_week_start?: string }
-        Returns: Json
       }
     }
     Enums: {

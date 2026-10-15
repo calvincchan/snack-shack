@@ -393,13 +393,9 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-# The weekly treasurer email checks its own caller (service role key from
-# pg_cron, or the coordinator's session), and the service role key may not be a JWT.
-[functions.weekly-treasurer-email]
-verify_jwt = false
-
-# The Mark paid page has no session: the one-time token in the link is the proof.
-[functions.redeem-mark-paid]
+# The send function checks its own caller: it reads the coordinator's session and
+# every database call it makes runs as that user.
+[functions.send-claims-to-treasurer]
 verify_jwt = false
 
 # [edge_runtime.secrets]
