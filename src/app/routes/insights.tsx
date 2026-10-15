@@ -1,34 +1,22 @@
 import { formatCents } from '@/lib/money'
 import { formatSaleDate, formatSaleDateShort } from '@/lib/time'
-import { OverShortPill } from '@/components/over-short-pill'
-import { useThresholds, type Thresholds } from '@/lib/count-up'
-import { numbersSay, useRuleFacts } from '@/lib/insights-rules'
-import {
-  useInsightsItems,
-  useInsightsSaleDays,
-  useInsightsTerm,
-  type InsightsItem,
-  type InsightsSaleDay,
-  type InsightsTerm,
-} from '@/lib/insights'
+import { openDiffLabel, type SaleDay } from '@/lib/sale-day'
+import { useClosedSaleDays } from '@/lib/insights'
 
 export function InsightsPage() {
-  const term = useInsightsTerm()
-  const days = useInsightsSaleDays()
-  const items = useInsightsItems()
-  const thresholds = useThresholds()
+  const days = useClosedSaleDays()
 
-  if (term.isPending || days.isPending || items.isPending) {
+  if (days.isPending) {
     return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
   }
-  if (term.isError || days.isError || items.isError) {
+  if (days.isError) {
     return (
       <p role="alert" className="text-bad p-4 text-sm">
         Could not load Insights. Check your Wi-Fi and try again.
       </p>
     )
   }
-  if (term.data.saleDays === 0) {
+  if (days.data.length === 0) {
     return (
       <div className="p-4">
         <h1 className="font-heading text-xl font-semibold">Insights</h1>
@@ -39,54 +27,33 @@ export function InsightsPage() {
     )
   }
 
-  const notes = days.data.filter((day) => day.note)
+  const notes = days.data.filter((day) => day.closeNote)
 
   return (
     <div className="flex flex-col gap-4 p-4">
       <div>
         <h1 className="font-heading text-xl font-semibold">Insights</h1>
         <p className="text-muted-foreground text-sm">
-          This term · {term.data.saleDays}{' '}
-          {term.data.saleDays === 1 ? 'sale day' : 'sale days'}
+          This term · {days.data.length}{' '}
+          {days.data.length === 1 ? 'sale day' : 'sale days'}
         </p>
       </div>
 
-      <Tiles term={term.data} />
-      <SalesChart days={days.data} />
-      <NumbersSay />
+      <Tiles days={days.data} />
+      <RevenueChart days={days.data} />
       {notes.length > 0 && (
-        <Section title="Count up notes">
+        <Section title="Sale day notes">
           <ul className="divide-border divide-y">
             {notes.map((day) => (
-              <li key={day.saleDayId} className="py-2 text-sm">
-                <b>{formatSaleDate(day.saleDate)}</b> · {day.note}
+              <li key={day.id} className="py-2 text-sm">
+                <b>{formatSaleDate(day.saleDate)}</b> · {day.closeNote}
               </li>
             ))}
           </ul>
         </Section>
       )}
-      <ItemsTable items={items.data} />
-      <CashHistory days={days.data} thresholds={thresholds.data} />
+      <CashHistory days={days.data} />
     </div>
-  )
-}
-
-function NumbersSay() {
-  const rules = useRuleFacts()
-  const sentences = rules.data ? numbersSay(rules.data) : []
-  if (sentences.length === 0) return null
-
-  return (
-    <Section title="What the numbers say">
-      <ul className="divide-border divide-y">
-        {sentences.map((sentence) => (
-          <li key={sentence.key} className="py-2 text-sm">
-            <b>{sentence.lead}</b>
-            {sentence.rest && ` ${sentence.rest}`}
-          </li>
-        ))}
-      </ul>
-    </Section>
   )
 }
 
@@ -127,63 +94,48 @@ function Tile({
   )
 }
 
-function Tiles({ term }: { term: InsightsTerm }) {
-  const limit = `±${formatCents(term.overShortOkCents).replace('.00', '')}`
-  const outside =
-    term.salesOutsideOk === 1
-      ? `1 sale over ${limit}`
-      : `${term.salesOutsideOk} sales over ${limit}`
-  const margin = term.marginPct === null ? '' : `${term.marginPct}% margin, `
-  const netOverShort =
-    term.overShortCents < 0
-      ? `−${formatCents(-term.overShortCents)}`
-      : formatCents(term.overShortCents)
+function Tiles({ days }: { days: SaleDay[] }) {
+  const revenue = days.reduce((sum, day) => sum + day.revenueCents, 0)
+  const deposits = days.reduce((sum, day) => sum + (day.depositCents ?? 0), 0)
 
   return (
     <div className="grid grid-cols-2 gap-3">
       <Tile
-        label="Sales"
-        value={formatCents(term.salesCents)}
-        detail={`${formatCents(term.salesPerDayCents)} per sale day`}
+        label="Revenue"
+        value={formatCents(revenue)}
+        detail={`${formatCents(Math.round(revenue / days.length))} per sale day`}
       />
       <Tile
-        label="Profit after stock cost"
-        value={formatCents(term.profitCents)}
-        detail={`${margin}after ${formatCents(term.helperCreditCents)} helper credits`}
-      />
-      <Tile
-        label="Items sold"
-        value={String(term.piecesSold)}
-        detail={`${term.piecesPerDay} per sale day`}
-      />
-      <Tile
-        label="Cash over/short, net"
-        value={netOverShort}
-        detail={outside}
+        label="Deposited"
+        value={formatCents(deposits)}
+        detail="sealed in deposit bags"
       />
     </div>
   )
 }
 
-function SalesChart({ days }: { days: InsightsSaleDay[] }) {
+function RevenueChart({ days }: { days: SaleDay[] }) {
   const ordered = [...days].reverse()
-  const max = Math.max(...ordered.map((day) => day.salesCents), 1)
+  const max = Math.max(...ordered.map((day) => day.revenueCents), 1)
 
   return (
-    <Section title="Sales by sale day">
-      <ul aria-label="Sales by sale day" className="flex h-44 items-end gap-2">
+    <Section title="Revenue by sale day">
+      <ul
+        aria-label="Revenue by sale day"
+        className="flex h-44 items-end gap-2"
+      >
         {ordered.map((day) => (
           <li
-            key={day.saleDayId}
+            key={day.id}
             className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
           >
             <span className="text-xs font-semibold tabular-nums">
-              {formatCents(day.salesCents)}
+              {formatCents(day.revenueCents)}
             </span>
             <div
               className="bg-primary w-full rounded-t"
               style={{
-                height: `${Math.max((day.salesCents / max) * 100, 2)}%`,
+                height: `${Math.max((day.revenueCents / max) * 100, 2)}%`,
               }}
             />
             <span className="text-muted-foreground text-[11px]">
@@ -196,74 +148,36 @@ function SalesChart({ days }: { days: InsightsSaleDay[] }) {
   )
 }
 
-function ItemsTable({ items }: { items: InsightsItem[] }) {
-  const best = Math.max(...items.map((item) => item.piecesPerDayOut), 1)
-
+function CashHistory({ days }: { days: SaleDay[] }) {
   return (
-    <Section title="Items by sales per day out">
-      <p className="text-muted-foreground text-xs">
-        Only counts days the item was in the lineup, so items out less often
-        compare fairly.
-      </p>
-      <table className="w-full text-sm">
-        <thead className="text-muted-foreground text-xs">
-          <tr>
-            <th className="text-left font-medium">Item</th>
-            <th className="text-right font-medium">Days out</th>
-            <th className="text-right font-medium">Per day</th>
-            <th className="text-right font-medium">Sales</th>
-          </tr>
-        </thead>
-        <tbody className="divide-border divide-y tabular-nums">
-          {items.map((item) => (
-            <tr key={item.itemId}>
-              <td className="py-2 pr-2">
-                <div>{item.name}</div>
-                <div className="bg-muted mt-1 h-1.5 rounded-full">
-                  <div
-                    className="bg-ok h-1.5 rounded-full"
-                    style={{
-                      width: `${(item.piecesPerDayOut / best) * 100}%`,
-                    }}
-                  />
-                </div>
-              </td>
-              <td className="text-right">{item.daysOut}</td>
-              <td className="text-right">{item.piecesPerDayOut}</td>
-              <td className="text-right">{formatCents(item.salesCents)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Section>
-  )
-}
-
-function CashHistory({
-  days,
-  thresholds,
-}: {
-  days: InsightsSaleDay[]
-  thresholds: Thresholds | undefined
-}) {
-  return (
-    <Section title="Cash check history">
+    <Section title="Cash history">
       <ul className="divide-border divide-y">
-        {days.map((day) => (
-          <li
-            key={day.saleDayId}
-            className="flex items-center justify-between gap-3 py-2"
-          >
-            <div className="flex flex-col text-sm">
-              <b>{formatSaleDate(day.saleDate)}</b>
-              <span className="text-muted-foreground text-xs tabular-nums">
-                {day.volunteers || 'No sign-off'} · {day.itemsOut} items out ·
-                counted {formatCents(day.countedCents)}
-              </span>
-            </div>
-            <OverShortPill cents={day.overShortCents} thresholds={thresholds} />
-          </li>
-        ))}
+        {days.map((day) => {
+          const diff = openDiffLabel(day.openDiffCents, formatCents)
+          return (
+            <li
+              key={day.id}
+              className="flex items-center justify-between gap-3 py-2"
+            >
+              <div className="flex flex-col text-sm">
+                <b>{formatSaleDate(day.saleDate)}</b>
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {day.closedBy ?? 'Closed'} · open {formatCents(day.openCents)}{' '}
+                  · close {formatCents(day.closeCents)}
+                </span>
+                {diff && (
+                  <span className="text-warn text-xs">Open count {diff}</span>
+                )}
+              </div>
+              <div className="flex flex-col items-end text-sm tabular-nums">
+                <b>{formatCents(day.revenueCents)}</b>
+                <span className="text-muted-foreground text-xs">
+                  deposit {formatCents(day.depositCents ?? 0)}
+                </span>
+              </div>
+            </li>
+          )
+        })}
       </ul>
     </Section>
   )

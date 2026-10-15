@@ -530,19 +530,10 @@ const settingsSchema = z.object({
   float: z
     .string()
     .refine((v) => Number.isFinite(dollarStringToCents(v)), 'Enter an amount.'),
-  target_sale_days: z.coerce.number().int().min(1, 'At least 1 sale day.'),
-  over_short_ok: z
-    .string()
-    .refine((v) => Number.isFinite(dollarStringToCents(v)), 'Enter an amount.'),
-  over_short_warn: z
-    .string()
-    .refine((v) => Number.isFinite(dollarStringToCents(v)), 'Enter an amount.'),
   gst_percent: z.coerce
     .number()
     .min(0, 'Cannot be negative.')
     .max(100, 'Too big.'),
-  max_items_per_kid: z.coerce.number().int().min(1, 'At least 1 item.'),
-  max_treats_per_kid: z.coerce.number().int().min(0, 'Cannot be negative.'),
   treasurer_email: z.union([
     z.literal(''),
     z.string().email('That does not look like an email.'),
@@ -575,12 +566,7 @@ function SettingsSection() {
     if (!settings.data) return
     reset({
       float: centsToDollarString(settings.data.float_cents),
-      target_sale_days: settings.data.target_sale_days,
-      over_short_ok: centsToDollarString(settings.data.over_short_ok_cents),
-      over_short_warn: centsToDollarString(settings.data.over_short_warn_cents),
       gst_percent: Number(settings.data.gst_rate) * 100,
-      max_items_per_kid: settings.data.max_items_per_kid,
-      max_treats_per_kid: settings.data.max_treats_per_kid,
       treasurer_email: settings.data.treasurer_email ?? '',
     })
   }, [settings.data, reset])
@@ -592,12 +578,7 @@ function SettingsSection() {
         .from('settings')
         .update({
           float_cents: dollarStringToCents(parsed.float),
-          target_sale_days: parsed.target_sale_days,
-          over_short_ok_cents: dollarStringToCents(parsed.over_short_ok),
-          over_short_warn_cents: dollarStringToCents(parsed.over_short_warn),
           gst_rate: parsed.gst_percent / 100,
-          max_items_per_kid: parsed.max_items_per_kid,
-          max_treats_per_kid: parsed.max_treats_per_kid,
           treasurer_email:
             parsed.treasurer_email === '' ? null : parsed.treasurer_email,
         })
@@ -642,34 +623,10 @@ function SettingsSection() {
       <Field
         id="float"
         label="Change float"
-        hint="Cash left in the box for making change."
+        hint="What usually stays in the box after the close count."
         prefix="$"
         error={form.formState.errors.float?.message}
         {...form.register('float')}
-      />
-      <Field
-        id="target_sale_days"
-        label="Target stock, in sale days"
-        hint="How much stock to keep on hand."
-        type="number"
-        error={form.formState.errors.target_sale_days?.message}
-        {...form.register('target_sale_days')}
-      />
-      <Field
-        id="over_short_ok"
-        label="Over/short still fine"
-        hint="Anything inside this counts as a good count up."
-        prefix="$"
-        error={form.formState.errors.over_short_ok?.message}
-        {...form.register('over_short_ok')}
-      />
-      <Field
-        id="over_short_warn"
-        label="Over/short worth a recount"
-        hint="Past this, the count up is flagged."
-        prefix="$"
-        error={form.formState.errors.over_short_warn?.message}
-        {...form.register('over_short_warn')}
       />
       <Field
         id="gst_percent"
@@ -680,20 +637,6 @@ function SettingsSection() {
         suffix="%"
         error={form.formState.errors.gst_percent?.message}
         {...form.register('gst_percent')}
-      />
-      <Field
-        id="max_items_per_kid"
-        label="Items a kid can buy"
-        type="number"
-        error={form.formState.errors.max_items_per_kid?.message}
-        {...form.register('max_items_per_kid')}
-      />
-      <Field
-        id="max_treats_per_kid"
-        label="Treats a kid can buy"
-        type="number"
-        error={form.formState.errors.max_treats_per_kid?.message}
-        {...form.register('max_treats_per_kid')}
       />
       <Field
         id="treasurer_email"

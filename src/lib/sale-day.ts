@@ -1,66 +1,108 @@
 /**
- * The Sale day screen: the lineup, Check stock, Start sale and Selling
- * (HANDOFF §4.1). The maths is in the database; this layer reads the views and
- * calls the sale day functions, whose error messages go on screen as they are.
+ * The Sale day screen (HANDOFF §4.1, ADR-0015): an open count, selling, a
+ * close count. The maths is in the `sale_day_cash` view; this layer reads it,
+ * writes one cash row at a time and calls the sale day functions, whose error
+ * messages go on screen as they are.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { itemsQueryKey } from '@/lib/items'
-import { todayDate } from '@/lib/time'
-import type { KidRules } from '@/lib/basket'
 import type { Enums, Tables } from '@/lib/database.types'
 
-export type ItemType = Enums<'item_type'>
-export type CheckReason = Enums<'check_reason'>
 export type Phase = Enums<'sale_phase'>
+export type CountKind = Enums<'cash_count_kind'>
 
-/** The four steps in the step bar, in order. */
-export const STEPS = ['Lineup', 'Check stock', 'Sell', 'Count up'] as const
+type CashRow = Tables<'sale_day_cash'>
 
-/**
- * How far along the step bar a phase is. Check stock is part of the lineup
- * phase in the database, so the bar counts steps, not phases: the volunteer
- * moves from Lineup to Check stock without anything being written.
- */
-export function stepIndex(phase: Phase, checking: boolean): number {
-  if (phase === 'lineup') return checking ? 1 : 0
-  if (phase === 'selling') return 2
-  return 3
-}
-
-type TotalsRow = Tables<'sale_day_lineup_totals'>
-
+/** One sale day's numbers. Revenue and deposit are null until they apply. */
 export type SaleDay = {
   id: string
   saleDate: string
   phase: Phase
-  floatCents: number
-  dayNo: number
-  snacks: number
-  treats: number
-  /** Lineup items whose counted pieces differ from what the app expected. */
-  itemsOff: number
-  /** Weighted lineup margin (HANDOFF §5.6); null until something is picked. */
-  margin: number | null
+  /** Selling has started, so the open count is done and locked. */
+  selling: boolean
+  closedAt: string | null
+  openCents: number
+  closeCents: number
+  revenueCents: number
+  leftInBoxCents: number | null
+  depositCents: number | null
+  /** What was left in the box after the previous sale day, if there was one. */
+  expectedOpenCents: number | null
+  openDiffCents: number | null
+  openNote: string | null
+  closeNote: string | null
+  openedBy: string | null
+  closedBy: string | null
 }
 
-function toSaleDay(row: TotalsRow): SaleDay {
+export function toSaleDay(row: CashRow): SaleDay {
   return {
     id: row.sale_day_id!,
     saleDate: row.sale_date!,
     phase: row.phase!,
-    floatCents: row.float_cents ?? 0,
-    dayNo: row.day_no ?? 1,
-    snacks: row.snacks ?? 0,
-    treats: row.treats ?? 0,
-    itemsOff: row.items_off ?? 0,
-    margin: row.margin === null ? null : Number(row.margin),
+    selling: row.selling_at !== null,
+    closedAt: row.closed_at,
+    openCents: row.open_cents ?? 0,
+    closeCents: row.close_cents ?? 0,
+    revenueCents: row.revenue_cents ?? 0,
+    leftInBoxCents: row.left_in_box_cents,
+    depositCents: row.deposit_cents,
+    expectedOpenCents: row.expected_open_cents,
+    openDiffCents: row.open_diff_cents,
+    openNote: row.open_note,
+    closeNote: row.close_note,
+    openedBy: row.opened_by_name,
+    closedBy: row.closed_by_name,
   }
 }
 
+/** Bills and coins, biggest first. */
+export const DENOMINATIONS = [
+  { cents: 2000, label: '$20 Bill' },
+  { cents: 1000, label: '$10 Bill' },
+  { cents: 500, label: '$5 Bill' },
+  { cents: 200, label: '$2 Toonie' },
+  { cents: 100, label: '$1 Loonie' },
+  { cents: 25, label: '¢25 Quarter' },
+  { cents: 10, label: '¢10 Dime' },
+  { cents: 5, label: '¢5 Nickel' },
+] as const
+
+/** "$2.00 less than left last time", or null when it matches or can't be compared. */
+export function openDiffLabel(
+  diffCents: number | null,
+  format: (cents: number) => string,
+): string | null {
+  if (diffCents === null || diffCents === 0) return null
+  return `${format(Math.abs(diffCents))} ${diffCents < 0 ? 'less' : 'more'} than left last time`
+}
+
 export const saleDayQueryKey = ['sale-day'] as const
-export const lineupQueryKey = ['sale-day-lineup'] as const
-export const optionsQueryKey = ['lineup-options'] as const
+export const lastClosedQueryKey = ['sale-day-last-closed'] as const
+export const recentClosedQueryKey = ['recent-closed'] as const
+export const cashKey = ['cash-counts'] as const
+export const changeFloatKey = ['settings', 'change-float'] as const
+
+/** Every query that reads sale day rows, for Realtime and after a write. */
+export const SALE_DAY_KEYS = [
+  saleDayQueryKey,
+  lastClosedQueryKey,
+  recentClosedQueryKey,
+  cashKey,
+  ['sale-day-history'],
+]
+
+export function invalidateSaleDay(client: QueryClient) {
+  for (const queryKey of SALE_DAY_KEYS) {
+    void client.invalidateQueries({ queryKey })
+  }
+}
 
 /** The one sale day that is open, if there is one (only one can be). */
 export function useSaleDay() {
@@ -68,9 +110,9 @@ export function useSaleDay() {
     queryKey: saleDayQueryKey,
     queryFn: async (): Promise<SaleDay | null> => {
       const { data, error } = await supabase
-        .from('sale_day_lineup_totals')
+        .from('sale_day_cash')
         .select('*')
-        .neq('phase', 'closed')
+        .eq('phase', 'open')
         .maybeSingle()
       if (error) throw error
       return data ? toSaleDay(data) : null
@@ -78,320 +120,226 @@ export function useSaleDay() {
   })
 }
 
-/** How long the Done screen stays up after Finish. */
-const DONE_HOURS = 4
+/** The latest closed sale day by date, for the start screen. */
+export function useLastClosed() {
+  return useQuery({
+    queryKey: lastClosedQueryKey,
+    queryFn: async (): Promise<SaleDay | null> => {
+      const { data, error } = await supabase
+        .from('sale_day_cash')
+        .select('*')
+        .eq('phase', 'closed')
+        .order('sale_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      return data ? toSaleDay(data) : null
+    },
+  })
+}
 
-export const recentClosedQueryKey = ['recent-closed'] as const
+/** How long the Done screen stays up after closing. */
+const DONE_HOURS = 4
 
 /**
  * The sale day closed in the last few hours, if any, so both phones land on
- * Done after Finish and a reload does not lose it.
+ * Done after closing and a reload does not lose it.
  */
 export function useRecentlyClosed() {
   return useQuery({
     queryKey: recentClosedQueryKey,
-    queryFn: async (): Promise<string | null> => {
+    queryFn: async (): Promise<SaleDay | null> => {
       const since = new Date(Date.now() - DONE_HOURS * 3_600_000).toISOString()
       const { data, error } = await supabase
-        .from('sale_days')
-        .select('id')
+        .from('sale_day_cash')
+        .select('*')
         .eq('phase', 'closed')
         .gte('closed_at', since)
         .order('closed_at', { ascending: false })
         .limit(1)
         .maybeSingle()
       if (error) throw error
-      return data?.id ?? null
+      return data ? toSaleDay(data) : null
     },
   })
 }
 
-export type LineupOption = {
-  itemId: string
-  name: string
-  type: ItemType
-  storage: Enums<'storage_kind'>
-  priceCents: number
-  bundleSize: number
-  onHand: number
-  /** New, Sold out lately, Slow seller, Not out for N sales — or none. */
-  reason: string | null
-  suggested: boolean
-}
-
-/** Everything a volunteer may pick: priced, active and with stock left. */
-export function useLineupOptions() {
+/** Quantity per denomination for one count. */
+export function useCashCounts(saleDayId: string, kind: CountKind) {
   return useQuery({
-    queryKey: optionsQueryKey,
-    queryFn: async (): Promise<LineupOption[]> => {
+    queryKey: [...cashKey, saleDayId, kind],
+    queryFn: async (): Promise<Record<number, number>> => {
       const { data, error } = await supabase
-        .from('lineup_options')
-        .select('*')
-        .order('score', { ascending: false })
-        .order('name')
+        .from('cash_counts')
+        .select('denom_cents, qty')
+        .eq('sale_day_id', saleDayId)
+        .eq('kind', kind)
       if (error) throw error
-
-      return data.map((row) => ({
-        itemId: row.item_id!,
-        name: row.name!,
-        type: row.type!,
-        storage: row.storage!,
-        priceCents: row.price_cents!,
-        bundleSize: row.bundle_size ?? 1,
-        onHand: row.on_hand ?? 0,
-        reason: row.reason,
-        suggested: row.suggested ?? false,
-      }))
+      return Object.fromEntries(data.map((row) => [row.denom_cents, row.qty]))
     },
   })
 }
 
-export type LineupItem = {
-  itemId: string
-  name: string
-  type: ItemType
-  storage: Enums<'storage_kind'>
-  priceCents: number
-  bundleSize: number
-  /** Pieces the app expects to find in the box. */
-  expectedCount: number
-  checkCount: number | null
-  checkReason: CheckReason | null
-  startCount: number | null
-}
-
-export function useLineup(saleDayId: string | undefined) {
+/** The change float setting: the default for left in box. */
+export function useChangeFloat() {
   return useQuery({
-    enabled: saleDayId !== undefined,
-    queryKey: [...lineupQueryKey, saleDayId],
-    queryFn: async (): Promise<LineupItem[]> => {
+    queryKey: changeFloatKey,
+    queryFn: async (): Promise<number> => {
       const { data, error } = await supabase
-        .from('sale_day_lineup')
-        .select('*')
-        .eq('sale_day_id', saleDayId!)
-        .order('type')
-        .order('name')
+        .from('settings')
+        .select('float_cents')
+        .single()
       if (error) throw error
-
-      return data.map((row) => ({
-        itemId: row.item_id!,
-        name: row.name!,
-        type: row.type!,
-        storage: row.storage!,
-        priceCents: row.price_cents!,
-        bundleSize: row.bundle_size ?? 1,
-        expectedCount: row.expected_count ?? 0,
-        checkCount: row.check_count,
-        checkReason: row.check_reason,
-        startCount: row.start_count,
-      }))
+      return data.float_cents
     },
   })
 }
 
-export type CheckDifference = {
-  id: string
-  name: string
+// Cash count writes -------------------------------------------------------------
+
+export const COUNT_KEY = ['count'] as const
+
+export type CashWrite = {
+  saleDayId: string
+  kind: CountKind
+  denomCents: number
   qty: number
-  reason: string
 }
 
-/** What Check stock reported, shown again on the Selling screen. */
-export function useCheckDifferences(saleDayId: string | undefined) {
-  return useQuery({
-    enabled: saleDayId !== undefined,
-    queryKey: ['check-differences', saleDayId],
-    queryFn: async (): Promise<CheckDifference[]> => {
-      const { data, error } = await supabase
-        .from('stock_movements')
-        .select('id, qty, reason, items(name)')
-        .eq('sale_day_id', saleDayId!)
-        .in('reason', ['missing', 'damaged', 'found'])
-        .order('created_at')
-      if (error) throw error
+/** A dropped connection gets plain words; a database refusal is shown as-is. */
+export function countErrorMessage(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : ''
+  return /failed to fetch|load failed|network/i.test(message)
+    ? 'No connection. Change not saved.'
+    : message
+}
 
-      return data.map((row) => ({
-        id: row.id,
-        name: row.items?.name ?? 'An item',
-        qty: row.qty,
-        reason: row.reason,
-      }))
-    },
+async function sendCash(write: CashWrite): Promise<void> {
+  const { error } = await supabase
+    .from('cash_counts')
+    .update({ qty: write.qty })
+    .eq('sale_day_id', write.saleDayId)
+    .eq('kind', write.kind)
+    .eq('denom_cents', write.denomCents)
+  if (error) throw new Error(countErrorMessage(error))
+}
+
+export type CountSyncStatus = 'saved' | 'saving' | 'failed'
+
+/**
+ * "Saving" while any write is in flight. "Failed" while a row's latest write
+ * was refused and nothing has saved that row since; the next edit clears it.
+ */
+export function countSyncStatus(
+  writes: {
+    options: { scope?: { id: string } }
+    state: { status: string; submittedAt: number }
+  }[],
+): CountSyncStatus {
+  if (writes.some((w) => w.state.status === 'pending')) return 'saving'
+  const latest = new Map<string, (typeof writes)[number]>()
+  for (const w of writes) {
+    const row = w.options.scope?.id ?? ''
+    const seen = latest.get(row)
+    if (!seen || w.state.submittedAt >= seen.state.submittedAt) {
+      latest.set(row, w)
+    }
+  }
+  return [...latest.values()].some((w) => w.state.status === 'error')
+    ? 'failed'
+    : 'saved'
+}
+
+export function useCountSyncStatus(): CountSyncStatus {
+  const writes = useMutationState({
+    filters: { mutationKey: COUNT_KEY },
+    select: (m) => ({
+      options: { scope: m.options.scope },
+      state: { status: m.state.status, submittedAt: m.state.submittedAt },
+    }),
+  })
+  return countSyncStatus(writes)
+}
+
+/**
+ * A plain online write of one denomination's count (ADR-0012). The scope keeps
+ * writes to one row in order, so the last edit wins; each sets an absolute
+ * value, so a repeat is harmless.
+ */
+export function useSetCash(kind: CountKind, denomCents: number) {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, CashWrite>({
+    mutationKey: [...COUNT_KEY, kind, denomCents],
+    mutationFn: sendCash,
+    scope: { id: `${kind}:${denomCents}` },
+    networkMode: 'always',
+    // A refused write must keep showing "Not saved" until its row saves again.
+    gcTime: Infinity,
+    onSettled: () => invalidateSaleDay(queryClient),
   })
 }
 
-/** "2 damaged (Nestlé mini bars, assorted)" for the Selling screen. */
-export function differenceLabel(difference: CheckDifference): string {
-  const pieces = Math.abs(difference.qty)
-  const what =
-    difference.reason === 'found'
-      ? `${pieces} extra found`
-      : `${pieces} ${difference.reason}`
-  return `${what} (${difference.name})`
-}
+// Phase changes -----------------------------------------------------------------
 
-function useSaleDayMutation<TArgs>(run: (args: TArgs) => Promise<void>) {
+function usePhaseMutation<TArgs>(run: (args: TArgs) => Promise<void>) {
   const queryClient = useQueryClient()
-
   return useMutation({
     mutationFn: run,
-    onSettled: () => {
-      for (const key of [
-        saleDayQueryKey,
-        lineupQueryKey,
-        optionsQueryKey,
-        itemsQueryKey,
-        ['open-sale-day'],
-        ['check-differences'],
-        recentClosedQueryKey,
-      ]) {
-        void queryClient.invalidateQueries({ queryKey: key })
-      }
-    },
+    networkMode: 'always',
+    onSettled: () => invalidateSaleDay(queryClient),
   })
 }
 
-/** Creates today's sale day, pre-filled with the suggested lineup. */
-export function useCreateSaleDay() {
-  return useSaleDayMutation<void>(async () => {
-    const { error } = await supabase.rpc('create_sale_day', {
-      p_date: todayDate(),
-    })
+export function useOpenSaleDay() {
+  return usePhaseMutation(async (date: string) => {
+    const { error } = await supabase.rpc('open_sale_day', { p_date: date })
     if (error) throw error
   })
 }
 
-export function useToggleLineupItem() {
-  return useSaleDayMutation(
-    async ({
-      saleDayId,
-      itemId,
-      picked,
-    }: {
-      saleDayId: string
-      itemId: string
-      picked: boolean
-    }) => {
-      const { error } = picked
-        ? await supabase
-            .from('sale_day_items')
-            .delete()
-            .eq('sale_day_id', saleDayId)
-            .eq('item_id', itemId)
-        : await supabase
-            .from('sale_day_items')
-            .insert({ sale_day_id: saleDayId, item_id: itemId })
-      if (error) throw error
-    },
-  )
-}
-
-/** Back to what the app suggested, for when the picking got away from you. */
-export function useResetLineup() {
-  return useSaleDayMutation(async (saleDayId: string) => {
-    const { data: suggested, error: suggestError } = await supabase
-      .from('lineup_options')
-      .select('item_id')
-      .eq('suggested', true)
-    if (suggestError) throw suggestError
-
-    const { error: clearError } = await supabase
-      .from('sale_day_items')
-      .delete()
-      .eq('sale_day_id', saleDayId)
-    if (clearError) throw clearError
-
-    const { error } = await supabase.from('sale_day_items').insert(
-      suggested.map((row) => ({
-        sale_day_id: saleDayId,
-        item_id: row.item_id!,
-      })),
-    )
-    if (error) throw error
-  })
-}
-
-/**
- * One item's counted pieces. A count that matches clears the row back to null,
- * which is how the database says "nothing to record".
- */
-export function useSetCheckCount() {
-  return useSaleDayMutation(
-    async ({
-      saleDayId,
-      itemId,
-      count,
-      expected,
-      reason,
-    }: {
-      saleDayId: string
-      itemId: string
-      count: number
-      expected: number
-      reason: CheckReason
-    }) => {
-      const matches = count === expected
-      const { error } = await supabase
-        .from('sale_day_items')
-        .update({
-          check_count: matches ? null : count,
-          check_reason: matches || count > expected ? null : reason,
-        })
-        .eq('sale_day_id', saleDayId)
-        .eq('item_id', itemId)
-      if (error) throw error
-    },
-  )
-}
-
-export type StartSale = { saleDayId: string; floatCents: number | null }
-
-/**
- * The float to pass to Start sale: only an amount that differs from the day's
- * current float. Null keeps it, so an untouched row writes nothing.
- */
-export function floatToSend(
-  countedCents: number | null,
-  currentCents: number,
-): number | null {
-  return countedCents === null || countedCents === currentCents
-    ? null
-    : countedCents
-}
-
-export function useStartSale() {
-  return useSaleDayMutation(async (start: StartSale) => {
-    const { error } = await supabase.rpc('start_sale', {
-      p_sale_day: start.saleDayId,
-      p_float_cents: start.floatCents ?? undefined,
-    })
-    if (error) throw error
-  })
-}
-
-export function useBeginCount() {
-  return useSaleDayMutation(async (saleDayId: string) => {
-    const { error } = await supabase.rpc('begin_count', {
+export function useCancelSaleDay() {
+  return usePhaseMutation(async (saleDayId: string) => {
+    const { error } = await supabase.rpc('cancel_sale_day', {
       p_sale_day: saleDayId,
     })
     if (error) throw error
   })
 }
 
-/** The most a kid may buy, from settings (HANDOFF §4.2). */
-export function useKidRules() {
-  return useQuery({
-    queryKey: ['settings', 'kid-rules'],
-    queryFn: async (): Promise<KidRules> => {
-      const { data, error } = await supabase
-        .from('settings')
-        .select('max_items_per_kid, max_treats_per_kid')
-        .single()
+export function useStartSelling() {
+  return usePhaseMutation(
+    async ({ saleDayId, note }: { saleDayId: string; note: string }) => {
+      const { error } = await supabase.rpc('start_selling', {
+        p_sale_day: saleDayId,
+        p_note: note,
+      })
       if (error) throw error
-      return {
-        maxItems: data.max_items_per_kid,
-        maxTreats: data.max_treats_per_kid,
-      }
     },
-  })
+  )
+}
+
+export function useCloseSaleDay() {
+  return usePhaseMutation(
+    async ({
+      saleDayId,
+      leftInBoxCents,
+      note,
+    }: {
+      saleDayId: string
+      leftInBoxCents: number
+      note: string
+    }) => {
+      const { error } = await supabase.rpc('close_sale_day', {
+        p_sale_day: saleDayId,
+        p_left_in_box_cents: leftInBoxCents,
+        p_note: note,
+      })
+      if (error) throw error
+    },
+  )
 }

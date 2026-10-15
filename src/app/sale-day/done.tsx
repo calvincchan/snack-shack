@@ -1,16 +1,22 @@
 import { Button } from '@/components/ui/button'
 import { formatCents } from '@/lib/money'
-import { useTotals } from '@/lib/count-up'
+import { formatSaleDate } from '@/lib/time'
+import type { SaleDay } from '@/lib/sale-day'
 
-/** After Finish: the one number the volunteers need (HANDOFF §4.1). */
+/** After closing: the one number the volunteers need (HANDOFF §4.1). */
 export function Done({
-  saleDayId,
+  saleDay,
   onClose,
 }: {
-  saleDayId: string
+  saleDay: SaleDay
   onClose: () => void
 }) {
-  const totals = useTotals(saleDayId)
+  const rows: [string, string][] = [
+    ['Open count', formatCents(saleDay.openCents)],
+    ['Close count', formatCents(saleDay.closeCents)],
+    ['Revenue', formatCents(saleDay.revenueCents)],
+    ['Closed by', saleDay.closedBy ?? '—'],
+  ]
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -19,14 +25,20 @@ export function Done({
           Done
         </p>
         <h1 className="font-heading text-2xl font-semibold">
-          {totals.data
-            ? `Seal ${formatCents(totals.data.depositCents)} in the deposit bag`
-            : 'Count up finished'}
+          Seal {formatCents(saleDay.depositCents ?? 0)} in the deposit bag
         </h1>
         <p className="text-muted-foreground text-sm">
-          Write the date and your name on the bag. Leave the change float in the
-          box.
+          Write {formatSaleDate(saleDay.saleDate)} and your names on the bag.
+          Leave {formatCents(saleDay.leftInBoxCents ?? 0)} in the box.
         </p>
+        <dl className="flex flex-col gap-2">
+          {rows.map(([term, value]) => (
+            <div key={term} className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">{term}</dt>
+              <dd className="font-medium tabular-nums">{value}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <Button

@@ -120,7 +120,7 @@ describe('App', () => {
       await screen.findByRole('heading', { name: 'Snack Shack' }),
     ).toBeInTheDocument()
 
-    for (const label of ['Sale day', 'Sell', 'Buy', 'Items', 'Insights']) {
+    for (const label of ['Sale day', 'Buy', 'Items', 'Insights']) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
     }
   })

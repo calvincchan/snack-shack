@@ -109,197 +109,50 @@ update public.purchases
  where claim_no in (1, 2);
 
 -- Sale day history -----------------------------------------------------------
--- Four earlier sale days, so Insights and What to buy have a term to read: an
--- item that fades (popsicles), items that sold out (gummies, chips), a slow
--- one (seaweed) and a few pieces lost at Check stock. The helper gives each
--- item the stock its day needs and puts the stock back afterwards, so what is
--- on hand at the end is unchanged by this history.
-create function pg_temp.history_day(
-  p_date date, p_note text, p_credits int, p_over_short int, p_rows jsonb
+-- Five closed sale days with open and close cash counts (ADR-0015), so the
+-- Sale day and Insights screens have a term to read. The Sep 17 box opened $2
+-- short of what was left after Sep 15, to show the open-count warning.
+create function pg_temp.cash_day(
+  p_date date, p_open int, p_close int, p_left int, p_note text, p_closer uuid
 ) returns void language plpgsql security definer as $fn$
 declare
-  v_day     uuid;
-  v_cur     jsonb := '{}';
-  v_start   int;
-  v_counted int;
-  v_denom   int;
-  r         record;
+  v_day uuid;
+  v_left int;
+  v_denom int;
+  v_kind public.cash_count_kind;
 begin
   perform set_config('request.jwt.claims',
-    json_build_object('sub', '00000000-0000-0000-0000-00000000000a', 'role', 'authenticated')::text, true);
-  v_day := public.create_sale_day(p_date);
-  delete from public.sale_day_items where sale_day_id = v_day;
-
-  -- Give each item exactly the stock this sale day needs, so the day's numbers
-  -- are the ones written here. The stock is put back after the day closes.
-  for r in
-    select x.*, i.id as item_id,
-           (select on_hand from public.item_stock where id = i.id) as on_hand
-      from jsonb_to_recordset(p_rows)
-             as x(name text, sold int, "left" int, "out" int, lost int, reason text)
-      join public.items i on i.name = x.name
-  loop
-    v_start := r.sold + r."left" + r."out" + r.lost;
-    v_cur := v_cur || jsonb_build_object(r.item_id::text, r.on_hand);
-    if v_start <> r.on_hand then
-      insert into public.stock_movements (item_id, qty, reason)
-      values (r.item_id, v_start - r.on_hand, 'correction');
-    end if;
-    insert into public.sale_day_items (sale_day_id, item_id, check_count, check_reason)
-    values (v_day, r.item_id,
-            case when r.lost > 0 then v_start - r.lost end,
-            case when r.lost > 0 then r.reason::public.check_reason end);
+    json_build_object('sub', p_closer, 'role', 'authenticated')::text, true);
+  v_day := public.open_sale_day(p_date);
+  foreach v_kind in array array['open', 'close']::public.cash_count_kind[] loop
+    v_left := case v_kind when 'open' then p_open else p_close end;
+    foreach v_denom in array array[2000, 1000, 500, 200, 100, 25, 10, 5] loop
+      perform set_config('snack.fn', 'on', true);
+      update public.cash_counts set qty = v_left / v_denom
+       where sale_day_id = v_day and kind = v_kind and denom_cents = v_denom;
+      perform set_config('snack.fn', '', true);
+      v_left := v_left % v_denom;
+    end loop;
+    if v_kind = 'open' then perform public.start_selling(v_day); end if;
   end loop;
+  perform public.close_sale_day(v_day, p_left, p_note);
 
-  perform public.start_sale(v_day);
-  perform public.begin_count(v_day);
-
-  for r in
-    select x.*, i.id as item_id
-      from jsonb_to_recordset(p_rows)
-             as x(name text, sold int, "left" int, "out" int, lost int, reason text)
-      join public.items i on i.name = x.name
-  loop
-    update public.sale_day_items
-       set left_count = r."left", out_count = r."out"
-     where sale_day_id = v_day and item_id = r.item_id;
-    if (v_cur ->> r.item_id::text)::int <> r."left" then
-      insert into public.stock_movements (item_id, qty, reason)
-      values (r.item_id, (v_cur ->> r.item_id::text)::int - r."left", 'correction');
-    end if;
-  end loop;
-
-  update public.sale_days set helper_credits = p_credits, note = p_note where id = v_day;
-
-  -- Count exactly what the box should hold, plus or minus the over/short.
-  select expected_cents + p_over_short into v_counted
-    from public.sale_day_totals where sale_day_id = v_day;
-  foreach v_denom in array array[2000, 1000, 500, 200, 100, 25, 10, 5] loop
-    update public.cash_counts set qty = v_counted / v_denom
-     where sale_day_id = v_day and denom_cents = v_denom;
-    v_counted := v_counted % v_denom;
-  end loop;
-
-  perform public.sign_off(v_day);
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', '00000000-0000-0000-0000-00000000000b', 'role', 'authenticated')::text, true);
-  perform public.sign_off(v_day);
-  perform public.close_sale_day(v_day);
-
-  -- Back-date the close to lunchtime on the sale date (see the note in the seed).
+  -- close_sale_day() stamps now(). Back-date the close to lunchtime on the
+  -- sale date so a fresh reset doesn't open on the Done screen.
   perform set_config('snack.fn', 'on', true);
   update public.sale_days
-     set closed_at = (sale_date + time '13:30') at time zone 'America/Vancouver'
+     set selling_at = (sale_date + time '12:40') at time zone 'America/Vancouver',
+         closed_at  = (sale_date + time '13:05') at time zone 'America/Vancouver'
    where id = v_day;
   perform set_config('snack.fn', '', true);
 end $fn$;
 
-select pg_temp.history_day('2026-09-10', null, 1, 0, '[
-  {"name": "Chips, assorted",  "sold": 29, "left": 20, "out": 0, "lost": 0},
-  {"name": "Fruit gummies",    "sold": 40, "left": 0,  "out": 0, "lost": 0},
-  {"name": "Fruit popsicle",   "sold": 27, "left": 10, "out": 0, "lost": 0},
-  {"name": "Chocolate bar",    "sold": 9,  "left": 9,  "out": 0, "lost": 2, "reason": "damaged"},
-  {"name": "Granola bar",      "sold": 18, "left": 10, "out": 0, "lost": 0}
-]');
-
-select pg_temp.history_day('2026-09-15', 'Ketchup chips left over, BBQ gone first.', 1, -100, '[
-  {"name": "Chips, assorted",  "sold": 30, "left": 0,  "out": 0, "lost": 0},
-  {"name": "Fruit gummies",    "sold": 35, "left": 4,  "out": 0, "lost": 0},
-  {"name": "Popcorn, lightly salted", "sold": 15, "left": 18, "out": 0, "lost": 0},
-  {"name": "Seaweed snack",    "sold": 8,  "left": 10, "out": 0, "lost": 0},
-  {"name": "Veggie straws",    "sold": 15, "left": 10, "out": 0, "lost": 1, "reason": "missing"}
-]');
-
-select pg_temp.history_day('2026-09-17', null, 1, 200, '[
-  {"name": "Chips, assorted",  "sold": 28, "left": 12, "out": 0, "lost": 0},
-  {"name": "Fruit gummies",    "sold": 40, "left": 0,  "out": 0, "lost": 0},
-  {"name": "Fruit popsicle",   "sold": 25, "left": 8,  "out": 0, "lost": 0},
-  {"name": "Pretzel twists",   "sold": 14, "left": 9,  "out": 0, "lost": 0},
-  {"name": "Cheddar crackers", "sold": 13, "left": 9,  "out": 0, "lost": 0}
-]');
-
-select pg_temp.history_day('2026-09-22', 'Two kids asked for Pocky.', 1, -400, '[
-  {"name": "Chips, assorted",  "sold": 27, "left": 9,  "out": 0, "lost": 0},
-  {"name": "Fruit gummies",    "sold": 30, "left": 5,  "out": 0, "lost": 0},
-  {"name": "Fruit popsicle",   "sold": 22, "left": 10, "out": 0, "lost": 0},
-  {"name": "Seaweed snack",    "sold": 8,  "left": 12, "out": 0, "lost": 1, "reason": "damaged"},
-  {"name": "Cheddar crackers", "sold": 13, "left": 8,  "out": 0, "lost": 0}
-]');
-
--- The Sep 24 sale day below signs off as Calvin first, then Yuki.
-select set_config('request.jwt.claims',
-  json_build_object('sub', '00000000-0000-0000-0000-00000000000a', 'role', 'authenticated')::text, true);
-
--- One finished sale day -------------------------------------------------------
--- Enough history for the averages that What to buy and Insights need: pieces
--- sold per sale day, an item that closed at 0, and a count-up note.
-do $$
-declare
-  v_day  uuid;
-  v_item record;
-  v_left int;
-begin
-  v_day := public.create_sale_day('2026-09-24');
-
-  -- create_sale_day() suggests a lineup; use the prototype's instead.
-  delete from public.sale_day_items where sale_day_id = v_day;
-  insert into public.sale_day_items (sale_day_id, item_id)
-  select v_day, id from public.items
-   where name in ('Popcorn, lightly salted', 'Chips, assorted', 'Pretzel twists',
-                  'Fruit gummies', 'Chocolate bar');
-
-  perform public.start_sale(v_day);
-  perform public.begin_count(v_day);
-
-  -- What was left at the end. The gummies sold out.
-  for v_item in
-    select sdi.item_id, i.name, sdi.start_count
-      from public.sale_day_items sdi
-      join public.items i on i.id = sdi.item_id
-     where sdi.sale_day_id = v_day
-  loop
-    v_left := case v_item.name
-                when 'Popcorn, lightly salted' then v_item.start_count - 14
-                when 'Chips, assorted'         then v_item.start_count - 26
-                when 'Pretzel twists'          then v_item.start_count - 18
-                when 'Fruit gummies'           then 0
-                else v_item.start_count - 9
-              end;
-    update public.sale_day_items
-       set left_count = v_left,
-           out_count = case when v_item.name = 'Chocolate bar' then 1 else 0 end
-     where sale_day_id = v_day and item_id = v_item.item_id;
-  end loop;
-
-  update public.sale_days
-     set helper_credits = 1,
-         note = 'Gummies went first. A few kids asked for popcorn after it ran out last time.'
-   where id = v_day;
-
-  -- $30 float plus $114 of sales, less the $1 helper credit, is $143 expected.
-  -- The box counted $142, a dollar short, which is a good count up.
-  update public.cash_counts set qty = 2  where sale_day_id = v_day and denom_cents = 2000;
-  update public.cash_counts set qty = 3  where sale_day_id = v_day and denom_cents = 1000;
-  update public.cash_counts set qty = 5  where sale_day_id = v_day and denom_cents = 500;
-  update public.cash_counts set qty = 20 where sale_day_id = v_day and denom_cents = 200;
-  update public.cash_counts set qty = 7  where sale_day_id = v_day and denom_cents = 100;
-
-  perform public.sign_off(v_day);
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', '00000000-0000-0000-0000-00000000000b', 'role', 'authenticated')::text,
-    true);
-  perform public.sign_off(v_day);
-  perform public.close_sale_day(v_day);
-
-  -- close_sale_day() stamps now(). The Done screen shows any sale day closed in
-  -- the last few hours, so back-date this one to lunchtime on its sale date;
-  -- otherwise every fresh reset opens on "Seal $X in the deposit bag".
-  perform set_config('snack.fn', 'on', true);
-  update public.sale_days
-     set closed_at = (sale_date + time '13:30') at time zone 'America/Vancouver'
-   where id = v_day;
-  perform set_config('snack.fn', '', true);
-end $$;
+select pg_temp.cash_day('2026-09-10', 3000, 13275, 3000, null, '00000000-0000-0000-0000-00000000000a');
+select pg_temp.cash_day('2026-09-15', 3000, 12450, 3000, 'Ketchup chips left over, BBQ gone first.', '00000000-0000-0000-0000-00000000000b');
+select pg_temp.cash_day('2026-09-17', 2800, 12100, 3000, null, '00000000-0000-0000-0000-00000000000a');
+select pg_temp.cash_day('2026-09-22', 3000, 11325, 3000, 'Two kids asked for Pocky.', '00000000-0000-0000-0000-00000000000b');
+select pg_temp.cash_day('2026-09-24', 3000, 14200, 3000,
+  'Gummies went first. A few kids asked for popcorn after it ran out last time.', '00000000-0000-0000-0000-00000000000a');
 
 select set_config('request.jwt.claims', '', true);
 

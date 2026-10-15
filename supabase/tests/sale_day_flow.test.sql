@@ -1,7 +1,7 @@
 -- End-to-end check of the money and stock rules (pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(40);
+select plan(49);
 
 -- The seed fills the database for local development. These tests describe
 -- behaviour from an empty start, so clear it inside the transaction.
@@ -9,9 +9,7 @@ set local client_min_messages = warning;
 truncate table auth.users, public.items, public.sale_days cascade;
 alter table public.purchases alter column claim_no restart with 1;
 update public.settings
-   set float_cents = 3000, target_sale_days = 2,
-       over_short_ok_cents = 300, over_short_warn_cents = 1000, gst_rate = 0.05,
-       max_items_per_kid = 3, max_treats_per_kid = 1, treasurer_email = null;
+   set float_cents = 3000, gst_rate = 0.05, treasurer_email = null;
 
 -- People ----------------------------------------------------------------------
 insert into auth.users (id, email) values
@@ -79,59 +77,65 @@ select throws_like($$ insert into public.purchases (purchased_on, store, buyer_i
   values ('2026-09-27', 'x', '00000000-0000-0000-0000-00000000000b', 'x') $$,
   '%row-level security%', 'claims can only be created through log_purchase()');
 
--- Sale day: lineup and check stock --------------------------------------------
-select lives_ok($$ select public.create_sale_day('2026-09-29') $$, 'create sale day');
-select is((select count(*)::int from public.sale_day_items), 2, 'suggested lineup has the two priced items');
-select throws_like($$ select public.create_sale_day('2026-09-30') $$, '%duplicate key%', 'only one open sale day');
-select throws_like($$ insert into public.sale_day_items (sale_day_id, item_id)
-  select (select id from public.sale_days), id from public.items where name = 'Rice crackers' $$,
-  '%Only priced, active items%', 'unpriced items cannot join a lineup');
+-- Sale day: open count (ADR-0015) ----------------------------------------------
+create temp table chips_before as select on_hand from public.item_stock where name = 'Chips, assorted';
+select throws_like($$ select public.open_sale_day(public.local_today() + 1) $$, '%future%', 'no sale day in the future');
+select lives_ok($$ select public.open_sale_day('2026-09-29') $$, 'open a backdated sale day');
+select is((select count(*)::int from public.cash_counts), 16, 'eight open and eight close rows');
+select throws_like($$ select public.open_sale_day('2026-09-30') $$, '%still open%', 'only one open sale day');
+select throws_like($$ select public.start_selling((select id from public.sale_days)) $$, '%Count the cash box%', 'selling needs an open count');
+select throws_like($$ update public.cash_counts set qty = 3 where kind = 'close' and denom_cents = 2000 $$,
+  '%open count first%', 'no close count before selling');
 
--- 2 mini bars missing at the box check
-update public.sale_day_items set check_count = 128, check_reason = 'missing'
- where item_id = (select id from public.items where name = 'Nestlé mini bars, assorted');
-select lives_ok($$ select public.start_sale((select id from public.sale_days)) $$, 'start sale');
-select is((select on_hand from public.item_stock where name = 'Nestlé mini bars, assorted'), 128, 'missing bars recorded before selling');
-select is((select start_count from public.sale_day_items sdi join public.items i on i.id = sdi.item_id where i.name = 'Chips, assorted'), 60, 'chips start at 60');
+-- The box opens with $28: $2 less than nothing expected yet (first sale day).
+update public.cash_counts set qty = 1 where kind = 'open' and denom_cents = 2000;
+update public.cash_counts set qty = 4 where kind = 'open' and denom_cents = 200;
+select is((select open_cents from public.sale_day_cash), 2800, 'open count from the denominations');
+select is((select expected_open_cents from public.sale_day_cash), null::int, 'nothing to compare the first sale day with');
+select lives_ok($$ select public.start_selling((select id from public.sale_days), '  ') $$, 'start selling');
+select is((select open_note from public.sale_days), null, 'a blank note is no note');
+select throws_like($$ update public.cash_counts set qty = 9 where kind = 'open' and denom_cents = 100 $$,
+  '%open count can''t change%', 'the open count locks once selling starts');
+select throws_like($$ select public.start_selling((select id from public.sale_days)) $$, '%already started%', 'start selling once');
+select throws_like($$ select public.cancel_sale_day((select id from public.sale_days)) $$, '%can''t be cancelled%', 'no cancelling after selling starts');
 
--- Price change mid-sale doesn't affect today
-update public.items set price_cents = 200, bundle_size = 1 where name = 'Chips, assorted';
-select is((select locked_price_cents from public.sale_day_items sdi join public.items i on i.id = sdi.item_id where i.name = 'Chips, assorted'), 100, 'today''s price stays locked');
-select throws_like($$ update public.sale_day_items set left_count = 1 $$, '%during count-up%', 'no leftover counts while selling');
-
--- Count up ---------------------------------------------------------------------
-select lives_ok($$ select public.begin_count((select id from public.sale_days)) $$, 'begin count-up');
-update public.sale_day_items set left_count = 104, out_count = 0
- where item_id = (select id from public.items where name = 'Nestlé mini bars, assorted');   -- 24 pieces = 12 deals
-update public.sale_day_items set left_count = 38, out_count = 2
- where item_id = (select id from public.items where name = 'Chips, assorted');             -- 20 sold, 2 out
-update public.sale_days set helper_credits = 1;
-update public.cash_counts set qty = 1 where denom_cents = 2000;
-update public.cash_counts set qty = 5 where denom_cents = 500;
-update public.cash_counts set qty = 8 where denom_cents = 200;
-update public.cash_counts set qty = 12 where denom_cents = 100;
-update public.cash_counts set qty = 4 where denom_cents = 25;
-
--- sales = 12 deals × $1 + 20 × $1 = $32; expected = 30 + 32 − 1 = $61; counted = 20+25+16+12+1 = $74
-select is((select sales_cents from public.sale_day_totals), 3200, 'sales from stock counts');
-select is((select expected_cents from public.sale_day_totals), 6100, 'expected cash = float + sales − helper credit');
-select is((select over_short_cents from public.sale_day_totals), 1300, 'over by $13');
-
-select throws_like($$ select public.close_sale_day((select id from public.sale_days)) $$, '%needs to confirm%', 'needs a sign-off');
-select public.sign_off((select id from public.sale_days));
-select public.sign_off((select id from public.sale_days));
-select is((select signoffs from public.sale_day_totals), 1, 'same person twice counts once');
+-- Close count -------------------------------------------------------------------
+update public.cash_counts set qty = 3 where kind = 'close' and denom_cents = 2000;
+update public.cash_counts set qty = 2 where kind = 'close' and denom_cents = 1000;
+update public.cash_counts set qty = 12 where kind = 'close' and denom_cents = 200;
+update public.cash_counts set qty = 9 where kind = 'close' and denom_cents = 100;
+update public.cash_counts set qty = 4 where kind = 'close' and denom_cents = 25;
+-- close = 60 + 20 + 24 + 9 + 1 = $114; revenue = 114 − 28 = $86
+select is((select close_cents from public.sale_day_cash), 11400, 'close count from the denominations');
+select is((select revenue_cents from public.sale_day_cash), 8600, 'revenue = close − open');
+select throws_like($$ select public.close_sale_day((select id from public.sale_days), 20000) $$,
+  '%more than you counted%', 'left in box can''t exceed the close count');
+select throws_like($$ select public.close_sale_day((select id from public.sale_days), -1) $$,
+  '%negative%', 'left in box can''t be negative');
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
-select public.sign_off((select id from public.sale_days));
-update public.cash_counts set qty = 0 where denom_cents = 2000;   -- recount: that $20 was a mistake
-select is((select signoffs from public.sale_day_totals), 0, 'changing a count clears sign-offs');
-select is((select over_short_cents from public.sale_day_totals), -700, 'now short by $7');
-select public.sign_off((select id from public.sale_days));
-select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
-select public.sign_off((select id from public.sale_days));
-select lives_ok($$ select public.close_sale_day((select id from public.sale_days)) $$, 'finish count-up');
-select is((select on_hand from public.item_stock where name = 'Chips, assorted'), 38, 'chips stock after sale and out');
-select throws_like($$ update public.cash_counts set qty = 99 where denom_cents = 5 $$, '%during count-up%', 'closed sale day is locked');
+select lives_ok($$ select public.close_sale_day((select id from public.sale_days), 3000, 'Gummies went first.') $$, 'close the sale day');
+select is((select deposit_cents from public.sale_day_cash), 8400, 'deposit = close − left in box');
+select is((select closed_by_name from public.sale_day_cash), 'Calvin', 'whoever closes it is the sign-off');
+select throws_like($$ select public.close_sale_day((select id from public.sale_days), 3000) $$, '%already closed%', 'close once');
+select throws_like($$ update public.cash_counts set qty = 99 where kind = 'close' and denom_cents = 5 $$,
+  '%closed%', 'a closed sale day is locked');
+select is((select on_hand from public.item_stock where name = 'Chips, assorted'), (select on_hand from chips_before),
+  'a sale day doesn''t touch stock');
+
+-- Next sale day: the box should open with what was left last time.
+select public.open_sale_day('2026-09-30');
+update public.cash_counts set qty = 25 where kind = 'open' and denom_cents = 100
+ and sale_day_id = (select id from public.sale_days where sale_date = '2026-09-30');
+select is((select expected_open_cents from public.sale_day_cash where sale_date = '2026-09-30'), 3000,
+  'expected open is the last left in box');
+select is((select open_diff_cents from public.sale_day_cash where sale_date = '2026-09-30'), -500,
+  'the open count is $5 short of it');
+select throws_like($$ select public.open_sale_day('2026-09-29') $$, '%still open%', 'still one open at a time');
+select lives_ok($$ select public.cancel_sale_day((select id from public.sale_days where sale_date = '2026-09-30')) $$,
+  'a sale day opened by mistake can be cancelled before selling');
+select throws_like($$ select public.open_sale_day('2026-09-29') $$, '%already a sale day on Sep 29%', 'one sale day per date');
+update public.sale_days set phase = 'open';   -- no update policy: changes nothing
+select is((select phase::text from public.sale_days), 'closed', 'and it stays closed');
 select throws_like($$ insert into public.stock_movements (item_id, qty, reason)
   select id, -1, 'sold' from public.items limit 1 $$, '%row-level security%', 'clients cannot post sales directly');
 

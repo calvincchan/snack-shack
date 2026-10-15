@@ -1,7 +1,7 @@
 -- Refunds on a To pay claim (ADR-0013, pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(38);
+select plan(37);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items, public.sale_days cascade;
@@ -100,21 +100,9 @@ select throws_ok(
   format($$select public.refund_purchase_line(gen_random_uuid(), %L, 10, 100, '2026-10-06')$$, (select id from lines where name = 'Chips')),
   'P0001', 'Only 5 on hand.', 'pieces beyond stock on hand');
 
--- Not while the item is in a sale day that has started.
-reset role;
-select set_config('snack.fn', 'on', true);
-insert into public.sale_days (sale_date, phase, float_cents, started_at) values ('2026-10-06', 'selling', 3000, now());
-insert into public.sale_day_items (sale_day_id, item_id) select (select id from public.sale_days), id from public.items where name = 'Gummies';
-select set_config('snack.fn', 'off', true);
-set local role authenticated;
-select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
-select throws_ok(
-  format($$select public.refund_purchase_line(gen_random_uuid(), %L, 2, 100, '2026-10-06')$$, (select id from lines where name = 'Gummies')),
-  'P0001', 'Refund after today''s sale closes.', 'item in a sale day past lineup');
--- An item that is not in that lineup is fine.
 select lives_ok(
   format($$select public.refund_purchase_line('20000000-0000-0000-0000-000000000002', %L, 5, 400, '2026-10-06')$$, (select id from lines where name = 'Chips')),
-  'an item outside the lineup can be refunded');
+  'a refund within the pieces left and on hand works');
 
 -- A coordinator may refund someone else's claim.
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
@@ -157,10 +145,7 @@ select is((select count(*)::int from issued), 1, 'no link for a net $0 claim');
 select is((select (payload ->> 'total_cents')::int from public.action_tokens), 3000, 'the link stores the total it was issued for');
 
 reset role;
--- The sale day closes, then Yuki refunds more before the treasurer taps.
-select set_config('snack.fn', 'on', true);
-update public.sale_days set phase = 'closed', closed_at = now();
-select set_config('snack.fn', 'off', true);
+-- Yuki refunds more before the treasurer taps.
 set local role authenticated;
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000b');
 select public.refund_purchase_line(gen_random_uuid(), (select id from lines where name = 'Gummies'), 2, 120, '2026-10-06');

@@ -1,6 +1,6 @@
 # Data model
 
-> **Changing (2026-10-15):** ADR-0015 (cash-only sale days), ADR-0016 (occasional stock counts) and ADR-0017 (claims sent by the coordinator, paid by cheque) replace the sale day tables, the lineup and count-up functions, `shopping_trips`, `action_tokens` and the weekly email. Each build ticket updates this file with its migration; until then, parts below describe the old schema.
+> **Changing (2026-10-15):** The sale day part (ADR-0015, #76) is done. ADR-0016 (occasional stock counts, #74) and ADR-0017 (claims sent by the coordinator, paid by cheque, #72) still replace `action_tokens` and the weekly email; each of those tickets updates this file with its migration.
 
 The schema is in [`supabase/migrations/`](../supabase/migrations/). It is a **reviewed draft**: it applies cleanly and passes [`supabase/tests/sale_day_flow.test.sql`](../supabase/tests/sale_day_flow.test.sql) (40 checks covering buying, the full sale day, cash maths, sign-off, locks, the ledger and treasurer links). That was checked on plain Postgres 16 with small stand-ins for Supabase's `auth`, `storage` and roles. Run `supabase test db` on the real stack as the first build step.
 
@@ -23,12 +23,7 @@ erDiagram
   items ||--o{ stock_movements : ""
   purchase_lines ||--o| stock_movements : "creates"
   purchase_lines ||--o{ purchase_refunds : "refunded by"
-  sale_days ||--|{ sale_day_items : lineup
-  items ||--o{ sale_day_items : ""
-  sale_days ||--|{ cash_counts : ""
-  sale_days ||--o{ sale_day_signoffs : ""
-  sale_days ||--o{ stock_movements : "check, sold, out"
-  profiles ||--o{ shopping_trips : ""
+  sale_days ||--|{ cash_counts : "open and close"
   profiles ||--o{ action_tokens : "issued_to"
 ```
 
@@ -36,7 +31,7 @@ erDiagram
 
 | Table | Purpose | Key columns / rules |
 |---|---|---|
-| `settings` | One row of app settings (admin) | `float_cents` 3000, `target_sale_days` 2, `over_short_ok_cents` 300, `over_short_warn_cents` 1000, `gst_rate` 0.05, `max_items_per_kid` 3, `max_treats_per_kid` 1, `treasurer_email` |
+| `settings` | One row of app settings (admin) | `float_cents` 3000 (the change float, the default left in box), `gst_rate` 0.05, `treasurer_email` |
 | `profiles` | One per signed-in person | `email`, `display_name` (≤ 30, unique ignoring case), `full_name` (optional, ≤ 100; the name on their bank account, shown only in the treasurer email), `role` (volunteer / treasurer / admin), `active`. Volunteers are deactivated, never deleted. Written only through functions: `update_my_profile`, `update_team_member`, `set_member_active`, `add_volunteer` (ADR-0014). |
 | `volunteer_invites` | Someone the coordinator added who has not signed in yet | `email` (one open invite each), `display_name`, `full_name` (copied to the profile), `role`, `accepted_at`. Admin only. See ADR-0011. |
 | `items` | What we sell | `name`, `type` (snack / treat), `storage` (shelf / freezer), `price_cents` (null = needs a price), `bundle_size` (pieces per deal), `unit_cost_cents` (weighted average), `archived`, `version`. Price options limited by a check constraint to $1 × 1/2/3 and $2 × 1. |
@@ -44,11 +39,8 @@ erDiagram
 | `purchase_lines` | Receipt lines | `item_id`, `pieces`, `cost_cents` (incl. tax) |
 | `purchase_refunds` | A refund on a claim line (ADR-0013). The purchase lines never change | `purchase_line_id`, `pieces` (≥ 1), `amount_cents` (> 0, incl. tax), `refunded_on`, `slip_path`, `note`, `created_by`. `id` is client-generated so a retry cannot duplicate. Audited. Written only by `refund_purchase_line()` and `undo_refund()` |
 | `stock_movements` | **Append-only stock ledger** | `item_id`, `qty` (±), `reason` (purchase, sold, out, missing, damaged, found, donated, returned, correction; sign enforced), links to `purchase_line_id` or `sale_day_id`; `refund_id` on `returned` movements and on the `correction` that undoes one (no foreign key: undo deletes the refund row) |
-| `sale_days` | One after-lunch sale | `sale_date`, `phase` (lineup → selling → counting → closed), `float_cents` (copied from settings), `helper_credits`, `note`, timestamps. **Only one open at a time.** |
-| `sale_day_items` | The lineup, and every count for it | `check_count`, `check_reason` (lineup phase); `start_count`, `locked_price_cents`, `locked_bundle_size`, `locked_type` (set by `start_sale`); `left_count`, `out_count` (counting phase) |
-| `cash_counts` | Cash by denomination | `denom_cents` (2000, 1000, 500, 200, 100, 25, 10, 5), `qty` |
-| `sale_day_signoffs` | Sign-off | one row per (sale day, user) |
-| `shopping_trips` | "I'm going shopping" | `volunteer_id`, `planned_for` (free text), `released_at`. Only one open trip. |
+| `sale_days` | One after-lunch sale (ADR-0015) | `sale_date` (unique), `phase` (open → closed), `selling_at`/`selling_by` (open count done), `open_note`, `close_note`, `left_in_box_cents`, `closed_at`, `closed_by` (the sign-off). **Only one open at a time.** No client writes; only the functions below |
+| `cash_counts` | Cash by denomination | key (`sale_day_id`, `kind` open/close, `denom_cents` 2000, 1000, 500, 200, 100, 25, 10, 5), `qty`. All 16 rows are created with the sale day; clients update `qty` only. The open count locks once selling starts; the close count opens then; nothing changes once closed |
 | `action_tokens` | One-time signed links in the treasurer email | `token_hash` (sha256; plaintext never stored), `purpose` = mark_paid, `payload`, `issued_to`, `expires_at`, `used_at`. No client access. |
 | `audit_log` | Change history | `table_name`, `row_pk`, `action`, `old_data`, `new_data`, `actor`, `at`. Filled by the `audit_row()` trigger on every important table. |
 
@@ -63,19 +55,13 @@ All views use `security_invoker = true`, so row level security still applies.
 | View | Gives you |
 |---|---|
 | `item_stock` | Every item column plus `on_hand` (sum of the ledger) |
-| `item_overview` | What the Items tab reads: `item_stock` plus `days_out`, `is_new` (never in a finished lineup), `pieces_per_day_out`, who bought it last, and who edited it last (for the conflict prompt) |
+| `item_overview` | What the Items tab reads: `item_stock` plus `is_new` (added in the last 30 days), who bought it last, and who edited it last (for the conflict prompt) |
 | `claims` | Purchases plus `claim_label` (SS-001), `total_cents` (the receipt), `refunded_cents`, `net_cents` (receipt minus refunds; what is owed), `buyer_name`. A To pay claim at `net_cents = 0` is shown as Refunded; its `status` stays `to_pay` |
 | `claim_lines` | Every purchase line with `item_name`, plus `pieces_left` and `cents_left` after refunds |
 | `claim_refunds` | Each refund with its `purchase_id` and who logged it |
-| `sale_day_item_results` | Per lineup item: `sold_pieces = start − left − out`, `sales_cents = round(sold × locked price ÷ locked bundle)` |
-| `sale_day_totals` | Per sale day: `pieces_sold`, `treat_pieces_sold`, `sales_cents`, `expected_cents = float + sales − helper credits × 100`, `counted_cents`, `over_short_cents`, `deposit_cents = counted − float`, `signoffs`, `items_over_start`, `items_uncounted` |
-| `type_benchmarks` | Per type: what a piece usually costs and how fast one item of that type sells, for Deal check (HANDOFF §5.4) |
-| `stock_by_type` | Per type: pieces on hand, pieces sold on an average sale day, target stock, "buy about N" and sale days left |
-| `lineup_options` | Every item a lineup may hold (priced, active, stock > 0) with its reason tag and whether the app suggests it |
-| `sale_day_lineup` | Per lineup item: today's price, deal size and type (locked once the sale starts), the pieces Check stock expects, the counts entered, and the pieces-a-day rate behind the lineup margin |
-| `sale_day_lineup_totals` | Per sale day: `day_no`, date, phase, float, `snacks`, `treats`, `items_off` and the weighted lineup `margin` |
-| `item_sale_stats` | Per item across closed sale days: `days_out`, `pieces_sold`, `pieces_per_day_out`, `sales_since_out` (0 = out at the last sale, null = never), `sold_out_recently` (closed at 0 in the last 2), `sold_out_days` |
-| `change_history` | One row per changed field, read from `audit_log`, for the history lists: item edits (`name`, `price` as `cents/bundle`, `type`, `storage`, `archived`), sale day counts (`check_count`, `left_count`) and `phase`. Skips unit cost, version bumps, an item's first pricing in `log_purchase`, and `begin_count`'s automatic fill |
+| `sale_day_cash` | Per sale day: `open_cents`, `close_cents`, `revenue_cents = close − open`, `left_in_box_cents`, `deposit_cents = close − left in box`, `expected_open_cents` (the previous closed sale day's left in box, by date), `open_diff_cents`, notes, who opened and closed it |
+| `type_benchmarks` | Per type: what a piece usually costs, for Deal check (HANDOFF §5.4) |
+| `change_history` | One row per changed field, read from `audit_log`, for the history lists: item edits (`name`, `price` as `cents/bundle`, `type`, `storage`, `archived`) and sale day `phase`. Skips unit cost, version bumps and an item's first pricing in `log_purchase` |
 
 ## Functions (the only way to do the important things)
 
@@ -84,14 +70,12 @@ All are `security definer`, check that the caller is an active member, and keep 
 | Function | What it does | Guards |
 |---|---|---|
 | `add_volunteer(email, name, role)` | Writes the profile if that email already has an account, otherwise an invite. Returns `{"status": "added" \| "invited"}` | Admin only |
-| `suggest_lineup()` | Scores items (HANDOFF §5.6); returns `item_id, type, score, reason, suggested` | Priced, active, stock > 0 |
-| `create_sale_day(date)` | Creates the sale day with the float from settings and the suggested lineup | One open sale day |
-| `start_sale(sale_day, float_cents?)` | Sets the day's float when given (≥ 0; null keeps it). Records Check stock differences as missing / damaged / found movements, sets `start_count`, **locks price, bundle and type**, phase → selling | Only from lineup; every item priced; ≥ 1 item |
-| `begin_count(sale_day)` | Phase → counting; pre-fills `left_count = start_count`; creates the eight cash rows | Only from selling |
-| `sign_off(sale_day)` | Adds the caller's sign-off | Only while counting; same person twice counts once |
-| `close_sale_day(sale_day)` | Posts `sold` and `out` movements, phase → closed | Counting; **1 sign-off**; no item above its start; every item counted; guarded update so a double tap fails cleanly |
+| `open_sale_day(date?)` | Creates the sale day (default today in Vancouver) and its 16 cash rows | Not in the future; one per date; one open at a time |
+| `cancel_sale_day(sale_day)` | Deletes a sale day opened by mistake | Only before selling starts |
+| `start_selling(sale_day, note?)` | Ends the open count: stamps `selling_at` and keeps the optional note | Open; open count above $0; once |
+| `close_sale_day(sale_day, left_in_box_cents, note?)` | Records left in box and the note; the caller is the sign-off; phase → closed | Selling started; close count above $0; 0 ≤ left in box ≤ close count; guarded update so a double tap fails cleanly |
 | `log_purchase(jsonb)` | One transaction: claim, new items, lines, purchase movements, weighted-average cost, optional price | Idempotent on the purchase `id`; receipt required; ≥ 1 line |
-| `refund_purchase_line(id, line, pieces, amount_cents, refunded_on, slip_path, note)` | Logs a refund and a `returned` movement in one transaction | Idempotent on `id`; To pay claim only ("Already paid. Ask the treasurer."); buyer or coordinator; pieces ≤ not yet refunded ("Only N left on this line."); pieces ≤ on hand ("Only N on hand."); item not in a selling or counting sale day ("Refund after today's sale closes."); amount ≤ cost left on the line. Unit cost is not recalculated |
+| `refund_purchase_line(id, line, pieces, amount_cents, refunded_on, slip_path, note)` | Logs a refund and a `returned` movement in one transaction | Idempotent on `id`; To pay claim only ("Already paid. Ask the treasurer."); buyer or coordinator; pieces ≤ not yet refunded ("Only N left on this line."); pieces ≤ on hand ("Only N on hand."); amount ≤ cost left on the line. Unit cost is not recalculated |
 | `undo_refund(id)` | Removes the refund row (the audit log keeps it) and adds a `correction` (+) movement | To pay claim only; buyer or coordinator |
 | `issue_mark_paid_tokens(interval)` | For the weekly email: one token per volunteer owed money (net above $0), issued to the treasurer. Stores the total in the payload | Service role only |
 | `redeem_action_token(token, ref)` | Marks that volunteer's claims paid, recorded as the treasurer | Service role only; single use; expires; refuses if the claims' net total no longer matches the stored total (SS004). Tokens without a stored total redeem as before |
@@ -100,8 +84,7 @@ The `log_purchase` payload shape is documented in the migration above the functi
 
 ## Guards (triggers)
 
-- **Phase rules** on `sale_days`, `sale_day_items` and `cash_counts`: lineup rows only change during lineup; Check stock only during lineup; leftover counts and cash only during counting; locked columns only via `start_sale`; **nothing once closed**. Functions bypass this by setting `snack.fn = on` for their own transaction.
-- **Sign-offs reset** when any count, cash row or helper credit changes, so the confirmation is always of the final numbers.
+- **Phase rules** on `cash_counts`: rows are created with the sale day and only `qty` changes; the open count until selling starts, the close count after; **nothing once closed**. Functions bypass this by setting `snack.fn = on` for their own transaction.
 - **Ledger is append-only**: update and delete raise an error, even for the service role. Fix mistakes with a `correction` movement.
 - **Sign-in** (`on_auth_user_created` on `auth.users`): the first account on an empty database becomes the coordinator; otherwise an open invite for that email becomes a profile. No invite means no profile, and the app says "Ask the coordinator to add you". See ADR-0011.
 - **The team keeps a coordinator**: you cannot deactivate yourself, and the last active admin cannot be demoted or deactivated.
@@ -111,26 +94,26 @@ The `log_purchase` payload shape is documented in the migration above the functi
 
 | Who | Can |
 |---|---|
-| Any active member | Read everything except `action_tokens`. Edit items. Add/remove lineup items and enter counts (phase rules apply). Add `donated` and `correction` stock movements. Claim and release their own shopping trip. Call the functions above. |
+| Any active member | Read everything except `action_tokens`. Edit items. Enter cash counts (phase rules apply). Add `donated` and `correction` stock movements. Call the functions above. |
 | Admin | Also add and update `profiles` (no deletes), read and cancel `volunteer_invites`, and edit `settings`. |
 | Treasurer | Same as a member if they ever sign in. Payments come through `redeem_action_token` via the Edge Function. |
-| Nobody (clients) | Insert purchases, lines or sale days directly, post sold/out/missing movements, or touch `action_tokens`. Those go through functions. |
+| Nobody (clients) | Insert purchases, lines or sale days directly, change a sale day row, post sold/out/missing movements, or touch `action_tokens`. Those go through functions. |
 
 ## Realtime
 
-The `supabase_realtime` publication includes `sale_days`, `sale_day_items`, `cash_counts` and `sale_day_signoffs`. Subscribe on the Sale day screen filtered by `sale_day_id`, and invalidate the matching TanStack Query keys on each change. Use Presence on a channel per sale day for "Yuki is counting cash".
+The `supabase_realtime` publication includes `sale_days` and `cash_counts`. The Sale day screen subscribes and invalidates its TanStack Query keys on each change. Presence was dropped (ADR-0015).
 
 ## Weekly treasurer email (Edge Function)
 
 1. Scheduled with Supabase Cron (pg_cron) every Monday 07:00 America/Vancouver.
-2. The function (service role) reads `sale_day_totals` for last week, the `claims` view, and calls `issue_mark_paid_tokens()`.
+2. The function (service role) reads `sale_day_cash` for last week, the `claims` view, and calls `issue_mark_paid_tokens()`.
 3. It builds the email (see prototype, Buy → Claims) with links such as `https://<app>/pay?t=<token>`, attaches the CSV ledger, and sends through the email provider.
 4. `/pay` is a tiny page that posts the token to a second Edge Function, which calls `redeem_action_token(token, ref)` and shows "Yuki's 2 receipts marked paid".
 5. Receipt links in the email are short-lived signed URLs from the `receipts` bucket.
 
 ## What's deliberately not in the schema
 
-Individual sales, customers, payment methods, barcodes, per-flavour stock, sale/clearance prices, a healthy flag, claim approval. See `docs/adr/`.
+Individual sales, stock counts on sale days, a lineup, kid rules, customers, payment methods, barcodes, per-flavour stock, sale/clearance prices, a healthy flag, claim approval. See `docs/adr/`.
 
 ## Things to confirm during the build
 

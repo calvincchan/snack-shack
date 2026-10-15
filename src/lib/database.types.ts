@@ -111,6 +111,7 @@ export type Database = {
       cash_counts: {
         Row: {
           denom_cents: number
+          kind: Database['public']['Enums']['cash_count_kind']
           qty: number
           sale_day_id: string
           updated_at: string
@@ -118,6 +119,7 @@ export type Database = {
         }
         Insert: {
           denom_cents: number
+          kind: Database['public']['Enums']['cash_count_kind']
           qty?: number
           sale_day_id: string
           updated_at?: string
@@ -125,6 +127,7 @@ export type Database = {
         }
         Update: {
           denom_cents?: number
+          kind?: Database['public']['Enums']['cash_count_kind']
           qty?: number
           sale_day_id?: string
           updated_at?: string
@@ -135,21 +138,7 @@ export type Database = {
             foreignKeyName: 'cash_counts_sale_day_id_fkey'
             columns: ['sale_day_id']
             isOneToOne: false
-            referencedRelation: 'insights_sale_days'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'cash_counts_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_lineup_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'cash_counts_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_totals'
+            referencedRelation: 'sale_day_cash'
             referencedColumns: ['sale_day_id']
           },
           {
@@ -269,43 +258,8 @@ export type Database = {
             foreignKeyName: 'purchase_lines_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
-            referencedRelation: 'insights_fading_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'purchase_lines_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'purchase_lines_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_slowest_item'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'purchase_lines_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sold_out_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'purchase_lines_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
             referencedRelation: 'item_overview'
             referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'purchase_lines_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_sale_stats'
-            referencedColumns: ['item_id']
           },
           {
             foreignKeyName: 'purchase_lines_item_id_fkey'
@@ -448,248 +402,78 @@ export type Database = {
           },
         ]
       }
-      sale_day_items: {
+      sale_days: {
         Row: {
-          check_count: number | null
-          check_reason: Database['public']['Enums']['check_reason'] | null
-          item_id: string
-          left_count: number | null
-          locked_bundle_size: number | null
-          locked_price_cents: number | null
-          locked_type: Database['public']['Enums']['item_type'] | null
-          out_count: number
-          sale_day_id: string
-          start_count: number | null
-          updated_at: string
-          updated_by: string | null
+          close_note: string | null
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          left_in_box_cents: number | null
+          open_note: string | null
+          phase: Database['public']['Enums']['sale_phase']
+          sale_date: string
+          selling_at: string | null
+          selling_by: string | null
         }
         Insert: {
-          check_count?: number | null
-          check_reason?: Database['public']['Enums']['check_reason'] | null
-          item_id: string
-          left_count?: number | null
-          locked_bundle_size?: number | null
-          locked_price_cents?: number | null
-          locked_type?: Database['public']['Enums']['item_type'] | null
-          out_count?: number
-          sale_day_id: string
-          start_count?: number | null
-          updated_at?: string
-          updated_by?: string | null
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          left_in_box_cents?: number | null
+          open_note?: string | null
+          phase?: Database['public']['Enums']['sale_phase']
+          sale_date: string
+          selling_at?: string | null
+          selling_by?: string | null
         }
         Update: {
-          check_count?: number | null
-          check_reason?: Database['public']['Enums']['check_reason'] | null
-          item_id?: string
-          left_count?: number | null
-          locked_bundle_size?: number | null
-          locked_price_cents?: number | null
-          locked_type?: Database['public']['Enums']['item_type'] | null
-          out_count?: number
-          sale_day_id?: string
-          start_count?: number | null
-          updated_at?: string
-          updated_by?: string | null
+          close_note?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          left_in_box_cents?: number | null
+          open_note?: string | null
+          phase?: Database['public']['Enums']['sale_phase']
+          sale_date?: string
+          selling_at?: string | null
+          selling_by?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
+            foreignKeyName: 'sale_days_closed_by_fkey'
+            columns: ['closed_by']
             isOneToOne: false
-            referencedRelation: 'insights_fading_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_slowest_item'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sold_out_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_overview'
+            referencedRelation: 'profiles'
             referencedColumns: ['id']
           },
           {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
+            foreignKeyName: 'sale_days_created_by_fkey'
+            columns: ['created_by']
             isOneToOne: false
-            referencedRelation: 'item_sale_stats'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_stock'
+            referencedRelation: 'profiles'
             referencedColumns: ['id']
           },
           {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'items'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sale_days'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_lineup_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_days'
-            referencedColumns: ['id']
-          },
-        ]
-      }
-      sale_day_signoffs: {
-        Row: {
-          sale_day_id: string
-          signed_at: string
-          user_id: string
-        }
-        Insert: {
-          sale_day_id: string
-          signed_at?: string
-          user_id?: string
-        }
-        Update: {
-          sale_day_id?: string
-          signed_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sale_days'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_lineup_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_signoffs_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_days'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_signoffs_user_id_fkey'
-            columns: ['user_id']
+            foreignKeyName: 'sale_days_selling_by_fkey'
+            columns: ['selling_by']
             isOneToOne: false
             referencedRelation: 'profiles'
             referencedColumns: ['id']
           },
         ]
       }
-      sale_days: {
-        Row: {
-          closed_at: string | null
-          closed_by: string | null
-          count_started_at: string | null
-          created_at: string
-          created_by: string | null
-          float_cents: number
-          helper_credits: number
-          id: string
-          note: string | null
-          phase: Database['public']['Enums']['sale_phase']
-          sale_date: string
-          started_at: string | null
-          started_by: string | null
-        }
-        Insert: {
-          closed_at?: string | null
-          closed_by?: string | null
-          count_started_at?: string | null
-          created_at?: string
-          created_by?: string | null
-          float_cents: number
-          helper_credits?: number
-          id?: string
-          note?: string | null
-          phase?: Database['public']['Enums']['sale_phase']
-          sale_date: string
-          started_at?: string | null
-          started_by?: string | null
-        }
-        Update: {
-          closed_at?: string | null
-          closed_by?: string | null
-          count_started_at?: string | null
-          created_at?: string
-          created_by?: string | null
-          float_cents?: number
-          helper_credits?: number
-          id?: string
-          note?: string | null
-          phase?: Database['public']['Enums']['sale_phase']
-          sale_date?: string
-          started_at?: string | null
-          started_by?: string | null
-        }
-        Relationships: []
-      }
       settings: {
         Row: {
           float_cents: number
           gst_rate: number
           id: boolean
-          max_items_per_kid: number
-          max_treats_per_kid: number
-          over_short_ok_cents: number
-          over_short_warn_cents: number
-          target_sale_days: number
           treasurer_email: string | null
           updated_at: string
           updated_by: string | null
@@ -698,11 +482,6 @@ export type Database = {
           float_cents?: number
           gst_rate?: number
           id?: boolean
-          max_items_per_kid?: number
-          max_treats_per_kid?: number
-          over_short_ok_cents?: number
-          over_short_warn_cents?: number
-          target_sale_days?: number
           treasurer_email?: string | null
           updated_at?: string
           updated_by?: string | null
@@ -711,48 +490,11 @@ export type Database = {
           float_cents?: number
           gst_rate?: number
           id?: boolean
-          max_items_per_kid?: number
-          max_treats_per_kid?: number
-          over_short_ok_cents?: number
-          over_short_warn_cents?: number
-          target_sale_days?: number
           treasurer_email?: string | null
           updated_at?: string
           updated_by?: string | null
         }
         Relationships: []
-      }
-      shopping_trips: {
-        Row: {
-          created_at: string
-          id: string
-          planned_for: string | null
-          released_at: string | null
-          volunteer_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          planned_for?: string | null
-          released_at?: string | null
-          volunteer_id?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          planned_for?: string | null
-          released_at?: string | null
-          volunteer_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'shopping_trips_volunteer_id_fkey'
-            columns: ['volunteer_id']
-            isOneToOne: false
-            referencedRelation: 'profiles'
-            referencedColumns: ['id']
-          },
-        ]
       }
       stock_movements: {
         Row: {
@@ -796,43 +538,8 @@ export type Database = {
             foreignKeyName: 'stock_movements_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
-            referencedRelation: 'insights_fading_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'stock_movements_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'stock_movements_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_slowest_item'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'stock_movements_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sold_out_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'stock_movements_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
             referencedRelation: 'item_overview'
             referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'stock_movements_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_sale_stats'
-            referencedColumns: ['item_id']
           },
           {
             foreignKeyName: 'stock_movements_item_id_fkey'
@@ -860,34 +567,6 @@ export type Database = {
             columns: ['purchase_line_id']
             isOneToOne: false
             referencedRelation: 'purchase_lines'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'stock_movements_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sale_days'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'stock_movements_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_lineup_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'stock_movements_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'stock_movements_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_days'
             referencedColumns: ['id']
           },
         ]
@@ -1062,112 +741,18 @@ export type Database = {
           },
         ]
       }
-      insights_check_stock_losses: {
-        Row: {
-          cost_cents: number | null
-          items: number | null
-          pieces: number | null
-        }
-        Relationships: []
-      }
-      insights_fading_items: {
-        Row: {
-          first_date: string | null
-          first_pieces: number | null
-          item_id: string | null
-          last_date: string | null
-          last_pieces: number | null
-          name: string | null
-        }
-        Relationships: []
-      }
-      insights_items: {
-        Row: {
-          days_out: number | null
-          item_id: string | null
-          name: string | null
-          pieces_per_day_out: number | null
-          pieces_sold: number | null
-          sales_cents: number | null
-          type: Database['public']['Enums']['item_type'] | null
-        }
-        Relationships: []
-      }
-      insights_sale_days: {
-        Row: {
-          cost_cents: number | null
-          counted_cents: number | null
-          helper_credits: number | null
-          items_out: number | null
-          note: string | null
-          outside_ok: boolean | null
-          over_short_cents: number | null
-          pieces_sold: number | null
-          profit_cents: number | null
-          sale_date: string | null
-          sale_day_id: string | null
-          sales_cents: number | null
-          volunteers: string | null
-        }
-        Relationships: []
-      }
-      insights_slowest_item: {
-        Row: {
-          days_out: number | null
-          item_id: string | null
-          name: string | null
-          pieces_per_day_out: number | null
-        }
-        Relationships: []
-      }
-      insights_sold_out_items: {
-        Row: {
-          days_out: number | null
-          item_id: string | null
-          name: string | null
-          sold_out_days: number | null
-        }
-        Relationships: []
-      }
-      insights_term: {
-        Row: {
-          cost_cents: number | null
-          helper_credit_cents: number | null
-          margin_pct: number | null
-          over_short_cents: number | null
-          over_short_ok_cents: number | null
-          pieces_per_day: number | null
-          pieces_sold: number | null
-          profit_cents: number | null
-          sale_days: number | null
-          sales_cents: number | null
-          sales_outside_ok: number | null
-          sales_per_day_cents: number | null
-        }
-        Relationships: []
-      }
-      insights_treat_share: {
-        Row: {
-          pieces_sold: number | null
-          treat_pct: number | null
-          treat_pieces: number | null
-        }
-        Relationships: []
-      }
       item_overview: {
         Row: {
           archived: boolean | null
           bundle_size: number | null
           created_at: string | null
           created_by: string | null
-          days_out: number | null
           id: string | null
           is_new: boolean | null
           last_bought_by: string | null
           last_bought_on: string | null
           name: string | null
           on_hand: number | null
-          pieces_per_day_out: number | null
           price_cents: number | null
           storage: Database['public']['Enums']['storage_kind'] | null
           type: Database['public']['Enums']['item_type'] | null
@@ -1176,19 +761,6 @@ export type Database = {
           updated_by: string | null
           updated_by_name: string | null
           version: number | null
-        }
-        Relationships: []
-      }
-      item_sale_stats: {
-        Row: {
-          days_out: number | null
-          item_id: string | null
-          pieces_per_day_out: number | null
-          pieces_sold: number | null
-          sales_since_out: number | null
-          sold_out_days: number | null
-          sold_out_recently: boolean | null
-          type: Database['public']['Enums']['item_type'] | null
         }
         Relationships: []
       }
@@ -1211,279 +783,29 @@ export type Database = {
         }
         Relationships: []
       }
-      lineup_options: {
+      sale_day_cash: {
         Row: {
-          bundle_size: number | null
-          item_id: string | null
-          name: string | null
-          on_hand: number | null
-          price_cents: number | null
-          reason: string | null
-          score: number | null
-          storage: Database['public']['Enums']['storage_kind'] | null
-          suggested: boolean | null
-          type: Database['public']['Enums']['item_type'] | null
-          unit_cost_cents: number | null
-        }
-        Relationships: []
-      }
-      sale_day_item_results: {
-        Row: {
-          check_count: number | null
-          check_reason: Database['public']['Enums']['check_reason'] | null
-          item_id: string | null
-          left_count: number | null
-          locked_bundle_size: number | null
-          locked_price_cents: number | null
-          locked_type: Database['public']['Enums']['item_type'] | null
-          out_count: number | null
-          phase: Database['public']['Enums']['sale_phase'] | null
-          sale_date: string | null
-          sale_day_id: string | null
-          sales_cents: number | null
-          sold_pieces: number | null
-          start_count: number | null
-          updated_at: string | null
-          updated_by: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_fading_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_slowest_item'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sold_out_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_overview'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_sale_stats'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_stock'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'items'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sale_days'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_lineup_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_days'
-            referencedColumns: ['id']
-          },
-        ]
-      }
-      sale_day_lineup: {
-        Row: {
-          bundle_size: number | null
-          check_count: number | null
-          check_reason: Database['public']['Enums']['check_reason'] | null
-          expected_count: number | null
-          item_id: string | null
-          name: string | null
-          price_cents: number | null
-          rate: number | null
-          sale_day_id: string | null
-          start_count: number | null
-          storage: Database['public']['Enums']['storage_kind'] | null
-          type: Database['public']['Enums']['item_type'] | null
-          unit_cost_cents: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_fading_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_slowest_item'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sold_out_items'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_overview'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_sale_stats'
-            referencedColumns: ['item_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'item_stock'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_item_id_fkey'
-            columns: ['item_id']
-            isOneToOne: false
-            referencedRelation: 'items'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'insights_sale_days'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_lineup_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_day_totals'
-            referencedColumns: ['sale_day_id']
-          },
-          {
-            foreignKeyName: 'sale_day_items_sale_day_id_fkey'
-            columns: ['sale_day_id']
-            isOneToOne: false
-            referencedRelation: 'sale_days'
-            referencedColumns: ['id']
-          },
-        ]
-      }
-      sale_day_lineup_totals: {
-        Row: {
-          day_no: number | null
-          float_cents: number | null
-          items_off: number | null
-          margin: number | null
-          phase: Database['public']['Enums']['sale_phase'] | null
-          sale_date: string | null
-          sale_day_id: string | null
-          snacks: number | null
-          treats: number | null
-        }
-        Relationships: []
-      }
-      sale_day_totals: {
-        Row: {
-          counted_cents: number | null
+          close_cents: number | null
+          close_note: string | null
+          closed_at: string | null
+          closed_by_name: string | null
           deposit_cents: number | null
-          expected_cents: number | null
-          float_cents: number | null
-          helper_credits: number | null
-          items_over_start: number | null
-          items_uncounted: number | null
-          over_short_cents: number | null
+          expected_open_cents: number | null
+          left_in_box_cents: number | null
+          open_cents: number | null
+          open_diff_cents: number | null
+          open_note: string | null
+          opened_by_name: string | null
           phase: Database['public']['Enums']['sale_phase'] | null
-          pieces_sold: number | null
+          revenue_cents: number | null
           sale_date: string | null
           sale_day_id: string | null
-          sales_cents: number | null
-          signoffs: number | null
-          treat_pieces_sold: number | null
-        }
-        Relationships: []
-      }
-      stock_by_type: {
-        Row: {
-          buy_pieces: number | null
-          on_hand: number | null
-          sale_days_left: number | null
-          sold_per_sale_day: number | null
-          target_pieces: number | null
-          type: Database['public']['Enums']['item_type'] | null
+          selling_at: string | null
         }
         Relationships: []
       }
       type_benchmarks: {
         Row: {
-          pieces_per_day_out: number | null
           type: Database['public']['Enums']['item_type'] | null
           usual_cost_cents: number | null
         }
@@ -1501,10 +823,16 @@ export type Database = {
         }
         Returns: Json
       }
-      begin_count: { Args: { p_sale_day: string }; Returns: undefined }
+      cancel_sale_day: { Args: { p_sale_day: string }; Returns: undefined }
       cents_text: { Args: { p_cents: number }; Returns: string }
-      close_sale_day: { Args: { p_sale_day: string }; Returns: undefined }
-      create_sale_day: { Args: { p_date?: string }; Returns: string }
+      close_sale_day: {
+        Args: {
+          p_left_in_box_cents: number
+          p_note?: string
+          p_sale_day: string
+        }
+        Returns: undefined
+      }
       display_name_check: {
         Args: { p_invite: string; p_name: string; p_profile: string }
         Returns: undefined
@@ -1530,7 +858,9 @@ export type Database = {
           total_cents: number
         }[]
       }
+      local_today: { Args: Record<PropertyKey, never>; Returns: string }
       log_purchase: { Args: { p: Json }; Returns: string }
+      open_sale_day: { Args: { p_date?: string }; Returns: string }
       redeem_action_token: {
         Args: { p_payment_ref?: string; p_token: string }
         Returns: Json
@@ -1552,20 +882,9 @@ export type Database = {
         Args: { p_active: boolean; p_id: string }
         Returns: undefined
       }
-      sign_off: { Args: { p_sale_day: string }; Returns: undefined }
-      start_sale: {
-        Args: { p_float_cents?: number; p_sale_day: string }
+      start_selling: {
+        Args: { p_note?: string; p_sale_day: string }
         Returns: undefined
-      }
-      suggest_lineup: {
-        Args: Record<PropertyKey, never>
-        Returns: {
-          item_id: string
-          reason: string
-          score: number
-          suggested: boolean
-          type: Database['public']['Enums']['item_type']
-        }[]
       }
       treasurer_report_week: { Args: { p_now?: string }; Returns: string }
       undo_refund: { Args: { p_id: string }; Returns: undefined }
@@ -1597,6 +916,7 @@ export type Database = {
       }
     }
     Enums: {
+      cash_count_kind: 'open' | 'close'
       check_reason: 'missing' | 'damaged'
       claim_status: 'to_pay' | 'paid'
       item_type: 'snack' | 'treat'
@@ -1610,7 +930,7 @@ export type Database = {
         | 'donated'
         | 'correction'
         | 'returned'
-      sale_phase: 'lineup' | 'selling' | 'counting' | 'closed'
+      sale_phase: 'open' | 'closed'
       storage_kind: 'shelf' | 'freezer'
       user_role: 'volunteer' | 'treasurer' | 'admin'
     }
@@ -1740,6 +1060,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      cash_count_kind: ['open', 'close'],
       check_reason: ['missing', 'damaged'],
       claim_status: ['to_pay', 'paid'],
       item_type: ['snack', 'treat'],
@@ -1754,7 +1075,7 @@ export const Constants = {
         'correction',
         'returned',
       ],
-      sale_phase: ['lineup', 'selling', 'counting', 'closed'],
+      sale_phase: ['open', 'closed'],
       storage_kind: ['shelf', 'freezer'],
       user_role: ['volunteer', 'treasurer', 'admin'],
     },

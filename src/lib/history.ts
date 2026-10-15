@@ -30,8 +30,6 @@ function quote(value: string | null): string {
 }
 
 const PHASES: Record<string, string> = {
-  selling: 'Sale started',
-  counting: 'Count up started',
   closed: 'Sale day closed',
 }
 
@@ -59,12 +57,6 @@ export function describeChange(
       return `${lead}storage changed ${arrow}`
     case 'archived':
       return to === 'true' ? `${lead}archived` : `${lead}put back on the list`
-    case 'check_count':
-      return from === null
-        ? `${lead}checked at ${to}`
-        : `${lead}check changed ${arrow}`
-    case 'left_count':
-      return `${lead}count changed ${arrow}`
     case 'phase':
       return PHASES[to ?? ''] ?? `Sale day moved to ${to}`
     default:
