@@ -45,6 +45,7 @@ export type Database = {
           row_pk: string
           table_name: string
         }
+        ComputedFields: never
         Insert: {
           action: string
           actor?: string | null
@@ -76,6 +77,7 @@ export type Database = {
           updated_at: string
           updated_by: string | null
         }
+        ComputedFields: never
         Insert: {
           denom_cents: number
           kind: Database['public']['Enums']['cash_count_kind']
@@ -118,6 +120,7 @@ export type Database = {
           sent_to: string
           total_cents: number
         }
+        ComputedFields: never
         Insert: {
           claim_count: number
           id?: string
@@ -160,6 +163,7 @@ export type Database = {
           updated_by: string | null
           version: number
         }
+        ComputedFields: never
         Insert: {
           archived?: boolean
           bundle_size?: number
@@ -202,6 +206,7 @@ export type Database = {
           id: string
           role: Database['public']['Enums']['user_role']
         }
+        ComputedFields: never
         Insert: {
           active?: boolean
           created_at?: string
@@ -231,6 +236,7 @@ export type Database = {
           pieces: number
           purchase_id: string
         }
+        ComputedFields: never
         Insert: {
           cost_cents: number
           id?: string
@@ -297,6 +303,7 @@ export type Database = {
           refunded_on: string
           slip_path: string | null
         }
+        ComputedFields: never
         Insert: {
           amount_cents: number
           created_at?: string
@@ -351,6 +358,7 @@ export type Database = {
           status: Database['public']['Enums']['claim_status']
           store: string
         }
+        ComputedFields: never
         Insert: {
           buyer_id: string
           claim_no?: never
@@ -411,6 +419,7 @@ export type Database = {
           selling_at: string | null
           selling_by: string | null
         }
+        ComputedFields: never
         Insert: {
           close_note?: string | null
           closed_at?: string | null
@@ -472,6 +481,7 @@ export type Database = {
           updated_at: string
           updated_by: string | null
         }
+        ComputedFields: never
         Insert: {
           float_cents?: number
           gst_rate?: number
@@ -503,6 +513,7 @@ export type Database = {
           refund_id: string | null
           sale_day_id: string | null
         }
+        ComputedFields: never
         Insert: {
           created_at?: string
           created_by?: string | null
@@ -577,6 +588,7 @@ export type Database = {
           id: string
           role: Database['public']['Enums']['user_role']
         }
+        ComputedFields: never
         Insert: {
           accepted_at?: string | null
           accepted_by?: string | null
@@ -624,6 +636,7 @@ export type Database = {
           old_value: string | null
           sale_day_id: string | null
         }
+        ComputedFields: never
         Relationships: []
       }
       claim_lines: {
@@ -637,6 +650,7 @@ export type Database = {
           pieces_left: number | null
           purchase_id: string | null
         }
+        ComputedFields: never
         Relationships: [
           {
             foreignKeyName: 'purchase_lines_purchase_id_fkey'
@@ -667,6 +681,7 @@ export type Database = {
           refunded_on: string | null
           slip_path: string | null
         }
+        ComputedFields: never
         Relationships: [
           {
             foreignKeyName: 'purchase_lines_purchase_id_fkey'
@@ -719,6 +734,7 @@ export type Database = {
           store: string | null
           total_cents: number | null
         }
+        ComputedFields: never
         Relationships: [
           {
             foreignKeyName: 'purchases_buyer_id_fkey'
@@ -757,6 +773,7 @@ export type Database = {
           updated_by_name: string | null
           version: number | null
         }
+        ComputedFields: never
         Relationships: []
       }
       item_stock: {
@@ -776,6 +793,7 @@ export type Database = {
           updated_by: string | null
           version: number | null
         }
+        ComputedFields: never
         Relationships: []
       }
       last_claims_send: {
@@ -787,6 +805,7 @@ export type Database = {
           sent_to: string | null
           total_cents: number | null
         }
+        ComputedFields: never
         Relationships: []
       }
       sale_day_cash: {
@@ -808,6 +827,7 @@ export type Database = {
           sale_day_id: string | null
           selling_at: string | null
         }
+        ComputedFields: never
         Relationships: []
       }
       type_benchmarks: {
@@ -815,6 +835,7 @@ export type Database = {
           type: Database['public']['Enums']['item_type'] | null
           usual_cost_cents: number | null
         }
+        ComputedFields: never
         Relationships: []
       }
     }
