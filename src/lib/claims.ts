@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { itemsQueryKey } from '@/lib/items'
+import { shrinkPhoto } from '@/lib/photo'
 import { formatCents } from '@/lib/money'
 import type { Enums, Tables } from '@/lib/database.types'
 
@@ -297,13 +298,14 @@ export function useAddRefund() {
     mutationFn: async (refund: NewRefund) => {
       let slipPath: string | null = null
       if (refund.slip) {
-        const extension = refund.slip.name.split('.').pop() ?? 'jpg'
+        const slip = await shrinkPhoto(refund.slip)
+        const extension = slip.name.split('.').pop() ?? 'jpg'
         slipPath = `refunds/${refund.id}/slip.${extension}`
         // The bucket lets members add files but not replace them, so a retry
         // finds the slip already there. That is fine.
         const { error: uploadError } = await supabase.storage
           .from('receipts')
-          .upload(slipPath, refund.slip)
+          .upload(slipPath, slip)
         if (
           uploadError &&
           !/already exists|duplicate/i.test(uploadError.message)
