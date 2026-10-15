@@ -96,7 +96,8 @@ export function EditPersonDialog({
               id="person-full-name-hint"
               className="text-muted-foreground text-sm"
             >
-              The name on the bank account, for the treasurer email.
+              The name on their cheque. Shown in the claims email to the
+              treasurer.
             </p>
             {errors.fullName && (
               <p role="alert" className="text-destructive text-sm">
@@ -122,17 +123,15 @@ export function EditPersonDialog({
                       if (value) field.onChange(value as Role)
                     }}
                   >
-                    {(['volunteer', 'admin', 'treasurer'] as const).map(
-                      (role) => (
-                        <ToggleGroupItem
-                          key={role}
-                          value={role}
-                          className="text-foreground min-h-12 flex-1"
-                        >
-                          {roleLabels[role]}
-                        </ToggleGroupItem>
-                      ),
-                    )}
+                    {(['volunteer', 'admin'] as const).map((role) => (
+                      <ToggleGroupItem
+                        key={role}
+                        value={role}
+                        className="text-foreground min-h-12 flex-1"
+                      >
+                        {roleLabels[role]}
+                      </ToggleGroupItem>
+                    ))}
                   </ToggleGroup>
                 )}
               />

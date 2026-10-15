@@ -248,7 +248,8 @@ function TeamSection() {
                 id="add-full-name-hint"
                 className="text-muted-foreground text-sm"
               >
-                The name on their bank account, for the treasurer email.
+                The name on their cheque. Shown in the claims email to the
+                treasurer.
               </p>
             </div>
 
@@ -268,17 +269,15 @@ function TeamSection() {
                       if (value) field.onChange(value as Role)
                     }}
                   >
-                    {(['volunteer', 'admin', 'treasurer'] as const).map(
-                      (role) => (
-                        <ToggleGroupItem
-                          key={role}
-                          value={role}
-                          className="text-foreground min-h-12 flex-1"
-                        >
-                          {roleLabels[role]}
-                        </ToggleGroupItem>
-                      ),
-                    )}
+                    {(['volunteer', 'admin'] as const).map((role) => (
+                      <ToggleGroupItem
+                        key={role}
+                        value={role}
+                        className="text-foreground min-h-12 flex-1"
+                      >
+                        {roleLabels[role]}
+                      </ToggleGroupItem>
+                    ))}
                   </ToggleGroup>
                 )}
               />
@@ -597,7 +596,7 @@ function SettingsSection() {
       const { data, error } = await supabase.functions.invoke<{
         to: string
         error?: string
-      }>('weekly-treasurer-email', { body: { test: true } })
+      }>('send-claims-to-treasurer', { body: { test: true } })
       if (error) {
         // A failed call hides the function's own message inside the response.
         const detail = await (error as { context?: Response }).context
@@ -641,7 +640,7 @@ function SettingsSection() {
       <Field
         id="treasurer_email"
         label="Treasurer email"
-        hint="Where the weekly email goes."
+        hint="Where Send claims to treasurer goes."
         type="email"
         error={form.formState.errors.treasurer_email?.message}
         {...form.register('treasurer_email')}
@@ -657,8 +656,8 @@ function SettingsSection() {
 
       <div className="flex flex-col gap-1.5">
         <p className="text-muted-foreground text-sm">
-          The weekly email goes out Monday at 7:00. Send the same email to
-          yourself to see how it looks.
+          Send the claims email to yourself to see how it looks. Nothing is
+          recorded as sent.
         </p>
         <Button
           type="button"

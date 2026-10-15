@@ -35,7 +35,7 @@ update public.profiles set display_name = 'Calvin'
 insert into public.profiles (id, email, display_name, role) values
   ('00000000-0000-0000-0000-00000000000b', 'yuki@example.com',      'Yuki',      'volunteer'),
   ('00000000-0000-0000-0000-00000000000c', 'priya@example.com',     'Priya',     'volunteer'),
-  ('00000000-0000-0000-0000-00000000000d', 'treasurer@example.com', 'Treasurer', 'treasurer');
+  ('00000000-0000-0000-0000-00000000000d', 'treasurer@example.com', 'Treasurer', 'volunteer');
 
 update public.settings set treasurer_email = 'treasurer@example.com';
 
@@ -105,7 +105,7 @@ select public.log_purchase('{
 -- The two oldest claims have already been reimbursed.
 update public.purchases
    set status = 'paid', paid_at = purchased_on + interval '4 days',
-       paid_by = '00000000-0000-0000-0000-00000000000d', payment_ref = 'E-transfer'
+       paid_by = '00000000-0000-0000-0000-00000000000d', payment_note = 'Cheque #101'
  where claim_no in (1, 2);
 
 -- Sale day history -----------------------------------------------------------

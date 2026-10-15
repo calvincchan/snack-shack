@@ -4,6 +4,7 @@ import {
   groupByBuyer,
   isRefunded,
   isToPay,
+  buyerLabel,
   suggestRefundCents,
   toClaims,
   type Claim,
@@ -18,12 +19,13 @@ function claim(overrides: Partial<Claim> = {}): Claim {
     store: 'Costco',
     buyerId: 'yuki',
     buyerName: 'Yuki',
+    buyerFullName: null,
     totalCents: 4858,
     refundedCents: 0,
     netCents: 4858,
     status: 'to_pay',
     paidAt: null,
-    paymentRef: null,
+    paymentNote: null,
     receiptPath: 'seed/costco-0908.jpg',
     lines: [],
     refunds: [],
@@ -66,24 +68,24 @@ describe('claimsCsv', () => {
     const csv = claimsCsv([claim()])
 
     expect(csv.split('\n')[0]).toBe(
-      'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Reference',
+      'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Paid note',
     )
     expect(csv.split('\n')[1]).toBe(
       'SS-001,2026-09-08,Costco,Yuki,48.58,0.00,To pay,,',
     )
   })
 
-  it('carries the payment reference on a paid claim', () => {
+  it('carries the paid note on a paid claim', () => {
     const csv = claimsCsv([
       claim({
         status: 'paid',
         paidAt: '2026-09-12T18:00:00Z',
-        paymentRef: 'E-transfer',
+        paymentNote: 'Cheque #118',
       }),
     ])
 
     expect(csv.split('\n')[1]).toBe(
-      'SS-001,2026-09-08,Costco,Yuki,48.58,0.00,Paid,2026-09-12,E-transfer',
+      'SS-001,2026-09-08,Costco,Yuki,48.58,0.00,Paid,2026-09-12,Cheque #118',
     )
   })
 
@@ -172,7 +174,7 @@ describe('toClaims', () => {
     net_cents: 2200,
     status: 'to_pay',
     paid_at: null,
-    payment_ref: null,
+    payment_note: null,
     receipt_path: 'r.jpg',
   } as Tables<'claims'>
 
@@ -247,5 +249,17 @@ describe('toClaims', () => {
       note: 'Crushed',
       by: 'Yuki',
     })
+  })
+})
+
+describe('buyerLabel', () => {
+  it('adds the name on the cheque when there is one', () => {
+    expect(
+      buyerLabel({ buyerName: 'Calvin C', buyerFullName: 'Chun Yu Chan' }),
+    ).toBe('Calvin C (Chun Yu Chan)')
+  })
+
+  it('is the display name alone otherwise', () => {
+    expect(buyerLabel({ buyerName: 'Yuki', buyerFullName: null })).toBe('Yuki')
   })
 })

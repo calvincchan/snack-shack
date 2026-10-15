@@ -1,7 +1,7 @@
 -- End-to-end check of the money and stock rules (pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(49);
+select plan(45);
 
 -- The seed fills the database for local development. These tests describe
 -- behaviour from an empty start, so clear it inside the transaction.
@@ -66,7 +66,7 @@ select is((select claim_label from public.claims), 'SS-001', 'claim label');
 select lives_ok($$
   select public.log_purchase(jsonb_build_object(
     'purchased_on', '2026-09-27', 'store', 'Superstore',
-    'buyer_id', '00000000-0000-0000-0000-00000000000a', 'receipt_path', 'r/ss.jpg',
+    'buyer_id', '00000000-0000-0000-0000-00000000000b', 'receipt_path', 'r/ss.jpg',
     'lines', jsonb_build_array(jsonb_build_object(
       'item_id', (select id from public.items where name = 'Chips, assorted'),
       'pieces', 30, 'cost_cents', 1800))))
@@ -139,15 +139,10 @@ select is((select phase::text from public.sale_days), 'closed', 'and it stays cl
 select throws_like($$ insert into public.stock_movements (item_id, qty, reason)
   select id, -1, 'sold' from public.items limit 1 $$, '%row-level security%', 'clients cannot post sales directly');
 
--- Treasurer link ---------------------------------------------------------------
+-- Ledger ------------------------------------------------------------------------
 reset role;
 set local role service_role;
 select throws_like($$ update public.stock_movements set qty = 1 $$, '%cannot be changed%', 'ledger is append-only, even for the service role');
-create temp table tok on commit drop as select * from public.issue_mark_paid_tokens();
-select is((select count(*)::int from tok), 2, 'one link per volunteer owed');
-select lives_ok($$ select public.redeem_action_token((select token from tok where buyer_name = 'Yuki')) $$, 'treasurer marks Yuki paid');
-select is((select paid_by from public.purchases where claim_no = 1), '00000000-0000-0000-0000-00000000000c'::uuid, 'payment recorded as the treasurer');
-select throws_like($$ select public.redeem_action_token((select token from tok where buyer_name = 'Yuki')) $$, '%already been used%', 'links are single use');
 
 select * from finish();
 rollback;

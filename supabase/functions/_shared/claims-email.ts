@@ -1,12 +1,13 @@
 /**
- * Words the weekly treasurer email (HANDOFF §5.9). Pure: it takes the facts
- * from `weekly_treasurer_report()` plus the links the function issued, and
- * returns the subject, HTML, plain text and CSV. No Deno or Node APIs here, so
- * Vitest can run it.
+ * Words the claims email the coordinator sends to the treasurer (ADR-0017,
+ * HANDOFF §5.9). Pure: it takes the facts from `claims_report()` plus the names
+ * of the attached receipt photos, and returns the subject, HTML, plain text and
+ * CSV. No Deno or Node APIs here, so Vitest can run it.
  */
 
 export type Report = {
-  week_start: string
+  /** When the last email went out; null before the first send. */
+  since: string | null
   deposits: {
     sale_date: string
     deposit_cents: number
@@ -43,18 +44,12 @@ export type Report = {
     /** `to_pay`, `paid`, or `refunded` for a To pay claim refunded to $0. */
     status: string
     paid_at: string | null
-    payment_ref: string | null
+    payment_note: string | null
   }[]
 }
 
-export type Links = {
-  /** Buyer id to the one-time Mark paid link. */
-  markPaid: Record<string, string>
-  /** Claim id to a signed receipt photo URL. */
-  receipts: Record<string, string>
-  /** Claim id to the attached receipt photo's file name, e.g. "SS-003.jpg". */
-  attachments: Record<string, string>
-}
+/** Claim id to the attached receipt photo's file name, e.g. "SS-003.jpg". */
+export type Attachments = Record<string, string>
 
 export type Email = { subject: string; html: string; text: string; csv: string }
 
@@ -125,7 +120,7 @@ function toCsv(ledger: Report['ledger']): string {
     'Refunded',
     'Status',
     'Paid on',
-    'Reference',
+    'Paid note',
   ]
   const rows = ledger.map((claim) => [
     claim.label,
@@ -140,18 +135,29 @@ function toCsv(ledger: Report['ledger']): string {
         ? 'Refunded'
         : 'To pay',
     claim.paid_at ? claim.paid_at.slice(0, 10) : '',
-    claim.payment_ref ?? '',
+    claim.payment_note ?? '',
   ])
   return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n')
 }
 
-export function buildEmail(report: Report, links: Links): Email {
-  const week = shortDate(report.week_start)
-  const subject = 'ATTN: Treasurer'
+/** "Oct 13" in Vancouver, from a timestamp. */
+function sentDate(when: string): string {
+  return new Date(when).toLocaleDateString('en-CA', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/Vancouver',
+  })
+}
+
+export function buildEmail(report: Report, attachments: Attachments): Email {
+  const subject = 'ATTN: Treasurer: Snack Shack claims'
+  const sinceNote = report.since
+    ? `Sale days closed since the last email on ${sentDate(report.since)}.`
+    : 'Every sale day closed so far.'
 
   const depositHtml =
     report.deposits.length === 0
-      ? '<p>No sale days that week.</p>'
+      ? '<p>No sale days closed.</p>'
       : `<table cellpadding="6" style="border-collapse:collapse">${report.deposits
           .map(
             (d) =>
@@ -165,32 +171,25 @@ export function buildEmail(report: Report, links: Links): Email {
       : report.to_reimburse
           .map((buyer) => {
             const claims = buyer.claims
-              .map((claim) => {
-                const url = links.receipts[claim.id]
-                const label = url
-                  ? `<a href="${escapeHtml(url)}">${escapeHtml(claim.label)}</a>`
-                  : escapeHtml(claim.label)
-                return `${label} (${escapeHtml(claim.store)}, ${owed(claim)})`
-              })
+              .map(
+                (claim) =>
+                  `${escapeHtml(claim.label)} (${shortDate(claim.purchased_on)}, ${escapeHtml(claim.store)}, ${owed(claim)})`,
+              )
               .join(', ')
-            const link = links.markPaid[buyer.buyer_id]
-            const button = link
-              ? `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 18px;background:#F2A900;color:#1f1f1f;text-decoration:none;border-radius:8px;font-weight:bold">Click here to mark ${escapeHtml(buyer.buyer_name)} paid</a></p>`
-              : ''
-            return `<h3>${escapeHtml(buyerLabel(buyer))}: ${money(buyer.total_cents)}</h3><p>${buyer.claims.length} ${buyer.claims.length === 1 ? 'receipt' : 'receipts'}: ${claims}</p>${button}`
+            return `<h3>${escapeHtml(buyerLabel(buyer))}: cheque for ${money(buyer.total_cents)}</h3><p>${buyer.claims.length} ${buyer.claims.length === 1 ? 'receipt' : 'receipts'}: ${claims}</p>`
           })
           .join('')
 
   const photos =
-    Object.keys(links.attachments).length > 0
+    Object.keys(attachments).length > 0
       ? 'Receipt photos are attached, named by claim number. '
       : ''
 
-  const html = `<div style="font-family:sans-serif;max-width:560px"><h2>Snack Shack, week of ${week}</h2><h3>Deposits: ${money(report.deposited_cents)}</h3>${depositHtml}<h2>To reimburse: ${money(report.to_reimburse_cents)}</h2>${buyerHtml}<p style="color:#666;font-size:13px">${photos}The CSV ledger is attached. Each button works once and expires in 7 days.</p></div>`
+  const html = `<div style="font-family:sans-serif;max-width:560px"><h2>To reimburse: ${money(report.to_reimburse_cents)}</h2>${buyerHtml}<h2>Deposits: ${money(report.deposited_cents)}</h2><p>${sinceNote}</p>${depositHtml}<p style="color:#666;font-size:13px">${photos}The CSV ledger is attached.</p></div>`
 
   const depositText =
     report.deposits.length === 0
-      ? 'No sale days that week.'
+      ? 'No sale days closed.'
       : report.deposits
           .map(
             (d) =>
@@ -206,15 +205,14 @@ export function buildEmail(report: Report, links: Links): Email {
             const claims = buyer.claims
               .map(
                 (c) =>
-                  `  ${c.label}${links.receipts[c.id] ? ` ${links.receipts[c.id]}` : ''} (${c.store}, ${owed(c)})`,
+                  `  ${c.label} (${shortDate(c.purchased_on)}, ${c.store}, ${owed(c)})`,
               )
               .join('\n')
-            const link = links.markPaid[buyer.buyer_id]
-            return `${buyerLabel(buyer)}: ${money(buyer.total_cents)}\n${claims}${link ? `\n  Click here to mark ${buyer.buyer_name} paid: ${link}` : ''}`
+            return `${buyerLabel(buyer)}: cheque for ${money(buyer.total_cents)}\n${claims}`
           })
           .join('\n\n')
 
-  const text = `Snack Shack, week of ${week}\n\nDeposits: ${money(report.deposited_cents)}\n${depositText}\n\nTo reimburse: ${money(report.to_reimburse_cents)}\n${buyerText}\n\n${photos}The CSV ledger is attached. Each link works once and expires in 7 days.`
+  const text = `To reimburse: ${money(report.to_reimburse_cents)}\n${buyerText}\n\nDeposits: ${money(report.deposited_cents)}\n${sinceNote}\n${depositText}\n\n${photos}The CSV ledger is attached.`
 
   return { subject, html, text, csv: toCsv(report.ledger) }
 }

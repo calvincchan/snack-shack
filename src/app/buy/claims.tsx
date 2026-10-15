@@ -3,22 +3,35 @@ import { toast } from 'sonner'
 import { ChevronDown, Copy, Download, Receipt, Undo2 } from 'lucide-react'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
+import { MarkPaidDialog } from '@/app/buy/mark-paid-dialog'
 import { RefundDialog } from '@/app/buy/refund-dialog'
+import { SendClaims } from '@/app/buy/send-claims'
 import { useAuth } from '@/lib/auth'
 import {
+  buyerLabel,
   claimsCsv,
   groupByBuyer,
   isRefunded,
   isToPay,
   receiptUrl,
   useClaims,
+  useMarkClaimUnpaid,
   useUndoRefund,
+  type BuyerGroup,
   type Claim,
 } from '@/lib/claims'
 import { formatCents } from '@/lib/money'
+import { formatSaleDateShort } from '@/lib/time'
+
+/** "Oct 6" from the date part of a timestamp. */
+function paidDate(paidAt: string): string {
+  return formatSaleDateShort(paidAt.slice(0, 10))
+}
 
 export function Claims() {
   const claims = useClaims()
+  const { isCoordinator } = useAuth()
+  const [markingPaid, setMarkingPaid] = useState<BuyerGroup | null>(null)
 
   const all = claims.data ?? []
   // A To pay claim refunded to $0 owes nothing, so it sits under Paid.
@@ -60,6 +73,14 @@ export function Claims() {
         <Total label="Reimbursed this term" cents={paidCents} />
       </div>
 
+      {isCoordinator ? (
+        <SendClaims hasClaims={toPay.length > 0} />
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          The coordinator sends claims to the treasurer before each PAC meeting.
+        </p>
+      )}
+
       <section className="flex flex-col gap-3">
         <h2 className="font-heading text-lg font-semibold">To pay</h2>
         {toPay.length === 0 ? (
@@ -73,11 +94,16 @@ export function Claims() {
               className="border-border bg-card flex flex-col gap-2 rounded-xl border p-3"
             >
               <p className="flex items-baseline justify-between gap-2">
-                <span className="font-medium">{group.buyerName}</span>
+                <span className="font-medium">{buyerLabel(group)}</span>
                 <span className="font-heading text-lg font-semibold tabular-nums">
                   {formatCents(group.totalCents)}
                 </span>
               </p>
+              {!group.buyerFullName && (
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  No full name set. The cheque needs one: Edit profile.
+                </p>
+              )}
               <ul
                 aria-label={`Claims to pay ${group.buyerName}`}
                 className="flex flex-col gap-1"
@@ -88,6 +114,15 @@ export function Claims() {
                   </li>
                 ))}
               </ul>
+              {isCoordinator && (
+                <Button
+                  type="button"
+                  className="text-primary-foreground min-h-11"
+                  onClick={() => setMarkingPaid(group)}
+                >
+                  Mark {group.buyerName} paid
+                </Button>
+              )}
             </div>
           ))
         )}
@@ -110,13 +145,21 @@ export function Claims() {
                 <p className="text-muted-foreground px-1 text-sm">
                   {isRefunded(claim)
                     ? `${claim.buyerName} · Refunded`
-                    : `${claim.buyerName} · ${claim.paymentRef ?? 'Paid'}${claim.paidAt ? ` · ${claim.paidAt.slice(0, 10)}` : ''}`}
+                    : `${claim.buyerName} · Paid${claim.paidAt ? ` ${paidDate(claim.paidAt)}` : ''}${claim.paymentNote ? ` · ${claim.paymentNote}` : ''}`}
                 </p>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {markingPaid && (
+        <MarkPaidDialog
+          claims={markingPaid.claims}
+          who={markingPaid.buyerName}
+          onClose={() => setMarkingPaid(null)}
+        />
+      )}
 
       <div className="flex gap-2">
         <Button
@@ -158,6 +201,8 @@ function ClaimRow({ claim }: { claim: Claim }) {
   const [refunding, setRefunding] = useState(false)
   const { profile, isCoordinator } = useAuth()
   const undo = useUndoRefund()
+  const markUnpaid = useMarkClaimUnpaid()
+  const [markingPaid, setMarkingPaid] = useState(false)
   const panelId = `claim-${claim.id}`
 
   const canRefund =
@@ -169,6 +214,16 @@ function ClaimRow({ claim }: { claim: Claim }) {
   const canUndo =
     claim.status === 'to_pay' &&
     (isCoordinator || profile?.id === claim.buyerId)
+
+  const canMarkPaid = isCoordinator && isToPay(claim)
+  const canMarkUnpaid = isCoordinator && claim.status === 'paid'
+
+  function markClaimUnpaid() {
+    markUnpaid.mutate(claim.id, {
+      onSuccess: () => toast.success(`${claim.label} is back in To pay.`),
+      onError: (error) => toast.error(error.message),
+    })
+  }
 
   function undoRefund(refundId: string) {
     undo.mutate(refundId, {
@@ -194,8 +249,6 @@ function ClaimRow({ claim }: { claim: Claim }) {
         toast.error('Could not open that receipt.')
       })
   }
-
-  const paidOn = claim.paidAt?.slice(0, 10)
 
   return (
     <div className="flex flex-col">
@@ -272,7 +325,7 @@ function ClaimRow({ claim }: { claim: Claim }) {
             <p className="border-border mt-2 flex justify-between gap-2 border-t border-dashed pt-2 font-bold">
               <span>
                 {claim.status === 'paid'
-                  ? `PAID ${paidOn ?? ''}${claim.paymentRef ? ` · ${claim.paymentRef}` : ''}`.trim()
+                  ? `PAID ${claim.paidAt ? paidDate(claim.paidAt) : ''}${claim.paymentNote ? ` · ${claim.paymentNote}` : ''}`.trim()
                   : isRefunded(claim)
                     ? 'REFUNDED'
                     : 'TO PAY'}
@@ -295,14 +348,46 @@ function ClaimRow({ claim }: { claim: Claim }) {
             {canRefund && (
               <Button
                 type="button"
-                className="text-primary-foreground min-h-11 flex-1"
+                variant="outline"
+                className="text-foreground min-h-11 flex-1"
                 onClick={() => setRefunding(true)}
               >
                 Refund
               </Button>
             )}
           </div>
+          {(canMarkPaid || canMarkUnpaid) && (
+            <div className="flex gap-2">
+              {canMarkPaid && (
+                <Button
+                  type="button"
+                  className="text-primary-foreground min-h-11 flex-1"
+                  onClick={() => setMarkingPaid(true)}
+                >
+                  Mark paid
+                </Button>
+              )}
+              {canMarkUnpaid && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-foreground min-h-11 flex-1"
+                  disabled={markUnpaid.isPending}
+                  onClick={markClaimUnpaid}
+                >
+                  Mark unpaid
+                </Button>
+              )}
+            </div>
+          )}
         </div>
+      )}
+      {markingPaid && (
+        <MarkPaidDialog
+          claims={[claim]}
+          who={claim.buyerName}
+          onClose={() => setMarkingPaid(false)}
+        />
       )}
       {refunding && (
         <RefundDialog claim={claim} onClose={() => setRefunding(false)} />

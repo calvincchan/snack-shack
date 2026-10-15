@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { signIn } from './helpers/local-supabase'
-import { COORDINATOR_EMAIL } from './global-setup'
+import { COORDINATOR_EMAIL, VOLUNTEER_EMAIL } from './global-setup'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -26,11 +26,11 @@ test('claims are grouped by volunteer, with totals and receipt links', async ({
   await expect(calvin.getByRole('listitem')).toHaveCount(1)
   await expect(calvin).toContainText('SS-005')
 
-  // Paid claims carry the reference the treasurer used.
+  // Paid claims carry the date and the note from the cheque.
   const paid = page.getByRole('list', { name: 'Paid claims' })
   await expect(paid).toContainText('SS-001')
   await expect(paid).toContainText('SS-002')
-  await expect(paid).toContainText('E-transfer')
+  await expect(paid).toContainText('Cheque #101')
 })
 
 test('tapping a claim shows its lines and status, tapping again hides them', async ({
@@ -52,7 +52,7 @@ test('tapping a claim shows its lines and status, tapping again hides them', asy
   await expect(lines).toHaveCount(0)
 
   await page.getByRole('button', { name: /SS-001/ }).click()
-  await expect(page.getByText(/PAID 2026-.*E-transfer/)).toBeVisible()
+  await expect(page.getByText(/PAID .*Cheque #101/)).toBeVisible()
 })
 
 test('a refund shows as a minus line, lowers the total, and can be undone', async ({
@@ -100,8 +100,85 @@ test('the CSV ledger can be downloaded', async ({ page }) => {
   const stream = await file.createReadStream()
   const csv = (await stream.toArray()).join('')
   expect(csv.split('\n')[0]).toBe(
-    'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Reference',
+    'Claim,Date,Store,Volunteer,Total,Refunded,Status,Paid on,Paid note',
   )
   expect(csv).toContain('SS-001,2026-09-08,Costco,Calvin,')
-  expect(csv).toContain('E-transfer')
+  expect(csv).toContain('Cheque #101')
+})
+
+test('the coordinator marks a volunteer paid by cheque, then marks one claim unpaid', async ({
+  page,
+}) => {
+  await signIn(page, COORDINATOR_EMAIL)
+  await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Claims' }).click()
+
+  await page.getByRole('button', { name: 'Mark Yuki paid' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('SS-003')
+  await expect(dialog).toContainText('SS-004')
+  await dialog.getByLabel('Note (optional)').fill('Cheque #142')
+  await dialog.getByRole('button', { name: 'Mark paid' }).click()
+  await expect(dialog).toHaveCount(0)
+
+  await expect(
+    page.getByRole('list', { name: 'Claims to pay Yuki' }),
+  ).toHaveCount(0)
+  const paid = page.getByRole('list', { name: 'Paid claims' })
+  await expect(paid).toContainText('SS-003')
+  await expect(paid).toContainText('Cheque #142')
+
+  // Undo one: the claim is back under To pay.
+  await page.getByRole('button', { name: /SS-003/ }).click()
+  await page.getByRole('button', { name: 'Mark unpaid' }).click()
+  await expect(
+    page.getByRole('list', { name: 'Claims to pay Yuki' }),
+  ).toContainText('SS-003')
+})
+
+test('a single claim can be marked paid from its details', async ({ page }) => {
+  await signIn(page, COORDINATOR_EMAIL)
+  await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Claims' }).click()
+
+  await page.getByRole('button', { name: /SS-005/ }).click()
+  await page.getByRole('button', { name: 'Mark paid', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Mark paid' })
+    .click()
+  await expect(
+    page.getByRole('list', { name: 'Claims to pay Calvin' }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('list', { name: 'Paid claims' })).toContainText(
+    'SS-005',
+  )
+})
+
+test('a volunteer sees no send or mark paid controls and no buyer picker', async ({
+  page,
+}) => {
+  await signIn(page, VOLUNTEER_EMAIL)
+  await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Claims' }).click()
+
+  await expect(page.getByText('Owed to volunteers')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send now' })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: /^Mark .* paid$/ }),
+  ).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Log purchase' }).click()
+  await expect(page.getByLabel('Store')).toBeVisible()
+  await expect(page.getByLabel('Bought by (reimbursed later)')).toHaveCount(0)
+})
+
+test('the coordinator sees when claims were last sent', async ({ page }) => {
+  await signIn(page, COORDINATOR_EMAIL)
+  await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Claims' }).click()
+
+  const card = page.getByRole('region', { name: 'Send claims to treasurer' })
+  await expect(card).toContainText('Not sent yet')
+  await expect(card.getByRole('button', { name: 'Preview' })).toBeVisible()
 })

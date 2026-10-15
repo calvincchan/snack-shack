@@ -23,7 +23,7 @@ The short name the team knows someone by, shown on sign-offs, claims and change 
 _Avoid_: Nickname, username
 
 **Full name**:
-The name on someone's cheque, optional, shown only in the treasurer email.
+The name on someone's cheque, optional, shown in the treasurer email and on the To pay card.
 _Avoid_: Legal name, bank name, real name
 
 **Kid**:
