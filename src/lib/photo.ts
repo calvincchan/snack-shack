@@ -50,18 +50,18 @@ export async function shrinkPhoto(
 ): Promise<File> {
   try {
     const image = await codec.decode(file)
-    const size = fitWithin(image.width, image.height, MAX_PHOTO_EDGE)
-    const resized = size.width !== image.width || size.height !== image.height
-    if (!resized && file.type === 'image/jpeg') {
+    try {
+      const size = fitWithin(image.width, image.height, MAX_PHOTO_EDGE)
+      const resized = size.width !== image.width || size.height !== image.height
+      if (!resized && file.type === 'image/jpeg') return file
+      const blob = await codec.encode(image, size)
+      if (!blob || (!resized && blob.size >= file.size)) return file
+      return new File([blob], file.name.replace(/\.[^./]+$/, '') + '.jpg', {
+        type: 'image/jpeg',
+      })
+    } finally {
       image.close?.()
-      return file
     }
-    const blob = await codec.encode(image, size)
-    image.close?.()
-    if (!blob || (!resized && blob.size >= file.size)) return file
-    return new File([blob], file.name.replace(/\.[^./]+$/, '') + '.jpg', {
-      type: 'image/jpeg',
-    })
   } catch {
     return file
   }
