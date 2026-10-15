@@ -1,7 +1,7 @@
 -- Occasional stock counts (ADR-0016, pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(23);
+select plan(24);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items cascade;
@@ -59,6 +59,13 @@ select is((select pieces_gone from public.item_counts where item_id = (select id
 select is((select last_counted_at is null from public.item_counts where item_id = (select id from ids where name = 'Pretzels')),
   true, 'a skipped item stays uncounted');
 
+-- Make the first count a week old so the next one is on a later day.
+reset role;
+alter table public.stock_movements disable trigger stock_movements_append_only;
+update public.stock_movements set created_at = now() - interval '7 days' where reason = 'count';
+alter table public.stock_movements enable trigger stock_movements_append_only;
+set local role authenticated;
+
 -- Buy 12 more Chips, then count 30: 24 + 12 - 6 gone.
 select public.log_purchase(format('{
   "id": "10000000-0000-0000-0000-000000000002",
@@ -71,7 +78,7 @@ select public.save_stock_count(format('[{"item_id":"%s","pieces":30}]', (select 
 select is((select qty from public.stock_movements where reason = 'count' order by seq desc limit 1),
   -6, 'the second count posts only the new difference');
 select is((select pieces_gone from public.item_counts where item_id = (select id from ids where name = 'Chips')),
-  6, 'pieces gone between the last two counts');
+  6, 'pieces gone between the last two count days');
 select is((select last_counted_pieces || ' ' || bought_since from public.item_overview where name = 'Chips'),
   '30 0', 'Items reads the counts');
 
@@ -81,6 +88,8 @@ select is((select pieces_gone from public.item_overview where name = 'Chips'), 6
 select public.save_stock_count(format('[{"item_id":"%s","pieces":30}]', (select id from ids where name = 'Chips'))::jsonb);
 select is((select qty from public.stock_movements where reason = 'count' order by seq desc limit 1),
   0, 'a repeat save posts a zero difference');
+select is((select pieces_gone from public.item_counts where item_id = (select id from ids where name = 'Chips')),
+  6, 'a same-day repeat save keeps pieces gone');
 
 -- Rules.
 select throws_ok(

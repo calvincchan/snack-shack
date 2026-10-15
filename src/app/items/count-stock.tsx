@@ -124,18 +124,9 @@ function CountRow({
           {last ?? 'Not counted yet'}
         </span>
       </div>
-      {value === undefined ? (
-        <Button
-          variant="outline"
-          className="text-foreground"
-          aria-label={`Count ${item.name}`}
-          onClick={() => onChange(Math.max(0, item.onHand))}
-        >
-          Count
-        </Button>
-      ) : (
-        <div className="flex items-center gap-1">
-          <Stepper label={item.name} value={value} onChange={onChange} />
+      <div className="flex items-center gap-1">
+        <Stepper label={item.name} value={value ?? null} onChange={onChange} />
+        {value !== undefined && (
           <Button
             variant="ghost"
             size="sm"
@@ -145,8 +136,8 @@ function CountRow({
           >
             Skip
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </li>
   )
 }

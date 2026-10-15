@@ -55,7 +55,7 @@ All views use `security_invoker = true`, so row level security still applies.
 | View | Gives you |
 |---|---|
 | `item_stock` | Every item column plus `on_hand` (sum of the ledger) |
-| `item_counts` | Per item: `last_counted_at`, `last_counted_pieces` (ledger total at the last count), `bought_since` (purchases minus returns since the last count; all of them if never counted), `pieces_gone` (negative of the latest `count` quantity; null until counted twice) |
+| `item_counts` | Per item: `last_counted_at`, `last_counted_pieces` (ledger total at the last count), `bought_since` (purchases minus returns since the last count; all of them if never counted), `pieces_gone` (negative of the `count` quantities summed over the latest count day, Vancouver time; null until counted on two different days) |
 | `item_overview` | What the Items tab reads: `item_stock` plus `is_new` (added in the last 30 days), who bought it last, who edited it last (for the conflict prompt), and the `item_counts` columns |
 | `claims` | Purchases plus `claim_label` (SS-001), `total_cents` (the receipt), `refunded_cents`, `net_cents` (receipt minus refunds; what is owed), `buyer_name`. A To pay claim at `net_cents = 0` is shown as Refunded; its `status` stays `to_pay` |
 | `claim_lines` | Every purchase line with `item_name`, plus `pieces_left` and `cents_left` after refunds |

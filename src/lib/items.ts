@@ -54,7 +54,11 @@ function toItem(row: OverviewRow): Item {
 }
 
 const shortDate = (when: string) =>
-  new Date(when).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
+  new Date(when).toLocaleDateString('en-CA', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/Vancouver',
+  })
 
 /** "Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48". */
 export function stockLine(

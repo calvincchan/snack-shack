@@ -16,7 +16,8 @@ export function Stepper({
 }: {
   /** What is being counted, for screen readers: "Cheddar crackers". */
   label: string
-  value: number
+  /** null shows a blank box: nothing counted yet. */
+  value: number | null
   onChange: (value: number) => void
   min?: number
   max?: number
@@ -34,8 +35,8 @@ export function Stepper({
       <button
         type="button"
         aria-label={`One fewer ${label}`}
-        disabled={value <= min}
-        onClick={() => onChange(clamp(value - 1))}
+        disabled={value === null || value <= min}
+        onClick={() => onChange(clamp((value ?? min) - 1))}
         className="text-foreground flex size-11 items-center justify-center rounded-l-lg disabled:opacity-40"
       >
         <Minus className="size-5" aria-hidden="true" />
@@ -45,7 +46,7 @@ export function Stepper({
         type="text"
         inputMode="numeric"
         aria-label={label}
-        value={value}
+        value={value ?? ''}
         onChange={(event) => {
           const digits = event.target.value.replace(/\D/g, '')
           onChange(digits === '' ? min : clamp(Number(digits)))
@@ -56,8 +57,8 @@ export function Stepper({
       <button
         type="button"
         aria-label={`One more ${label}`}
-        disabled={value >= max}
-        onClick={() => onChange(clamp(value + 1))}
+        disabled={value !== null && value >= max}
+        onClick={() => onChange(clamp(value === null ? min + 1 : value + 1))}
         className="text-foreground flex size-11 items-center justify-center rounded-r-lg disabled:opacity-40"
       >
         <Plus className="size-5" aria-hidden="true" />

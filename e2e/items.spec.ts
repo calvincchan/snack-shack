@@ -77,7 +77,6 @@ test('a stock count replaces "not counted" and skipped items post nothing', asyn
   await page.getByRole('link', { name: 'Items' }).click()
   await page.getByRole('button', { name: 'Count stock' }).click()
 
-  await page.getByRole('button', { name: 'Count Rice crackers' }).click()
   await page.getByRole('textbox', { name: 'Rice crackers' }).fill('20')
   await page.getByRole('button', { name: 'Save count' }).click()
 

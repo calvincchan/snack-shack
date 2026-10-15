@@ -43,10 +43,18 @@ select i.id as item_id,
          where m.item_id = i.id
            and m.reason in ('purchase', 'returned')
            and (lc.seq is null or m.seq > lc.seq))::int as bought_since,
-       -- Between the last two counts; null until an item has been counted twice.
-       case when (select count(*) from public.stock_movements c
-                   where c.item_id = i.id and c.reason = 'count') >= 2
-            then -lc.qty end as pieces_gone
+       -- Gone since the count on an earlier day: minus every count row of the
+       -- latest count day, so saving twice in a day doesn't shrink it. Null until
+       -- an item has been counted on two different days (Vancouver time).
+       case when exists (select 1 from public.stock_movements c
+                          where c.item_id = i.id and c.reason = 'count'
+                            and (c.created_at at time zone 'America/Vancouver')::date
+                                < (lc.created_at at time zone 'America/Vancouver')::date)
+            then -(select sum(c.qty) from public.stock_movements c
+                    where c.item_id = i.id and c.reason = 'count'
+                      and (c.created_at at time zone 'America/Vancouver')::date
+                          = (lc.created_at at time zone 'America/Vancouver')::date)::int
+       end as pieces_gone
 from public.items i
 left join last_count lc on lc.item_id = i.id;
 

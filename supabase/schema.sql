@@ -1165,9 +1165,11 @@ CREATE OR REPLACE VIEW "public"."item_counts" WITH ("security_invoker"='true') A
            FROM "public"."stock_movements" "m"
           WHERE (("m"."item_id" = "i"."id") AND ("m"."reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND (("lc"."seq" IS NULL) OR ("m"."seq" > "lc"."seq")))))::integer AS "bought_since",
         CASE
-            WHEN (( SELECT "count"(*) AS "count"
+            WHEN (EXISTS ( SELECT 1
                FROM "public"."stock_movements" "c"
-              WHERE (("c"."item_id" = "i"."id") AND ("c"."reason" = 'count'::"public"."movement_reason"))) >= 2) THEN (- "lc"."qty")
+              WHERE (("c"."item_id" = "i"."id") AND ("c"."reason" = 'count'::"public"."movement_reason") AND ((("c"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date" < (("lc"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date")))) THEN (- (( SELECT "sum"("c"."qty") AS "sum"
+               FROM "public"."stock_movements" "c"
+              WHERE (("c"."item_id" = "i"."id") AND ("c"."reason" = 'count'::"public"."movement_reason") AND ((("c"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date" = (("lc"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date"))))::integer)
             ELSE NULL::integer
         END AS "pieces_gone"
    FROM ("public"."items" "i"
