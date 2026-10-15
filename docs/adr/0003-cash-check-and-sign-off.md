@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0015
 ---
 
 # Cash check: fixed float, tolerances, helper credit, sign-off

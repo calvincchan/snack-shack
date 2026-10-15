@@ -1,8 +1,8 @@
 ---
-status: partially superseded by ADR-0012 (the offline count-up half)
+status: superseded by ADR-0012 (offline count up) and ADR-0015 (Presence)
 ---
 
-> The offline queue described below was dropped; see ADR-0012. Realtime and Presence stand.
+> The offline queue described below was dropped; see ADR-0012. Presence was dropped in ADR-0015. Realtime on the Sale day screen stands.
 
 # Realtime only on the sale day; offline-safe count up
 
