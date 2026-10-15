@@ -258,6 +258,13 @@ export type Database = {
             foreignKeyName: 'purchase_lines_item_id_fkey'
             columns: ['item_id']
             isOneToOne: false
+            referencedRelation: 'item_counts'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'purchase_lines_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
             referencedRelation: 'item_overview'
             referencedColumns: ['id']
           },
@@ -512,6 +519,7 @@ export type Database = {
           reason: Database['public']['Enums']['movement_reason']
           refund_id: string | null
           sale_day_id: string | null
+          seq: number
         }
         ComputedFields: never
         Insert: {
@@ -525,6 +533,7 @@ export type Database = {
           reason: Database['public']['Enums']['movement_reason']
           refund_id?: string | null
           sale_day_id?: string | null
+          seq?: never
         }
         Update: {
           created_at?: string
@@ -537,8 +546,16 @@ export type Database = {
           reason?: Database['public']['Enums']['movement_reason']
           refund_id?: string | null
           sale_day_id?: string | null
+          seq?: never
         }
         Relationships: [
+          {
+            foreignKeyName: 'stock_movements_item_id_fkey'
+            columns: ['item_id']
+            isOneToOne: false
+            referencedRelation: 'item_counts'
+            referencedColumns: ['item_id']
+          },
           {
             foreignKeyName: 'stock_movements_item_id_fkey'
             columns: ['item_id']
@@ -752,9 +769,21 @@ export type Database = {
           },
         ]
       }
+      item_counts: {
+        Row: {
+          bought_since: number | null
+          item_id: string | null
+          last_counted_at: string | null
+          last_counted_pieces: number | null
+          pieces_gone: number | null
+        }
+        ComputedFields: never
+        Relationships: []
+      }
       item_overview: {
         Row: {
           archived: boolean | null
+          bought_since: number | null
           bundle_size: number | null
           created_at: string | null
           created_by: string | null
@@ -762,8 +791,11 @@ export type Database = {
           is_new: boolean | null
           last_bought_by: string | null
           last_bought_on: string | null
+          last_counted_at: string | null
+          last_counted_pieces: number | null
           name: string | null
           on_hand: number | null
+          pieces_gone: number | null
           price_cents: number | null
           storage: Database['public']['Enums']['storage_kind'] | null
           type: Database['public']['Enums']['item_type'] | null
@@ -910,6 +942,7 @@ export type Database = {
         Returns: undefined
       }
       require_member: { Args: Record<PropertyKey, never>; Returns: undefined }
+      save_stock_count: { Args: { p_counts: Json }; Returns: number }
       set_member_active: {
         Args: { p_active: boolean; p_id: string }
         Returns: undefined
@@ -957,6 +990,7 @@ export type Database = {
         | 'donated'
         | 'correction'
         | 'returned'
+        | 'count'
       sale_phase: 'open' | 'closed'
       storage_kind: 'shelf' | 'freezer'
       user_role: 'volunteer' | 'treasurer' | 'admin'
@@ -1101,6 +1135,7 @@ export const Constants = {
         'donated',
         'correction',
         'returned',
+        'count',
       ],
       sale_phase: ['open', 'closed'],
       storage_kind: ['shelf', 'freezer'],

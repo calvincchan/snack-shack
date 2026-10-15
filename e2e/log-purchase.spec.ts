@@ -63,7 +63,7 @@ test('logging a receipt adds the stock, the cost and the claim', async ({
     .click()
 
   const row = allItems(page).filter({ hasText: 'Wafer bars, assorted' })
-  await expect(row).toContainText('130 on hand')
+  await expect(row).toContainText('Not counted · bought 130')
   await expect(row).toContainText('$0.14 a piece')
   await expect(row).toContainText('2 for $1')
   await expect(row).toContainText('Great deal')
@@ -169,7 +169,7 @@ test('a second receipt line tops up an item that is already stocked', async ({
   await page.getByRole('link', { name: /^Items/ }).click()
   // The seeded 60 (sale days no longer take stock away), plus this box of 60.
   const row = allItems(page).filter({ hasText: 'Pretzel twists' })
-  await expect(row).toContainText('120 on hand')
+  await expect(row).toContainText('Not counted · bought 120')
   await expect(row).toContainText('$0.38 a piece')
   // The seeded $1 price is kept.
   await expect(row).toContainText('$1')

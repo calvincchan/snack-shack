@@ -220,7 +220,7 @@ Output: band pill with the suggested price and margin; cost each; deals × price
 - Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), count (±, the difference at a stock count), donated (−), returned (−, a refund), correction (±, including the + that undoes a refund). Rows from before ADR-0015 may also be sold, out, missing, damaged or found.
 - Current stock = sum of the item's rows. Sale days don't post anything, so it's only accurate right after a stock count; the app shows "counted · bought since" instead.
 - **Bought since** = purchase rows minus returned rows since the item's last count.
-- **Pieces gone** between two counts = −(the later count row's quantity). It covers sold, eaten and lost.
+- **Pieces gone** between two counts = −(the count rows of the later count day, summed, Vancouver time), so saving twice in a day doesn't shrink it. It covers sold, eaten and lost. Needs counts on two different days.
 - Donations before summer are logged as **donated** movements.
 
 ### 5.6 Sale day maths
@@ -237,7 +237,7 @@ deposit  = close count − left in box
 ### 5.7 Item insights
 
 ```
-pieces gone  = −count row quantity at the latest count
+pieces gone  = −sum of count row quantities on the latest count day
 revenue est. = pieces gone × price ÷ bundle size     (current price)
 margin       = §5.3 at the current cost
 ```

@@ -62,7 +62,8 @@ CREATE TYPE "public"."movement_reason" AS ENUM (
     'found',
     'donated',
     'correction',
-    'returned'
+    'returned',
+    'count'
 );
 
 ALTER TYPE "public"."movement_reason" OWNER TO "postgres";
@@ -674,6 +675,46 @@ end $$;
 
 ALTER FUNCTION "public"."require_member"() OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."save_stock_count"("p_counts" "jsonb") RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_row jsonb;
+  v_item uuid;
+  v_pieces int;
+  v_on_hand int;
+  v_seen uuid[] := '{}';
+begin
+  perform public.require_member();
+  -- One save at a time, so each difference is taken from the ledger as it stands.
+  perform pg_advisory_xact_lock(hashtext('save_stock_count'));
+  if p_counts is null or jsonb_typeof(p_counts) <> 'array' or jsonb_array_length(p_counts) = 0 then
+    raise exception 'Count at least one item.';
+  end if;
+
+  for v_row in select * from jsonb_array_elements(p_counts) loop
+    v_item := (v_row ->> 'item_id')::uuid;
+    v_pieces := (v_row ->> 'pieces')::int;
+    if v_pieces is null or v_pieces < 0 then raise exception 'Pieces must be 0 or more.'; end if;
+    if v_item = any (v_seen) then raise exception 'Each item can be counted once per save.'; end if;
+    v_seen := v_seen || v_item;
+
+    select on_hand into v_on_hand from public.item_stock where id = v_item;
+    if not found then raise exception 'That item no longer exists.'; end if;
+    if exists (select 1 from public.items where id = v_item and archived) then
+      raise exception 'That item is archived.';
+    end if;
+
+    insert into public.stock_movements (item_id, qty, reason)
+    values (v_item, v_pieces - v_on_hand, 'count');
+  end loop;
+
+  return array_length(v_seen, 1);
+end $$;
+
+ALTER FUNCTION "public"."save_stock_count"("p_counts" "jsonb") OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -1084,6 +1125,58 @@ CREATE OR REPLACE VIEW "public"."claims" WITH ("security_invoker"='true') AS
 
 ALTER VIEW "public"."claims" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "item_id" "uuid" NOT NULL,
+    "qty" integer NOT NULL,
+    "reason" "public"."movement_reason" NOT NULL,
+    "purchase_line_id" "uuid",
+    "sale_day_id" "uuid",
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    "refund_id" "uuid",
+    "seq" bigint NOT NULL,
+    CONSTRAINT "stock_movements_qty_check" CHECK ((("qty" <> 0) OR ("reason" = 'count'::"public"."movement_reason"))),
+    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = ANY (ARRAY['correction'::"public"."movement_reason", 'count'::"public"."movement_reason"]))))
+);
+
+ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
+
+CREATE OR REPLACE VIEW "public"."item_counts" WITH ("security_invoker"='true') AS
+ WITH "last_count" AS (
+         SELECT DISTINCT ON ("stock_movements"."item_id") "stock_movements"."item_id",
+            "stock_movements"."seq",
+            "stock_movements"."qty",
+            "stock_movements"."created_at"
+           FROM "public"."stock_movements"
+          WHERE ("stock_movements"."reason" = 'count'::"public"."movement_reason")
+          ORDER BY "stock_movements"."item_id", "stock_movements"."seq" DESC
+        )
+ SELECT "i"."id" AS "item_id",
+    "lc"."created_at" AS "last_counted_at",
+        CASE
+            WHEN ("lc"."seq" IS NOT NULL) THEN (( SELECT COALESCE("sum"("m"."qty"), (0)::bigint) AS "coalesce"
+               FROM "public"."stock_movements" "m"
+              WHERE (("m"."item_id" = "i"."id") AND ("m"."seq" <= "lc"."seq"))))::integer
+            ELSE NULL::integer
+        END AS "last_counted_pieces",
+    (( SELECT COALESCE("sum"("m"."qty"), (0)::bigint) AS "coalesce"
+           FROM "public"."stock_movements" "m"
+          WHERE (("m"."item_id" = "i"."id") AND ("m"."reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND (("lc"."seq" IS NULL) OR ("m"."seq" > "lc"."seq")))))::integer AS "bought_since",
+        CASE
+            WHEN (EXISTS ( SELECT 1
+               FROM "public"."stock_movements" "c"
+              WHERE (("c"."item_id" = "i"."id") AND ("c"."reason" = 'count'::"public"."movement_reason") AND ((("c"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date" < (("lc"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date")))) THEN (- (( SELECT "sum"("c"."qty") AS "sum"
+               FROM "public"."stock_movements" "c"
+              WHERE (("c"."item_id" = "i"."id") AND ("c"."reason" = 'count'::"public"."movement_reason") AND ((("c"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date" = (("lc"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date"))))::integer)
+            ELSE NULL::integer
+        END AS "pieces_gone"
+   FROM ("public"."items" "i"
+     LEFT JOIN "last_count" "lc" ON (("lc"."item_id" = "i"."id")));
+
+ALTER VIEW "public"."item_counts" OWNER TO "postgres";
+
 CREATE OR REPLACE VIEW "public"."item_stock" AS
 SELECT
     NULL::"uuid" AS "id",
@@ -1121,8 +1214,12 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
     ("s"."created_at" > ("now"() - '30 days'::interval)) AS "is_new",
     "last_buy"."buyer_name" AS "last_bought_by",
     "last_buy"."purchased_on" AS "last_bought_on",
-    "editor"."display_name" AS "updated_by_name"
-   FROM (("public"."item_stock" "s"
+    "editor"."display_name" AS "updated_by_name",
+    "c"."last_counted_at",
+    "c"."last_counted_pieces",
+    "c"."bought_since",
+    "c"."pieces_gone"
+   FROM ((("public"."item_stock" "s"
      LEFT JOIN LATERAL ( SELECT "pr"."display_name" AS "buyer_name",
             "p"."purchased_on"
            FROM (("public"."purchase_lines" "l"
@@ -1131,7 +1228,8 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
           WHERE ("l"."item_id" = "s"."id")
           ORDER BY "p"."purchased_on" DESC, "p"."claim_no" DESC
          LIMIT 1) "last_buy" ON (true))
-     LEFT JOIN "public"."profiles" "editor" ON (("editor"."id" = "s"."updated_by")));
+     LEFT JOIN "public"."profiles" "editor" ON (("editor"."id" = "s"."updated_by")))
+     LEFT JOIN "public"."item_counts" "c" ON (("c"."item_id" = "s"."id")));
 
 ALTER VIEW "public"."item_overview" OWNER TO "postgres";
 
@@ -1225,22 +1323,14 @@ CREATE TABLE IF NOT EXISTS "public"."settings" (
 
 ALTER TABLE "public"."settings" OWNER TO "postgres";
 
-CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "item_id" "uuid" NOT NULL,
-    "qty" integer NOT NULL,
-    "reason" "public"."movement_reason" NOT NULL,
-    "purchase_line_id" "uuid",
-    "sale_day_id" "uuid",
-    "note" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    "refund_id" "uuid",
-    CONSTRAINT "stock_movements_qty_check" CHECK (("qty" <> 0)),
-    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
+ALTER TABLE "public"."stock_movements" ALTER COLUMN "seq" ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME "public"."stock_movements_seq_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
-
-ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true') AS
  SELECT "type",
@@ -1330,6 +1420,8 @@ CREATE UNIQUE INDEX "sale_days_one_open" ON "public"."sale_days" USING "btree" (
 CREATE INDEX "stock_movements_item_id_idx" ON "public"."stock_movements" USING "btree" ("item_id");
 
 CREATE INDEX "stock_movements_sale_day_id_idx" ON "public"."stock_movements" USING "btree" ("sale_day_id");
+
+CREATE UNIQUE INDEX "stock_movements_seq" ON "public"."stock_movements" USING "btree" ("seq");
 
 CREATE UNIQUE INDEX "volunteer_invites_display_name_open" ON "public"."volunteer_invites" USING "btree" ("lower"("display_name")) WHERE ("accepted_at" IS NULL);
 
@@ -1599,6 +1691,10 @@ GRANT ALL ON FUNCTION "public"."require_member"() TO "anon";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "service_role";
 
+REVOKE ALL ON FUNCTION "public"."save_stock_count"("p_counts" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."save_stock_count"("p_counts" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."save_stock_count"("p_counts" "jsonb") TO "service_role";
+
 REVOKE ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) TO "service_role";
@@ -1679,6 +1775,14 @@ GRANT ALL ON TABLE "public"."claims" TO "anon";
 GRANT ALL ON TABLE "public"."claims" TO "authenticated";
 GRANT ALL ON TABLE "public"."claims" TO "service_role";
 
+GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
+GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
+GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
+
+GRANT ALL ON TABLE "public"."item_counts" TO "anon";
+GRANT ALL ON TABLE "public"."item_counts" TO "authenticated";
+GRANT ALL ON TABLE "public"."item_counts" TO "service_role";
+
 GRANT ALL ON TABLE "public"."item_stock" TO "anon";
 GRANT ALL ON TABLE "public"."item_stock" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_stock" TO "service_role";
@@ -1707,9 +1811,9 @@ GRANT ALL ON TABLE "public"."settings" TO "anon";
 GRANT ALL ON TABLE "public"."settings" TO "authenticated";
 GRANT ALL ON TABLE "public"."settings" TO "service_role";
 
-GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
-GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
-GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
+GRANT ALL ON SEQUENCE "public"."stock_movements_seq_seq" TO "anon";
+GRANT ALL ON SEQUENCE "public"."stock_movements_seq_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."stock_movements_seq_seq" TO "service_role";
 
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "anon";
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "authenticated";

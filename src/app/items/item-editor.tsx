@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   ItemChangedError,
+  stockLine,
   useSaveItem,
   useSetArchived,
   type Item,
@@ -91,8 +92,7 @@ export function ItemEditor({
           <SheetHeader>
             <SheetTitle>{item.name}</SheetTitle>
             <SheetDescription>
-              {item.onHand} on hand ·{' '}
-              {priceLabel(item.priceCents, item.bundleSize)}
+              {stockLine(item)} · {priceLabel(item.priceCents, item.bundleSize)}
             </SheetDescription>
           </SheetHeader>
 
@@ -244,7 +244,7 @@ export function ItemEditor({
                         toast.success(
                           item.archived
                             ? `${item.name} is back on the list.`
-                            : `${item.name} is archived. It won't show up in a lineup.`,
+                            : `${item.name} is archived. It won't show in the item list.`,
                         )
                         onClose()
                       },
