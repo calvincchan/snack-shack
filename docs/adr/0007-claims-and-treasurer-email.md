@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0017
 ---
 
 # Claims are paid from a weekly treasurer email; the treasurer never logs in

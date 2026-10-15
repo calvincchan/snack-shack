@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0016
 ---
 
 # What to buy is guidance, not a shopping list

@@ -1,5 +1,7 @@
 # Data model
 
+> **Changing (2026-10-15):** ADR-0015 (cash-only sale days), ADR-0016 (occasional stock counts) and ADR-0017 (claims sent by the coordinator, paid by cheque) replace the sale day tables, the lineup and count-up functions, `shopping_trips`, `action_tokens` and the weekly email. Each build ticket updates this file with its migration; until then, parts below describe the old schema.
+
 The schema is in [`supabase/migrations/`](../supabase/migrations/). It is a **reviewed draft**: it applies cleanly and passes [`supabase/tests/sale_day_flow.test.sql`](../supabase/tests/sale_day_flow.test.sql) (40 checks covering buying, the full sale day, cash maths, sign-off, locks, the ledger and treasurer links). That was checked on plain Postgres 16 with small stand-ins for Supabase's `auth`, `storage` and roles. Run `supabase test db` on the real stack as the first build step.
 
 Conventions:

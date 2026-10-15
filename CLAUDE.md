@@ -1,6 +1,6 @@
 # Snack Shack
 
-A mobile web app for parent volunteers who run an after-lunch snack table at an elementary school in BC, Canada. It tracks stock, checks the cash after each sale, handles purchases and reimbursements, and shows simple sales insights.
+A mobile web app for parent volunteers who run an after-lunch snack table at an elementary school in BC, Canada. It counts the cash at each sale, handles purchases, occasional stock counts and reimbursements, and shows simple insights.
 
 ## Read first
 
@@ -27,10 +27,10 @@ Vite + React + TypeScript (strict), shadcn/ui + Tailwind, `lucide-react`, TanSta
 - **Money is integer cents; stock is pieces.** Never use floats for money in the database. Format only at the edge.
 - **Business maths lives in Postgres** (views and functions). The UI reads views and calls functions. If you need a new calculation, add a view or function with a pgTAP test.
 - **Stock is an append-only ledger** (`stock_movements`). Never update or delete a movement; add a correction.
-- **Sale day phase changes only through the functions** (`start_sale`, `begin_count`, `sign_off`, `close_sale_day`). Show their error messages to the user as-is.
-- **Client-generated UUIDs** for anything a retry could repeat (purchases). Count-up writes need none: each sets one keyed row to an absolute value.
+- **Sale day phase changes only through the database functions** (open and close a sale day; see `docs/DATA_MODEL.md`). Show their error messages to the user as-is.
+- **Client-generated UUIDs** for anything a retry could repeat (purchases). Cash count writes need none: each sets one keyed row to an absolute value.
 - **Database types are generated, never hand-written.** Every migration ships in the same commit as the `pnpm db:sync` output (`src/lib/database.types.ts` and `supabase/schema.sql`); `pnpm db:reset` runs it for you, and CI fails if either file is stale. In TypeScript, derive from `Tables<'…'>`, `TablesInsert<'…'>` and `Enums<'…'>`; a view model may narrow a view's nullable columns, but its field types must still come from the generated row type.
-- **UI copy:** Canadian English (colour, centre, cheque) with "-ize" endings. Use the `CONTEXT.md` words (sale day, lineup, check stock, count up, change float, over/short, out, target stock). Keep copy short and plain.
+- **UI copy:** Canadian English (colour, centre, cheque) with "-ize" endings. Use the `CONTEXT.md` words (sale day, open count, close count, left in box, revenue, deposit, change float, stock count). Keep copy short and plain.
 - **Mobile first:** touch targets 44–48 px, one-handed use, light and dark mode, tabular numbers.
 - Every button sets its own text colour (a dark-panel inheritance bug happened in the prototype).
 - Don't commit secrets. Only `.env.example` is tracked.
