@@ -10,7 +10,6 @@ function input(overrides: Partial<DealInput> = {}): DealInput {
     addGst: false,
     gstRate: 0.05,
     usualCostCents: 52,
-    piecesPerDayOut: 15,
     ...overrides,
   }
 }
@@ -48,25 +47,6 @@ describe('dealCheck', () => {
     expect(
       dealCheck(input({ usualCostCents: null }))!.differenceFromUsualCents,
     ).toBeNull()
-  })
-
-  it('leaves out the sale days when nothing of this type has sold yet', () => {
-    const deal = dealCheck(input({ piecesPerDayOut: null }))!
-
-    expect(deal.saleDays).toBeNull()
-    expect(deal.tooBig).toBe(false)
-  })
-
-  it('warns that a box is too big past six sale days', () => {
-    // 130 pieces at 30 a day is about 4.3 sale days: fine.
-    const quick = dealCheck(input({ piecesPerDayOut: 30 }))!
-    expect(quick.saleDays).toBeCloseTo(4.333, 3)
-    expect(quick.tooBig).toBe(false)
-
-    // The same box where this type only moves 15 a day: 8.7 sale days.
-    const slower = dealCheck(input({ piecesPerDayOut: 15 }))!
-    expect(slower.saleDays).toBeCloseTo(8.667, 3)
-    expect(slower.tooBig).toBe(true)
   })
 
   it('counts whole deals only, ignoring the pieces left over', () => {

@@ -8,7 +8,6 @@ const MIN_TARGET = 44
 
 const screens = [
   { name: 'Sale day', link: 'Sale day' },
-  { name: 'Sell', link: 'Sell' },
   { name: 'Buy', link: 'Buy' },
   { name: 'Items', link: /^Items/ },
   { name: 'Insights', link: 'Insights' },

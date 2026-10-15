@@ -26,7 +26,6 @@ import {
   useSetArchived,
   type Item,
   type ItemEdit,
-  type OpenSaleDay,
 } from '@/lib/items'
 import { formatMargin, priceLabel, priceOptions } from '@/lib/pricing'
 import { timeAgo } from '@/lib/time'
@@ -44,11 +43,9 @@ function editOf(item: Item): ItemEdit {
 
 export function ItemEditor({
   item,
-  saleDay,
   onClose,
 }: {
   item: Item | null
-  saleDay: OpenSaleDay | null
   onClose: () => void
 }) {
   // Mounted with `key={item.id}`, so the draft starts from the item it opened
@@ -64,9 +61,6 @@ export function ItemEditor({
   const archive = useSetArchived()
 
   if (!item || !edit) return null
-
-  const locked = saleDay?.locked[item.id]
-  const sellingNow = saleDay !== null && saleDay.phase !== 'lineup'
 
   function apply(values: ItemEdit, version: number) {
     save.mutate(
@@ -103,13 +97,6 @@ export function ItemEditor({
           </SheetHeader>
 
           <div className="flex flex-col gap-5 px-4 pb-6">
-            {sellingNow && (
-              <p className="bg-accent text-accent-foreground rounded-lg p-3 text-sm">
-                Prices and types are locked for today. Changes apply from the
-                next sale day.
-              </p>
-            )}
-
             <fieldset className="flex flex-col gap-2">
               <legend className="text-muted-foreground pb-2 text-xs font-semibold tracking-wide uppercase">
                 Price
@@ -232,14 +219,6 @@ export function ItemEditor({
                 }
               />
             </div>
-
-            {locked && sellingNow && (
-              <p className="text-muted-foreground text-sm">
-                Today this is{' '}
-                {priceLabel(locked.priceCents, locked.bundleSize ?? 1)} and a{' '}
-                {locked.type === 'treat' ? 'treat' : 'snack'}.
-              </p>
-            )}
 
             <div className="flex flex-col gap-2">
               <Button

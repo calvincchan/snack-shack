@@ -81,7 +81,7 @@ A sale day is **open** or **closed** (ADR-0015). The phase is stored on the serv
 
 **No open sale day.** Last sale day's revenue and deposit, and **Open a sale day** with a date (default today; any past date, one sale day per date).
 
-**Open count.** A stepper per denomination ($20, $10, $5, toonie, loonie, quarter, dime, nickel) with a running total. Above it: "Left in the box last time: $30.00". If the total differs, a warning ("$2.00 less than left last time") and an optional note. Never blocks. **Start selling** saves the count.
+**Open count.** A stepper per denomination ($20, $10, $5, toonie, loonie, quarter, dime, nickel) with a running total. Above it: "Left in the box last time: $30.00". If the total differs, a warning ("$2.00 less than left last time") and an optional note. Never blocks. **Start selling** saves the count. **Cancel this sale day** deletes one opened by mistake (wrong date), only before selling starts.
 
 **Selling.** Shows the open count and **Sale's over: count the cash**.
 

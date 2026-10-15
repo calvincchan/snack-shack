@@ -1,7 +1,7 @@
 -- What the Items tab reads (pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(8);
+select plan(7);
 
 -- The seed fills the database for local development. These tests describe
 -- behaviour from an empty start, so clear it inside the transaction.
@@ -9,9 +9,7 @@ set local client_min_messages = warning;
 truncate table auth.users, public.items, public.sale_days cascade;
 alter table public.purchases alter column claim_no restart with 1;
 update public.settings
-   set float_cents = 3000, target_sale_days = 2,
-       over_short_ok_cents = 300, over_short_warn_cents = 1000, gst_rate = 0.05,
-       max_items_per_kid = 3, max_treats_per_kid = 1, treasurer_email = null;
+   set float_cents = 3000, gst_rate = 0.05, treasurer_email = null;
 
 insert into auth.users (id, email)
 values ('00000000-0000-0000-0000-00000000000a', 'calvin@example.com');
@@ -47,11 +45,9 @@ select is((select last_bought_by from public.item_overview where name = 'Rice cr
 select is((select price_cents from public.item_overview where name = 'Rice crackers'), null::int,
           'rice crackers still need a price');
 
--- Never in a finished lineup, so everything is New.
+-- Added in the last 30 days, so everything is New.
 select is((select count(*) filter (where is_new)::int from public.item_overview), 2,
-          'nothing has been out yet, so everything is New');
-select is((select days_out from public.item_overview where name = 'Rice crackers'), 0,
-          'no days out yet');
+          'items added this month are New');
 
 -- A member may price an item straight from the Items tab.
 update public.items set price_cents = 100, bundle_size = 1 where name = 'Rice crackers';

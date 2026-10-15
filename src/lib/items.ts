@@ -57,54 +57,6 @@ export function useItems({ includeArchived = false } = {}) {
   })
 }
 
-/** What an item looks like on the sale day that is open right now, if any. */
-export type LockedItem = {
-  priceCents: number | null
-  bundleSize: number | null
-  type: Enums<'item_type'> | null
-}
-
-export type OpenSaleDay = {
-  phase: Enums<'sale_phase'>
-  /** Only filled once the sale has started; keyed by item id. */
-  locked: Record<string, LockedItem>
-}
-
-export function useOpenSaleDay() {
-  return useQuery({
-    queryKey: ['open-sale-day'],
-    queryFn: async (): Promise<OpenSaleDay | null> => {
-      const { data: day, error } = await supabase
-        .from('sale_days')
-        .select('id, phase')
-        .neq('phase', 'closed')
-        .maybeSingle()
-      if (error) throw error
-      if (!day) return null
-
-      const { data: rows, error: rowsError } = await supabase
-        .from('sale_day_items')
-        .select('item_id, locked_price_cents, locked_bundle_size, locked_type')
-        .eq('sale_day_id', day.id)
-      if (rowsError) throw rowsError
-
-      return {
-        phase: day.phase,
-        locked: Object.fromEntries(
-          rows.map((row) => [
-            row.item_id,
-            {
-              priceCents: row.locked_price_cents,
-              bundleSize: row.locked_bundle_size,
-              type: row.locked_type,
-            },
-          ]),
-        ),
-      }
-    },
-  })
-}
-
 export type ItemEdit = {
   name: string
   type: Enums<'item_type'>

@@ -3,11 +3,10 @@ import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LogPurchase, type PrefilledLine } from '@/app/buy/log-purchase'
 import { DealCheck } from '@/app/buy/deal-check'
-import { WhatToBuy } from '@/app/buy/what-to-buy'
 import { Claims } from '@/app/buy/claims'
 
 export function BuyPage() {
-  const [segment, setSegment] = useState('what')
+  const [segment, setSegment] = useState('log')
   // "Bought it" carries the Deal check numbers into Log purchase. The key
   // remounts the form so it starts from them.
   const [prefill, setPrefill] = useState<PrefilledLine | null>(null)
@@ -19,19 +18,18 @@ export function BuyPage() {
 
       <Tabs value={segment} onValueChange={setSegment}>
         <TabsList className="w-full">
-          <TabsTrigger value="what" className="min-h-11 flex-1">
-            What to buy
-          </TabsTrigger>
           <TabsTrigger value="log" className="min-h-11 flex-1">
             Log purchase
           </TabsTrigger>
           <TabsTrigger value="claims" className="min-h-11 flex-1">
             Claims
           </TabsTrigger>
+          <TabsTrigger value="deal" className="min-h-11 flex-1">
+            Deal check
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="what" className="mt-4 flex flex-col gap-4">
-          <WhatToBuy />
+        <TabsContent value="deal" className="mt-4 flex flex-col gap-4">
           <DealCheck
             onBoughtIt={(bought) => {
               setPrefill(bought)

@@ -7,13 +7,13 @@ const report: Report = {
     {
       sale_date: '2026-09-22',
       deposit_cents: 13700,
-      over_short_cents: 200,
+      revenue_cents: 9000,
       volunteers: 'Yuki, Priya',
     },
     {
       sale_date: '2026-09-24',
       deposit_cents: 14600,
-      over_short_cents: -400,
+      revenue_cents: 8500,
       volunteers: 'Calvin, Yuki',
     },
   ],
@@ -122,12 +122,12 @@ describe('buildEmail', () => {
     expect(email.html).toContain('<h3>Yuki:')
   })
 
-  it('lists each deposit with volunteers and the over/short', () => {
+  it('lists each deposit with who closed it and the revenue', () => {
     expect(email.html).toContain('Sep 22')
     expect(email.html).toContain('$137.00')
     expect(email.html).toContain('Yuki, Priya')
-    expect(email.html).toContain('Over $2.00')
-    expect(email.html).toContain('Short $4.00')
+    expect(email.html).toContain('revenue $90.00')
+    expect(email.html).toContain('revenue $85.00')
   })
 
   it('groups reimbursements per volunteer with linked claim numbers', () => {

@@ -68,10 +68,6 @@ export function DealCheck({
       benchmark?.usual_cost_cents != null
         ? Number(benchmark.usual_cost_cents)
         : null,
-    piecesPerDayOut:
-      benchmark?.pieces_per_day_out != null
-        ? Number(benchmark.pieces_per_day_out)
-        : null,
   })
 
   const typeWord = type === 'treat' ? 'treats' : 'snacks'
@@ -190,18 +186,6 @@ export function DealCheck({
                 deal.costPerPieceCents - deal.differenceFromUsualCents,
               )}{' '}
               each on average).
-            </p>
-          )}
-
-          {deal.saleDays !== null && (
-            <p
-              className={cn(
-                'text-sm',
-                deal.tooBig ? 'text-warn' : 'text-muted-foreground',
-              )}
-            >
-              Lasts about {deal.saleDays.toFixed(1)} sale days in the lineup.
-              {deal.tooBig && ' Big box, make sure it fits.'}
             </p>
           )}
 

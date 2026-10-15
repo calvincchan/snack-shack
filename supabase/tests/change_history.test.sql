@@ -1,15 +1,13 @@
 -- Change history for the item and sale day sheets (pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(11);
+select plan(8);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items, public.sale_days, public.audit_log cascade;
 alter table public.purchases alter column claim_no restart with 1;
 update public.settings
-   set float_cents = 3000, target_sale_days = 2,
-       over_short_ok_cents = 300, over_short_warn_cents = 1000, gst_rate = 0.05,
-       max_items_per_kid = 3, max_treats_per_kid = 1, treasurer_email = null;
+   set float_cents = 3000, gst_rate = 0.05, treasurer_email = null;
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'calvin@example.com'),
@@ -62,27 +60,18 @@ select is((select item_name from public.change_history where field = 'name'),
 select is((select count(*)::int from public.change_history where field not in ('name', 'price')),
           0, 'unit cost and version bumps are not shown');
 
--- Sale day counts ------------------------------------------------------------------
+-- Sale day phases ------------------------------------------------------------------
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000a');
-select public.create_sale_day('2026-09-29');
-update public.sale_day_items set check_count = 28, check_reason = 'missing';
-select public.start_sale((select id from public.sale_days));
-select public.begin_count((select id from public.sale_days));
-update public.sale_day_items set left_count = 14, out_count = 0;
-update public.sale_day_items set left_count = 12;
+select public.open_sale_day('2026-09-29');
+update public.cash_counts set qty = 30 where kind = 'open' and denom_cents = 100;
+select public.start_selling((select id from public.sale_days));
+update public.cash_counts set qty = 5 where kind = 'close' and denom_cents = 2000;
+select public.close_sale_day((select id from public.sale_days), 3000);
 
-select is((select count(*)::int from public.change_history
-            where sale_day_id = (select id from public.sale_days) and field = 'left_count'), 2,
-          'each count-up change is a row');
-select is((select string_agg(old_value || '>' || new_value, ',' order by id)
-             from public.change_history where field = 'left_count'),
-          '28>14,14>12', 'counts read 14 then 12; the automatic fill is not a row');
-select is((select count(*)::int from public.change_history where field = 'check_count'), 1,
-          'the check stock number is a row');
 select is((select string_agg(new_value, ',' order by id) from public.change_history where field = 'phase'),
-          'selling,counting', 'phase changes are rows');
-select is((select actor_name from public.change_history where field = 'phase' and new_value = 'counting'),
-          'Calvin', 'phase change names who moved it on');
+          'closed', 'closing a sale day is a row');
+select is((select actor_name from public.change_history where field = 'phase'),
+          'Calvin', 'the phase change names who closed it');
 
 select * from finish();
 rollback;

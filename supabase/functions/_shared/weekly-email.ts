@@ -10,7 +10,7 @@ export type Report = {
   deposits: {
     sale_date: string
     deposit_cents: number
-    over_short_cents: number
+    revenue_cents: number
     volunteers: string
   }[]
   deposited_cents: number
@@ -94,9 +94,8 @@ function shortDate(date: string): string {
   })
 }
 
-function overShort(cents: number): string {
-  if (cents === 0) return 'Balanced'
-  return `${cents > 0 ? 'Over' : 'Short'} ${money(Math.abs(cents))}`
+function revenue(cents: number): string {
+  return `revenue ${money(cents)}`
 }
 
 function escapeHtml(text: string): string {
@@ -156,7 +155,7 @@ export function buildEmail(report: Report, links: Links): Email {
       : `<table cellpadding="6" style="border-collapse:collapse">${report.deposits
           .map(
             (d) =>
-              `<tr><td><b>${shortDate(d.sale_date)}</b></td><td>${escapeHtml(d.volunteers)}</td><td style="text-align:right">${money(d.deposit_cents)}</td><td>${overShort(d.over_short_cents)}</td></tr>`,
+              `<tr><td><b>${shortDate(d.sale_date)}</b></td><td>${escapeHtml(d.volunteers)}</td><td style="text-align:right">${money(d.deposit_cents)}</td><td>${revenue(d.revenue_cents)}</td></tr>`,
           )
           .join('')}</table>`
 
@@ -195,7 +194,7 @@ export function buildEmail(report: Report, links: Links): Email {
       : report.deposits
           .map(
             (d) =>
-              `${shortDate(d.sale_date)}  ${money(d.deposit_cents)}  ${d.volunteers}  ${overShort(d.over_short_cents)}`,
+              `${shortDate(d.sale_date)}  ${money(d.deposit_cents)}  ${d.volunteers}  ${revenue(d.revenue_cents)}`,
           )
           .join('\n')
 

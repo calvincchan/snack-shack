@@ -25,6 +25,13 @@ CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
+CREATE TYPE "public"."cash_count_kind" AS ENUM (
+    'open',
+    'close'
+);
+
+ALTER TYPE "public"."cash_count_kind" OWNER TO "postgres";
+
 CREATE TYPE "public"."check_reason" AS ENUM (
     'missing',
     'damaged'
@@ -61,9 +68,7 @@ CREATE TYPE "public"."movement_reason" AS ENUM (
 ALTER TYPE "public"."movement_reason" OWNER TO "postgres";
 
 CREATE TYPE "public"."sale_phase" AS ENUM (
-    'lineup',
-    'selling',
-    'counting',
+    'open',
     'closed'
 );
 
@@ -160,40 +165,42 @@ end $$;
 
 ALTER FUNCTION "public"."audit_row"() OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."begin_count"("p_sale_day" "uuid") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."cancel_sale_day"("p_sale_day" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
 begin
   perform public.require_member();
   perform set_config('snack.fn', 'on', true);
-  update public.sale_days set phase = 'counting', count_started_at = now()
-   where id = p_sale_day and phase = 'selling';
-  if not found then raise exception 'Count-up has already started.'; end if;
-  update public.sale_day_items set left_count = start_count
-   where sale_day_id = p_sale_day and left_count is null;
-  insert into public.cash_counts (sale_day_id, denom_cents)
-  select p_sale_day, d from unnest(array[2000, 1000, 500, 200, 100, 25, 10, 5]) d
-  on conflict do nothing;
+  delete from public.sale_days where id = p_sale_day and phase = 'open' and selling_at is null;
+  if not found then raise exception 'Selling has started, so this sale day can''t be cancelled.'; end if;
   perform set_config('snack.fn', '', true);
 end $$;
 
-ALTER FUNCTION "public"."begin_count"("p_sale_day" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."cancel_sale_day"("p_sale_day" "uuid") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."cash_counts_guard"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
 declare
-  ph public.sale_phase;
+  d public.sale_days;
 begin
-  select phase into ph from public.sale_days where id = coalesce(new.sale_day_id, old.sale_day_id);
   if public.in_fn() then return coalesce(new, old); end if;
-  if ph <> 'counting' then raise exception 'Cash is counted during count-up.'; end if;
-  if tg_op <> 'DELETE' then
-    new.updated_at := now();
-    new.updated_by := public.actor();
+  if tg_op <> 'UPDATE' then raise exception 'Cash rows are created with the sale day.'; end if;
+  if (new.sale_day_id, new.kind, new.denom_cents) is distinct from (old.sale_day_id, old.kind, old.denom_cents) then
+    raise exception 'Only the count can change.';
   end if;
-  return coalesce(new, old);
+  select * into d from public.sale_days where id = new.sale_day_id;
+  if d.phase <> 'open' then raise exception 'This sale day is closed.'; end if;
+  if new.kind = 'open' and d.selling_at is not null then
+    raise exception 'Selling has started. The open count can''t change.';
+  end if;
+  if new.kind = 'close' and d.selling_at is null then
+    raise exception 'Finish the open count first.';
+  end if;
+  new.updated_at := now();
+  new.updated_by := public.actor();
+  return new;
 end $$;
 
 ALTER FUNCTION "public"."cash_counts_guard"() OWNER TO "postgres";
@@ -207,67 +214,40 @@ $_$;
 
 ALTER FUNCTION "public"."cents_text"("p_cents" integer) OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."clear_signoffs"() RETURNS "trigger"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
-begin
-  if public.in_fn() then return null; end if;
-  delete from public.sale_day_signoffs where sale_day_id = coalesce(new.sale_day_id, old.sale_day_id);
-  return null;
-end $$;
-
-ALTER FUNCTION "public"."clear_signoffs"() OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."close_sale_day"("p_sale_day" "uuid", "p_left_in_box_cents" integer, "p_note" "text" DEFAULT NULL::"text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
 declare
-  t record;
+  v_close int;
 begin
   perform public.require_member();
-  select * into t from public.sale_day_totals where sale_day_id = p_sale_day;
-  if t.phase is distinct from 'counting' then raise exception 'This sale day is not being counted.'; end if;
-  if t.signoffs < 1 then raise exception 'A volunteer needs to confirm the count.'; end if;
-  if t.items_over_start > 0 then raise exception 'Some items show more left than you started with. Recount them.'; end if;
-  if t.items_uncounted > 0 then raise exception 'Some items have no leftover count.'; end if;
+  if exists (select 1 from public.sale_days where id = p_sale_day and phase = 'closed') then
+    raise exception 'This sale day was already closed.';
+  end if;
+  if not exists (select 1 from public.sale_days where id = p_sale_day and selling_at is not null) then
+    raise exception 'Finish the open count first.';
+  end if;
+  select coalesce(sum(denom_cents * qty), 0) into v_close
+    from public.cash_counts where sale_day_id = p_sale_day and kind = 'close';
+  if v_close = 0 then raise exception 'Count the cash box first.'; end if;
+  if p_left_in_box_cents is null or p_left_in_box_cents < 0 then
+    raise exception 'Left in box can''t be negative.';
+  end if;
+  if p_left_in_box_cents > v_close then
+    raise exception 'Left in box is more than you counted.';
+  end if;
 
   perform set_config('snack.fn', 'on', true);
-  update public.sale_days set phase = 'closed', closed_at = now(), closed_by = auth.uid()
-   where id = p_sale_day and phase = 'counting';
-  if not found then raise exception 'This sale day was already finished.'; end if;
-
-  insert into public.stock_movements (item_id, qty, reason, sale_day_id)
-  select item_id, -sold_pieces, 'sold', p_sale_day
-  from public.sale_day_item_results where sale_day_id = p_sale_day and sold_pieces > 0;
-  insert into public.stock_movements (item_id, qty, reason, sale_day_id)
-  select item_id, -out_count, 'out', p_sale_day
-  from public.sale_day_items where sale_day_id = p_sale_day and out_count > 0;
+  update public.sale_days
+     set phase = 'closed', closed_at = now(), closed_by = auth.uid(),
+         left_in_box_cents = p_left_in_box_cents, close_note = nullif(btrim(p_note), '')
+   where id = p_sale_day and phase = 'open';
+  if not found then raise exception 'This sale day was already closed.'; end if;
   perform set_config('snack.fn', '', true);
 end $$;
 
-ALTER FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."create_sale_day"("p_date" "date" DEFAULT CURRENT_DATE) RETURNS "uuid"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
-declare
-  v_id uuid;
-begin
-  perform public.require_member();
-  perform set_config('snack.fn', 'on', true);
-  insert into public.sale_days (sale_date, float_cents)
-  select p_date, float_cents from public.settings
-  returning id into v_id;
-  insert into public.sale_day_items (sale_day_id, item_id)
-  select v_id, s.item_id from public.suggest_lineup() s where s.suggested;
-  perform set_config('snack.fn', '', true);
-  return v_id;
-end $$;
-
-ALTER FUNCTION "public"."create_sale_day"("p_date" "date") OWNER TO "postgres";
+ALTER FUNCTION "public"."close_sale_day"("p_sale_day" "uuid", "p_left_in_box_cents" integer, "p_note" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."display_name_check"("p_name" "text", "p_profile" "uuid", "p_invite" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
@@ -445,6 +425,14 @@ end $$;
 
 ALTER FUNCTION "public"."items_touch"() OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."local_today"() RETURNS "date"
+    LANGUAGE "sql" STABLE
+    AS $$
+  select (now() at time zone 'America/Vancouver')::date
+$$;
+
+ALTER FUNCTION "public"."local_today"() OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."log_purchase"("p" "jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -497,6 +485,37 @@ begin
 end $$;
 
 ALTER FUNCTION "public"."log_purchase"("p" "jsonb") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."open_sale_day"("p_date" "date" DEFAULT NULL::"date") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_date date := coalesce(p_date, public.local_today());
+  v_id uuid;
+begin
+  perform public.require_member();
+  if v_date > public.local_today() then raise exception 'A sale day can''t be in the future.'; end if;
+  if exists (select 1 from public.sale_days where phase = 'open') then
+    raise exception 'Another sale day is still open. Close it first.';
+  end if;
+  if exists (select 1 from public.sale_days where sale_date = v_date) then
+    raise exception 'There''s already a sale day on %.', to_char(v_date, 'FMMon FMDD');
+  end if;
+
+  perform set_config('snack.fn', 'on', true);
+  insert into public.sale_days (sale_date) values (v_date) returning id into v_id;
+  insert into public.cash_counts (sale_day_id, kind, denom_cents)
+  select v_id, k, d
+    from unnest(array['open', 'close']::public.cash_count_kind[]) k,
+         unnest(array[2000, 1000, 500, 200, 100, 25, 10, 5]) d;
+  perform set_config('snack.fn', '', true);
+  return v_id;
+exception when unique_violation then
+  raise exception 'Another sale day was just opened. Refresh and try again.';
+end $$;
+
+ALTER FUNCTION "public"."open_sale_day"("p_date" "date") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."profiles_guard"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -597,12 +616,6 @@ begin
   select on_hand into v_on_hand from public.item_stock where id = v_line.item_id;
   if p_pieces > greatest(v_on_hand, 0) then raise exception 'Only % on hand.', greatest(v_on_hand, 0); end if;
 
-  if exists (select 1 from public.sale_day_items sdi
-               join public.sale_days sd on sd.id = sdi.sale_day_id
-              where sdi.item_id = v_line.item_id and sd.phase in ('selling', 'counting')) then
-    raise exception 'Refund after today''s sale closes.';
-  end if;
-
   if p_amount_cents is null or p_amount_cents <= 0 then raise exception 'Enter the refund amount.'; end if;
   if p_amount_cents > v_cents_left then
     raise exception 'Up to % left on this line.', public.cents_text(v_cents_left);
@@ -627,79 +640,6 @@ begin
 end $$;
 
 ALTER FUNCTION "public"."require_member"() OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."sale_day_items_guard"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
-    AS $$
-declare
-  ph public.sale_phase;
-begin
-  select phase into ph from public.sale_days where id = coalesce(new.sale_day_id, old.sale_day_id);
-  if public.in_fn() then return coalesce(new, old); end if;
-  if tg_op in ('INSERT', 'DELETE') then
-    if ph <> 'lineup' then raise exception 'The lineup can only change before the sale starts.'; end if;
-    if tg_op = 'INSERT' and exists (select 1 from public.items
-                                     where id = new.item_id and (price_cents is null or archived)) then
-      raise exception 'Only priced, active items can go in a lineup.';
-    end if;
-    return coalesce(new, old);
-  end if;
-  if (new.start_count, new.locked_price_cents, new.locked_bundle_size, new.locked_type)
-     is distinct from (old.start_count, old.locked_price_cents, old.locked_bundle_size, old.locked_type) then
-    raise exception 'Starting counts and locked prices are set by start_sale().';
-  end if;
-  if (new.check_count, new.check_reason) is distinct from (old.check_count, old.check_reason)
-     and ph <> 'lineup' then
-    raise exception 'Check stock happens before the sale starts.';
-  end if;
-  if (new.left_count, new.out_count) is distinct from (old.left_count, old.out_count)
-     and ph <> 'counting' then
-    raise exception 'Leftover counts are entered during count-up.';
-  end if;
-  new.updated_at := now();
-  new.updated_by := public.actor();
-  return new;
-end $$;
-
-ALTER FUNCTION "public"."sale_day_items_guard"() OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."sale_days_clear_signoffs"() RETURNS "trigger"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
-begin
-  if public.in_fn() then return null; end if;
-  if (new.helper_credits) is distinct from (old.helper_credits) then
-    delete from public.sale_day_signoffs where sale_day_id = new.id;
-  end if;
-  return null;
-end $$;
-
-ALTER FUNCTION "public"."sale_days_clear_signoffs"() OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."sale_days_guard"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
-    AS $$
-begin
-  if public.in_fn() then return new; end if;
-  if old.phase = 'closed' then
-    raise exception 'This sale day is closed. Fix mistakes with a stock correction.';
-  end if;
-  if (new.phase, new.float_cents, new.started_at, new.started_by, new.count_started_at,
-      new.closed_at, new.closed_by, new.sale_date)
-     is distinct from
-     (old.phase, old.float_cents, old.started_at, old.started_by, old.count_started_at,
-      old.closed_at, old.closed_by, old.sale_date) then
-    raise exception 'Use the sale day functions to change phase.';
-  end if;
-  if (new.helper_credits, new.note) is distinct from (old.helper_credits, old.note)
-     and old.phase <> 'counting' then
-    raise exception 'Helper credits and notes are entered during count-up.';
-  end if;
-  return new;
-end $$;
-
-ALTER FUNCTION "public"."sale_days_guard"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -731,106 +671,24 @@ end $$;
 
 ALTER FUNCTION "public"."settings_touch"() OWNER TO "postgres";
 
-CREATE OR REPLACE FUNCTION "public"."sign_off"("p_sale_day" "uuid") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."start_selling"("p_sale_day" "uuid", "p_note" "text" DEFAULT NULL::"text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
 begin
   perform public.require_member();
-  if not exists (select 1 from public.sale_days where id = p_sale_day and phase = 'counting') then
-    raise exception 'Sign-off happens during count-up.';
+  if not exists (select 1 from public.cash_counts where sale_day_id = p_sale_day and kind = 'open' and qty > 0) then
+    raise exception 'Count the cash box first.';
   end if;
-  insert into public.sale_day_signoffs (sale_day_id, user_id) values (p_sale_day, auth.uid())
-  on conflict do nothing;
-end $$;
-
-ALTER FUNCTION "public"."sign_off"("p_sale_day" "uuid") OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer DEFAULT NULL::integer) RETURNS "void"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO ''
-    AS $$
-declare
-  r record;
-  v_diff int;
-begin
-  perform public.require_member();
-  if p_float_cents < 0 then raise exception 'The change float cannot be negative.'; end if;
   perform set_config('snack.fn', 'on', true);
   update public.sale_days
-     set phase = 'selling', started_at = now(), started_by = auth.uid(),
-         float_cents = coalesce(p_float_cents, float_cents)
-   where id = p_sale_day and phase = 'lineup';
-  if not found then raise exception 'This sale has already started.'; end if;
-  if not exists (select 1 from public.sale_day_items where sale_day_id = p_sale_day) then
-    raise exception 'Pick at least one item for the lineup.';
-  end if;
-
-  for r in
-    select sdi.item_id, sdi.check_count, sdi.check_reason, i.on_hand, i.price_cents, i.bundle_size, i.type, i.name
-    from public.sale_day_items sdi
-    join public.item_stock i on i.id = sdi.item_id
-    where sdi.sale_day_id = p_sale_day
-  loop
-    if r.price_cents is null then raise exception '% needs a price before it can be sold.', r.name; end if;
-    v_diff := coalesce(r.check_count, r.on_hand) - r.on_hand;
-    if v_diff < 0 then
-      insert into public.stock_movements (item_id, qty, reason, sale_day_id)
-      values (r.item_id, v_diff, coalesce(r.check_reason, 'missing')::text::public.movement_reason, p_sale_day);
-    elsif v_diff > 0 then
-      insert into public.stock_movements (item_id, qty, reason, sale_day_id)
-      values (r.item_id, v_diff, 'found', p_sale_day);
-    end if;
-    update public.sale_day_items
-       set start_count = r.on_hand + v_diff,
-           locked_price_cents = r.price_cents,
-           locked_bundle_size = r.bundle_size,
-           locked_type = r.type
-     where sale_day_id = p_sale_day and item_id = r.item_id;
-  end loop;
+     set selling_at = now(), selling_by = auth.uid(), open_note = nullif(btrim(p_note), '')
+   where id = p_sale_day and phase = 'open' and selling_at is null;
+  if not found then raise exception 'Selling has already started.'; end if;
   perform set_config('snack.fn', '', true);
 end $$;
 
-ALTER FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) OWNER TO "postgres";
-
-CREATE OR REPLACE FUNCTION "public"."suggest_lineup"() RETURNS TABLE("item_id" "uuid", "type" "public"."item_type", "score" integer, "reason" "text", "suggested" boolean)
-    LANGUAGE "sql" STABLE
-    SET "search_path" TO ''
-    AS $$
-  with s as (
-    select st.*, i.on_hand
-    from public.item_sale_stats st
-    join public.item_stock i on i.id = st.item_id
-    where i.price_cents is not null and not i.archived and i.on_hand > 0
-  ), avg_rate as (
-    select type, avg(pieces_per_day_out) as rate from s where pieces_per_day_out is not null group by type
-  ), scored as (
-    select s.item_id, s.type,
-           (s.days_out = 0) as is_new,
-           s.sold_out_recently as sold_out,
-           coalesce(s.pieces_per_day_out < 0.6 * a.rate, false) as slow,
-           s.sales_since_out
-    from s left join avg_rate a on a.type = s.type
-  ), ranked as (
-    select *,
-           (40 * is_new::int + 30 * sold_out::int + 35 * slow::int
-            + 10 * least(coalesce(sales_since_out, 5), 5)) as score
-    from scored
-  ), picked as (
-    select *, row_number() over (partition by type order by score desc, item_id) as rk from ranked
-  )
-  select item_id, type, score,
-         case when is_new then 'New'
-              when sold_out then 'Sold out lately'
-              when slow then 'Slow seller'
-              when sales_since_out >= 2 then 'Not out for ' || sales_since_out || ' sales'
-         end,
-         rk <= case when type = 'snack' then 3 else 2 end
-  from picked
-  order by type, score desc
-$$;
-
-ALTER FUNCTION "public"."suggest_lineup"() OWNER TO "postgres";
+ALTER FUNCTION "public"."start_selling"("p_sale_day" "uuid", "p_note" "text") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS "date"
     LANGUAGE "sql" STABLE
@@ -946,14 +804,11 @@ CREATE OR REPLACE FUNCTION "public"."weekly_treasurer_report"("p_week_start" "da
     SET "search_path" TO ''
     AS $$
   with dep as (
-    select t.sale_date, t.deposit_cents, t.over_short_cents,
-           coalesce((select string_agg(p.display_name, ', ' order by s.signed_at)
-                       from public.sale_day_signoffs s
-                       join public.profiles p on p.id = s.user_id
-                      where s.sale_day_id = t.sale_day_id), '') as volunteers
-      from public.sale_day_totals t
-     where t.phase = 'closed'
-       and t.sale_date between p_week_start and p_week_start + 6
+    select c.sale_date, c.deposit_cents, c.revenue_cents,
+           coalesce(c.closed_by_name, '') as volunteers
+      from public.sale_day_cash c
+     where c.phase = 'closed'
+       and c.sale_date between p_week_start and p_week_start + 6
   ), owed as (
     select c.buyer_id, c.buyer_name, pr.full_name as buyer_full_name,
            sum(c.net_cents)::int as total_cents,
@@ -1029,6 +884,7 @@ ALTER TABLE "public"."audit_log" ALTER COLUMN "id" ADD GENERATED ALWAYS AS IDENT
 
 CREATE TABLE IF NOT EXISTS "public"."cash_counts" (
     "sale_day_id" "uuid" NOT NULL,
+    "kind" "public"."cash_count_kind" NOT NULL,
     "denom_cents" integer NOT NULL,
     "qty" integer DEFAULT 0 NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -1104,18 +960,6 @@ CREATE OR REPLACE VIEW "public"."change_history" WITH ("security_invoker"='true'
           WHERE (("a"."table_name" = 'items'::"text") AND ("a"."action" = 'UPDATE'::"text") AND ((("a"."old_data" ->> 'price_cents'::"text") IS DISTINCT FROM ("a"."new_data" ->> 'price_cents'::"text")) OR (("a"."old_data" ->> 'bundle_size'::"text") IS DISTINCT FROM ("a"."new_data" ->> 'bundle_size'::"text"))) AND (NOT (EXISTS ( SELECT 1
                    FROM "public"."audit_log" "b"
                   WHERE (("b"."table_name" = 'items'::"text") AND ("b"."action" = 'INSERT'::"text") AND ("b"."row_pk" = "a"."row_pk") AND ("b"."at" = "a"."at"))))))
-        UNION ALL
-         SELECT "a"."id",
-            "a"."at",
-            "a"."actor",
-            (("a"."new_data" ->> 'item_id'::"text"))::"uuid" AS "uuid",
-            (("a"."new_data" ->> 'sale_day_id'::"text"))::"uuid" AS "uuid",
-            "f"."field",
-            ("a"."old_data" ->> "f"."field"),
-            ("a"."new_data" ->> "f"."field")
-           FROM ("public"."audit_log" "a"
-             CROSS JOIN ( VALUES ('check_count'::"text"), ('left_count'::"text")) "f"("field"))
-          WHERE (("a"."table_name" = 'sale_day_items'::"text") AND ("a"."action" = ANY (ARRAY['INSERT'::"text", 'UPDATE'::"text"])) AND (("a"."new_data" ->> "f"."field") IS NOT NULL) AND (("f"."field" = 'check_count'::"text") OR (("a"."old_data" ->> "f"."field") IS NOT NULL)) AND (("a"."old_data" ->> "f"."field") IS DISTINCT FROM ("a"."new_data" ->> "f"."field")))
         UNION ALL
          SELECT "a"."id",
             "a"."at",
@@ -1260,326 +1104,6 @@ CREATE OR REPLACE VIEW "public"."claims" WITH ("security_invoker"='true') AS
 
 ALTER VIEW "public"."claims" OWNER TO "postgres";
 
-CREATE TABLE IF NOT EXISTS "public"."sale_days" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "sale_date" "date" NOT NULL,
-    "phase" "public"."sale_phase" DEFAULT 'lineup'::"public"."sale_phase" NOT NULL,
-    "float_cents" integer NOT NULL,
-    "helper_credits" integer DEFAULT 0 NOT NULL,
-    "note" "text",
-    "started_at" timestamp with time zone,
-    "started_by" "uuid",
-    "count_started_at" timestamp with time zone,
-    "closed_at" timestamp with time zone,
-    "closed_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    CONSTRAINT "sale_days_float_cents_check" CHECK (("float_cents" >= 0)),
-    CONSTRAINT "sale_days_helper_credits_check" CHECK (("helper_credits" >= 0))
-);
-
-ALTER TABLE "public"."sale_days" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "item_id" "uuid" NOT NULL,
-    "qty" integer NOT NULL,
-    "reason" "public"."movement_reason" NOT NULL,
-    "purchase_line_id" "uuid",
-    "sale_day_id" "uuid",
-    "note" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    "refund_id" "uuid",
-    CONSTRAINT "stock_movements_qty_check" CHECK (("qty" <> 0)),
-    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
-);
-
-ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_check_stock_losses" WITH ("security_invoker"='true') AS
- SELECT ("sum"((- "m"."qty")))::integer AS "pieces",
-    ("count"(DISTINCT "m"."item_id"))::integer AS "items",
-    ("round"("sum"((((- "m"."qty"))::numeric * "i"."unit_cost_cents"))))::integer AS "cost_cents"
-   FROM (("public"."stock_movements" "m"
-     JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "m"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
-     JOIN "public"."items" "i" ON (("i"."id" = "m"."item_id")))
-  WHERE ("m"."reason" = ANY (ARRAY['missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason"]))
- HAVING ("sum"((- "m"."qty")) > 0);
-
-ALTER VIEW "public"."insights_check_stock_losses" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."sale_day_items" (
-    "sale_day_id" "uuid" NOT NULL,
-    "item_id" "uuid" NOT NULL,
-    "check_count" integer,
-    "check_reason" "public"."check_reason",
-    "start_count" integer,
-    "locked_price_cents" integer,
-    "locked_bundle_size" integer,
-    "locked_type" "public"."item_type",
-    "left_count" integer,
-    "out_count" integer DEFAULT 0 NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_by" "uuid" DEFAULT "public"."actor"(),
-    CONSTRAINT "sale_day_items_check_count_check" CHECK (("check_count" >= 0)),
-    CONSTRAINT "sale_day_items_left_count_check" CHECK (("left_count" >= 0)),
-    CONSTRAINT "sale_day_items_out_count_check" CHECK (("out_count" >= 0)),
-    CONSTRAINT "sale_day_items_start_count_check" CHECK (("start_count" >= 0))
-);
-
-ALTER TABLE "public"."sale_day_items" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."sale_day_item_results" WITH ("security_invoker"='true') AS
- SELECT "sdi"."sale_day_id",
-    "sdi"."item_id",
-    "sdi"."check_count",
-    "sdi"."check_reason",
-    "sdi"."start_count",
-    "sdi"."locked_price_cents",
-    "sdi"."locked_bundle_size",
-    "sdi"."locked_type",
-    "sdi"."left_count",
-    "sdi"."out_count",
-    "sdi"."updated_at",
-    "sdi"."updated_by",
-    "sd"."sale_date",
-    "sd"."phase",
-    (("sdi"."start_count" - "sdi"."left_count") - "sdi"."out_count") AS "sold_pieces",
-    ("round"(((((("sdi"."start_count" - "sdi"."left_count") - "sdi"."out_count"))::numeric * ("sdi"."locked_price_cents")::numeric) / ("sdi"."locked_bundle_size")::numeric)))::integer AS "sales_cents"
-   FROM ("public"."sale_day_items" "sdi"
-     JOIN "public"."sale_days" "sd" ON (("sd"."id" = "sdi"."sale_day_id")));
-
-ALTER VIEW "public"."sale_day_item_results" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_fading_items" WITH ("security_invoker"='true') AS
- WITH "days" AS (
-         SELECT "r"."item_id",
-            "sd"."sale_date",
-            GREATEST("r"."sold_pieces", 0) AS "sold_pieces",
-            "row_number"() OVER (PARTITION BY "r"."item_id" ORDER BY "sd"."sale_date") AS "rn_first",
-            "row_number"() OVER (PARTITION BY "r"."item_id" ORDER BY "sd"."sale_date" DESC) AS "rn_last"
-           FROM ("public"."sale_day_item_results" "r"
-             JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "r"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
-        )
- SELECT "i"."id" AS "item_id",
-    "i"."name",
-    "f"."sale_date" AS "first_date",
-    "f"."sold_pieces" AS "first_pieces",
-    "l"."sale_date" AS "last_date",
-    "l"."sold_pieces" AS "last_pieces"
-   FROM (("public"."items" "i"
-     JOIN "days" "f" ON ((("f"."item_id" = "i"."id") AND ("f"."rn_first" = 1))))
-     JOIN "days" "l" ON ((("l"."item_id" = "i"."id") AND ("l"."rn_last" = 1))))
-  WHERE (("f"."sale_date" <> "l"."sale_date") AND ("f"."sold_pieces" > 0) AND (("l"."sold_pieces" * 100) <= ("f"."sold_pieces" * 85)));
-
-ALTER VIEW "public"."insights_fading_items" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true') AS
- SELECT "i"."id" AS "item_id",
-    "i"."name",
-    "i"."type",
-    ("count"(*))::integer AS "days_out",
-    ("sum"(GREATEST("r"."sold_pieces", 0)))::integer AS "pieces_sold",
-    ("round"((("sum"(GREATEST("r"."sold_pieces", 0)))::numeric / ("count"(*))::numeric)))::integer AS "pieces_per_day_out",
-    ("sum"(GREATEST("r"."sales_cents", 0)))::integer AS "sales_cents"
-   FROM (("public"."sale_day_item_results" "r"
-     JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "r"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
-     JOIN "public"."items" "i" ON (("i"."id" = "r"."item_id")))
-  GROUP BY "i"."id", "i"."name", "i"."type";
-
-ALTER VIEW "public"."insights_items" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."sale_day_signoffs" (
-    "sale_day_id" "uuid" NOT NULL,
-    "user_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
-    "signed_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-ALTER TABLE "public"."sale_day_signoffs" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."sale_day_totals" WITH ("security_invoker"='true') AS
- WITH "r" AS (
-         SELECT "sale_day_item_results"."sale_day_id",
-            (COALESCE("sum"(GREATEST("sale_day_item_results"."sold_pieces", 0)), (0)::bigint))::integer AS "pieces_sold",
-            (COALESCE("sum"(GREATEST("sale_day_item_results"."sold_pieces", 0)) FILTER (WHERE ("sale_day_item_results"."locked_type" = 'treat'::"public"."item_type")), (0)::bigint))::integer AS "treat_pieces_sold",
-            (COALESCE("sum"(GREATEST("sale_day_item_results"."sales_cents", 0)), (0)::bigint))::integer AS "sales_cents",
-            ("count"(*) FILTER (WHERE ("sale_day_item_results"."sold_pieces" < 0)))::integer AS "items_over_start",
-            ("count"(*) FILTER (WHERE ("sale_day_item_results"."left_count" IS NULL)))::integer AS "items_uncounted"
-           FROM "public"."sale_day_item_results"
-          GROUP BY "sale_day_item_results"."sale_day_id"
-        ), "c" AS (
-         SELECT "cash_counts"."sale_day_id",
-            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")))::integer AS "counted_cents"
-           FROM "public"."cash_counts"
-          GROUP BY "cash_counts"."sale_day_id"
-        )
- SELECT "sd"."id" AS "sale_day_id",
-    "sd"."sale_date",
-    "sd"."phase",
-    "sd"."float_cents",
-    "sd"."helper_credits",
-    COALESCE("r"."pieces_sold", 0) AS "pieces_sold",
-    COALESCE("r"."treat_pieces_sold", 0) AS "treat_pieces_sold",
-    COALESCE("r"."sales_cents", 0) AS "sales_cents",
-    COALESCE("r"."items_over_start", 0) AS "items_over_start",
-    COALESCE("r"."items_uncounted", 0) AS "items_uncounted",
-    (("sd"."float_cents" + COALESCE("r"."sales_cents", 0)) - ("sd"."helper_credits" * 100)) AS "expected_cents",
-    COALESCE("c"."counted_cents", 0) AS "counted_cents",
-    (COALESCE("c"."counted_cents", 0) - (("sd"."float_cents" + COALESCE("r"."sales_cents", 0)) - ("sd"."helper_credits" * 100))) AS "over_short_cents",
-    (COALESCE("c"."counted_cents", 0) - "sd"."float_cents") AS "deposit_cents",
-    (( SELECT "count"(*) AS "count"
-           FROM "public"."sale_day_signoffs" "s"
-          WHERE ("s"."sale_day_id" = "sd"."id")))::integer AS "signoffs"
-   FROM (("public"."sale_days" "sd"
-     LEFT JOIN "r" ON (("r"."sale_day_id" = "sd"."id")))
-     LEFT JOIN "c" ON (("c"."sale_day_id" = "sd"."id")));
-
-ALTER VIEW "public"."sale_day_totals" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."settings" (
-    "id" boolean DEFAULT true NOT NULL,
-    "float_cents" integer DEFAULT 3000 NOT NULL,
-    "target_sale_days" integer DEFAULT 2 NOT NULL,
-    "over_short_ok_cents" integer DEFAULT 300 NOT NULL,
-    "over_short_warn_cents" integer DEFAULT 1000 NOT NULL,
-    "gst_rate" numeric(5,4) DEFAULT 0.05 NOT NULL,
-    "max_items_per_kid" integer DEFAULT 3 NOT NULL,
-    "max_treats_per_kid" integer DEFAULT 1 NOT NULL,
-    "treasurer_email" "text",
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_by" "uuid",
-    CONSTRAINT "settings_float_cents_check" CHECK (("float_cents" >= 0)),
-    CONSTRAINT "settings_id_check" CHECK ("id"),
-    CONSTRAINT "settings_target_sale_days_check" CHECK (("target_sale_days" > 0))
-);
-
-ALTER TABLE "public"."settings" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_sale_days" WITH ("security_invoker"='true') AS
- SELECT "sd"."id" AS "sale_day_id",
-    "sd"."sale_date",
-    "t"."sales_cents",
-    "t"."pieces_sold",
-    "t"."counted_cents",
-    "t"."over_short_cents",
-    "sd"."helper_credits",
-    "sd"."note",
-    (COALESCE("c"."cost_cents", (0)::numeric))::integer AS "cost_cents",
-    (((("t"."sales_cents")::numeric - COALESCE("c"."cost_cents", (0)::numeric)) - (("sd"."helper_credits" * 100))::numeric))::integer AS "profit_cents",
-    (( SELECT "count"(*) AS "count"
-           FROM "public"."sale_day_items" "sdi"
-          WHERE ("sdi"."sale_day_id" = "sd"."id")))::integer AS "items_out",
-    ( SELECT "string_agg"("p"."display_name", ', '::"text" ORDER BY "s"."signed_at") AS "string_agg"
-           FROM ("public"."sale_day_signoffs" "s"
-             JOIN "public"."profiles" "p" ON (("p"."id" = "s"."user_id")))
-          WHERE ("s"."sale_day_id" = "sd"."id")) AS "volunteers",
-    ("abs"("t"."over_short_cents") > ( SELECT "settings"."over_short_ok_cents"
-           FROM "public"."settings")) AS "outside_ok"
-   FROM (("public"."sale_days" "sd"
-     JOIN "public"."sale_day_totals" "t" ON (("t"."sale_day_id" = "sd"."id")))
-     LEFT JOIN LATERAL ( SELECT "round"("sum"((("r"."sold_pieces")::numeric * "i"."unit_cost_cents"))) AS "cost_cents"
-           FROM ("public"."sale_day_item_results" "r"
-             JOIN "public"."items" "i" ON (("i"."id" = "r"."item_id")))
-          WHERE (("r"."sale_day_id" = "sd"."id") AND ("r"."sold_pieces" > 0))) "c" ON (true))
-  WHERE ("sd"."phase" = 'closed'::"public"."sale_phase");
-
-ALTER VIEW "public"."insights_sale_days" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_slowest_item" WITH ("security_invoker"='true') AS
- SELECT "item_id",
-    "name",
-    "pieces_per_day_out",
-    "days_out"
-   FROM "public"."insights_items"
-  WHERE (( SELECT "count"(*) AS "count"
-           FROM "public"."insights_items" "insights_items_1") >= 2)
-  ORDER BY "pieces_per_day_out", "name"
- LIMIT 1;
-
-ALTER VIEW "public"."insights_slowest_item" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_sold_out_items" WITH ("security_invoker"='true') AS
- SELECT "i"."id" AS "item_id",
-    "i"."name",
-    ("count"(*) FILTER (WHERE ("r"."left_count" = 0)))::integer AS "sold_out_days",
-    ("count"(*))::integer AS "days_out"
-   FROM (("public"."sale_day_item_results" "r"
-     JOIN "public"."sale_days" "sd" ON ((("sd"."id" = "r"."sale_day_id") AND ("sd"."phase" = 'closed'::"public"."sale_phase"))))
-     JOIN "public"."items" "i" ON (("i"."id" = "r"."item_id")))
-  GROUP BY "i"."id", "i"."name"
- HAVING ("count"(*) FILTER (WHERE ("r"."left_count" = 0)) > 0);
-
-ALTER VIEW "public"."insights_sold_out_items" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_term" WITH ("security_invoker"='true') AS
- SELECT ("count"(*))::integer AS "sale_days",
-    (COALESCE("sum"("sales_cents"), (0)::bigint))::integer AS "sales_cents",
-    (COALESCE("sum"("cost_cents"), (0)::bigint))::integer AS "cost_cents",
-    ((COALESCE("sum"("helper_credits"), (0)::bigint))::integer * 100) AS "helper_credit_cents",
-    (COALESCE("sum"("profit_cents"), (0)::bigint))::integer AS "profit_cents",
-    (COALESCE("sum"("pieces_sold"), (0)::bigint))::integer AS "pieces_sold",
-    (COALESCE("sum"("over_short_cents"), (0)::bigint))::integer AS "over_short_cents",
-    ("count"(*) FILTER (WHERE "outside_ok"))::integer AS "sales_outside_ok",
-    ( SELECT "settings"."over_short_ok_cents"
-           FROM "public"."settings") AS "over_short_ok_cents",
-        CASE
-            WHEN ("count"(*) > 0) THEN ("round"((("sum"("sales_cents"))::numeric / ("count"(*))::numeric)))::integer
-            ELSE NULL::integer
-        END AS "sales_per_day_cents",
-        CASE
-            WHEN ("count"(*) > 0) THEN ("round"((("sum"("pieces_sold"))::numeric / ("count"(*))::numeric)))::integer
-            ELSE NULL::integer
-        END AS "pieces_per_day",
-        CASE
-            WHEN ("sum"("sales_cents") > 0) THEN ("round"(((100.0 * ("sum"("profit_cents"))::numeric) / ("sum"("sales_cents"))::numeric)))::integer
-            ELSE NULL::integer
-        END AS "margin_pct"
-   FROM "public"."insights_sale_days";
-
-ALTER VIEW "public"."insights_term" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."insights_treat_share" WITH ("security_invoker"='true') AS
- SELECT ("sum"("treat_pieces_sold"))::integer AS "treat_pieces",
-    ("sum"("pieces_sold"))::integer AS "pieces_sold",
-    ("round"(((100.0 * ("sum"("treat_pieces_sold"))::numeric) / ("sum"("pieces_sold"))::numeric)))::integer AS "treat_pct"
-   FROM "public"."sale_day_totals" "t"
-  WHERE ("phase" = 'closed'::"public"."sale_phase")
- HAVING ("sum"("pieces_sold") > 0);
-
-ALTER VIEW "public"."insights_treat_share" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."item_sale_stats" WITH ("security_invoker"='true') AS
- WITH "closed" AS (
-         SELECT "sale_days"."id",
-            "row_number"() OVER (ORDER BY "sale_days"."sale_date" DESC, "sale_days"."closed_at" DESC) AS "rn"
-           FROM "public"."sale_days"
-          WHERE ("sale_days"."phase" = 'closed'::"public"."sale_phase")
-        ), "r" AS (
-         SELECT "res"."item_id",
-            "res"."sold_pieces",
-            "res"."left_count",
-            "c"."rn"
-           FROM ("public"."sale_day_item_results" "res"
-             JOIN "closed" "c" ON (("c"."id" = "res"."sale_day_id")))
-        )
- SELECT "i"."id" AS "item_id",
-    "i"."type",
-    ("count"("r"."rn"))::integer AS "days_out",
-    (COALESCE("sum"("r"."sold_pieces"), (0)::bigint))::integer AS "pieces_sold",
-        CASE
-            WHEN ("count"("r"."rn") > 0) THEN (("sum"("r"."sold_pieces"))::numeric / ("count"("r"."rn"))::numeric)
-            ELSE NULL::numeric
-        END AS "pieces_per_day_out",
-    (("min"("r"."rn") - 1))::integer AS "sales_since_out",
-    COALESCE("bool_or"((("r"."left_count" = 0) AND ("r"."rn" <= 2))), false) AS "sold_out_recently",
-    ("count"("r"."rn") FILTER (WHERE ("r"."left_count" = 0)))::integer AS "sold_out_days"
-   FROM ("public"."items" "i"
-     LEFT JOIN "r" ON (("r"."item_id" = "i"."id")))
-  GROUP BY "i"."id", "i"."type";
-
-ALTER VIEW "public"."item_sale_stats" OWNER TO "postgres";
-
 CREATE OR REPLACE VIEW "public"."item_stock" AS
 SELECT
     NULL::"uuid" AS "id",
@@ -1614,14 +1138,11 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
     "s"."updated_at",
     "s"."updated_by",
     "s"."on_hand",
-    COALESCE("st"."days_out", 0) AS "days_out",
-    (COALESCE("st"."days_out", 0) = 0) AS "is_new",
-    "st"."pieces_per_day_out",
+    ("s"."created_at" > ("now"() - '30 days'::interval)) AS "is_new",
     "last_buy"."buyer_name" AS "last_bought_by",
     "last_buy"."purchased_on" AS "last_bought_on",
     "editor"."display_name" AS "updated_by_name"
-   FROM ((("public"."item_stock" "s"
-     LEFT JOIN "public"."item_sale_stats" "st" ON (("st"."item_id" = "s"."id")))
+   FROM (("public"."item_stock" "s"
      LEFT JOIN LATERAL ( SELECT "pr"."display_name" AS "buyer_name",
             "p"."purchased_on"
            FROM (("public"."purchase_lines" "l"
@@ -1634,23 +1155,6 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
 
 ALTER VIEW "public"."item_overview" OWNER TO "postgres";
 
-CREATE OR REPLACE VIEW "public"."lineup_options" WITH ("security_invoker"='true') AS
- SELECT "s"."item_id",
-    "i"."name",
-    "i"."type",
-    "i"."storage",
-    "i"."price_cents",
-    "i"."bundle_size",
-    "i"."unit_cost_cents",
-    "i"."on_hand",
-    "s"."score",
-    "s"."reason",
-    "s"."suggested"
-   FROM ("public"."suggest_lineup"() "s"("item_id", "type", "score", "reason", "suggested")
-     JOIN "public"."item_stock" "i" ON (("i"."id" = "s"."item_id")));
-
-ALTER VIEW "public"."lineup_options" OWNER TO "postgres";
-
 ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME "public"."purchases_claim_no_seq"
     START WITH 1
@@ -1660,114 +1164,89 @@ ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS
     CACHE 1
 );
 
-CREATE OR REPLACE VIEW "public"."sale_day_lineup" WITH ("security_invoker"='true') AS
- SELECT "sdi"."sale_day_id",
-    "sdi"."item_id",
-    "i"."name",
-    "i"."storage",
-    COALESCE("sdi"."locked_type", "i"."type") AS "type",
-    COALESCE("sdi"."locked_price_cents", "i"."price_cents") AS "price_cents",
-    COALESCE("sdi"."locked_bundle_size", "i"."bundle_size") AS "bundle_size",
-    "i"."unit_cost_cents",
-    "i"."on_hand" AS "expected_count",
-    "sdi"."check_count",
-    "sdi"."check_reason",
-    "sdi"."start_count",
-    COALESCE("st"."pieces_per_day_out", (15)::numeric) AS "rate"
-   FROM (("public"."sale_day_items" "sdi"
-     JOIN "public"."item_stock" "i" ON (("i"."id" = "sdi"."item_id")))
-     LEFT JOIN "public"."item_sale_stats" "st" ON (("st"."item_id" = "sdi"."item_id")));
-
-ALTER VIEW "public"."sale_day_lineup" OWNER TO "postgres";
-
-CREATE OR REPLACE VIEW "public"."sale_day_lineup_totals" WITH ("security_invoker"='true') AS
- WITH "numbered" AS (
-         SELECT "sale_days"."id",
-            "sale_days"."sale_date",
-            "sale_days"."phase",
-            "sale_days"."float_cents",
-            ("row_number"() OVER (ORDER BY "sale_days"."sale_date", "sale_days"."created_at"))::integer AS "day_no"
-           FROM "public"."sale_days"
-        ), "lineup" AS (
-         SELECT "sale_day_lineup"."sale_day_id",
-            ("count"(*) FILTER (WHERE ("sale_day_lineup"."type" = 'snack'::"public"."item_type")))::integer AS "snacks",
-            ("count"(*) FILTER (WHERE ("sale_day_lineup"."type" = 'treat'::"public"."item_type")))::integer AS "treats",
-            ("count"(*) FILTER (WHERE (("sale_day_lineup"."check_count" IS NOT NULL) AND ("sale_day_lineup"."check_count" <> "sale_day_lineup"."expected_count"))))::integer AS "items_off",
-            "sum"(("sale_day_lineup"."rate" * "sale_day_lineup"."unit_cost_cents")) AS "cost_weight",
-            "sum"((("sale_day_lineup"."rate" * ("sale_day_lineup"."price_cents")::numeric) / ("sale_day_lineup"."bundle_size")::numeric)) AS "price_weight"
-           FROM "public"."sale_day_lineup"
-          GROUP BY "sale_day_lineup"."sale_day_id"
-        )
- SELECT "n"."id" AS "sale_day_id",
-    "n"."sale_date",
-    "n"."phase",
-    "n"."float_cents",
-    "n"."day_no",
-    COALESCE("l"."snacks", 0) AS "snacks",
-    COALESCE("l"."treats", 0) AS "treats",
-    COALESCE("l"."items_off", 0) AS "items_off",
-        CASE
-            WHEN ("l"."price_weight" > (0)::numeric) THEN ((1)::numeric - ("l"."cost_weight" / "l"."price_weight"))
-            ELSE NULL::numeric
-        END AS "margin"
-   FROM ("numbered" "n"
-     LEFT JOIN "lineup" "l" ON (("l"."sale_day_id" = "n"."id")));
-
-ALTER VIEW "public"."sale_day_lineup_totals" OWNER TO "postgres";
-
-CREATE TABLE IF NOT EXISTS "public"."shopping_trips" (
+CREATE TABLE IF NOT EXISTS "public"."sale_days" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "volunteer_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
-    "planned_for" "text",
+    "sale_date" "date" NOT NULL,
+    "phase" "public"."sale_phase" DEFAULT 'open'::"public"."sale_phase" NOT NULL,
+    "open_note" "text",
+    "close_note" "text",
+    "selling_at" timestamp with time zone,
+    "selling_by" "uuid",
+    "left_in_box_cents" integer,
+    "closed_at" timestamp with time zone,
+    "closed_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "released_at" timestamp with time zone
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "sale_days_left_in_box_cents_check" CHECK (("left_in_box_cents" >= 0))
 );
 
-ALTER TABLE "public"."shopping_trips" OWNER TO "postgres";
+ALTER TABLE "public"."sale_days" OWNER TO "postgres";
 
-CREATE OR REPLACE VIEW "public"."stock_by_type" WITH ("security_invoker"='true') AS
- WITH "days" AS (
-         SELECT ("count"(*))::integer AS "n"
-           FROM "public"."sale_days"
-          WHERE ("sale_days"."phase" = 'closed'::"public"."sale_phase")
-        ), "sold" AS (
-         SELECT "r"."locked_type" AS "type",
-            ("sum"(GREATEST("r"."sold_pieces", 0)))::integer AS "pieces"
-           FROM ("public"."sale_day_item_results" "r"
-             JOIN "public"."sale_days" "d" ON (("d"."id" = "r"."sale_day_id")))
-          WHERE ("d"."phase" = 'closed'::"public"."sale_phase")
-          GROUP BY "r"."locked_type"
-        ), "held" AS (
-         SELECT "i"."type",
-            (COALESCE("sum"("i"."on_hand"), (0)::bigint))::integer AS "on_hand"
-           FROM "public"."item_stock" "i"
-          WHERE (NOT "i"."archived")
-          GROUP BY "i"."type"
-        ), "rate" AS (
-         SELECT "t"."type",
-            COALESCE("h"."on_hand", 0) AS "on_hand",
-                CASE
-                    WHEN ("days"."n" > 0) THEN ((COALESCE("s"."pieces", 0))::numeric / ("days"."n")::numeric)
-                    ELSE NULL::numeric
-                END AS "sold_per_sale_day"
-           FROM (((( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type")
-             CROSS JOIN "days")
-             LEFT JOIN "sold" "s" ON (("s"."type" = "t"."type")))
-             LEFT JOIN "held" "h" ON (("h"."type" = "t"."type")))
+CREATE OR REPLACE VIEW "public"."sale_day_cash" WITH ("security_invoker"='true') AS
+ WITH "totals" AS (
+         SELECT "cash_counts"."sale_day_id",
+            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")) FILTER (WHERE ("cash_counts"."kind" = 'open'::"public"."cash_count_kind")))::integer AS "open_cents",
+            ("sum"(("cash_counts"."denom_cents" * "cash_counts"."qty")) FILTER (WHERE ("cash_counts"."kind" = 'close'::"public"."cash_count_kind")))::integer AS "close_cents"
+           FROM "public"."cash_counts"
+          GROUP BY "cash_counts"."sale_day_id"
         )
- SELECT "rate"."type",
-    "rate"."on_hand",
-    "rate"."sold_per_sale_day",
-    ("ceil"(("rate"."sold_per_sale_day" * ("settings"."target_sale_days")::numeric)))::integer AS "target_pieces",
-    GREATEST((("ceil"(("rate"."sold_per_sale_day" * ("settings"."target_sale_days")::numeric)))::integer - "rate"."on_hand"), 0) AS "buy_pieces",
-        CASE
-            WHEN ("rate"."sold_per_sale_day" > (0)::numeric) THEN (("rate"."on_hand")::numeric / "rate"."sold_per_sale_day")
-            ELSE NULL::numeric
-        END AS "sale_days_left"
-   FROM ("rate"
-     CROSS JOIN "public"."settings");
+ SELECT "d"."id" AS "sale_day_id",
+    "d"."sale_date",
+    "d"."phase",
+    "d"."selling_at",
+    "d"."closed_at",
+    "t"."open_cents",
+    "t"."close_cents",
+    ("t"."close_cents" - "t"."open_cents") AS "revenue_cents",
+    "d"."left_in_box_cents",
+    ("t"."close_cents" - "d"."left_in_box_cents") AS "deposit_cents",
+    "prev"."left_in_box_cents" AS "expected_open_cents",
+    ("t"."open_cents" - "prev"."left_in_box_cents") AS "open_diff_cents",
+    "d"."open_note",
+    "d"."close_note",
+    "sb"."display_name" AS "opened_by_name",
+    "cb"."display_name" AS "closed_by_name"
+   FROM (((("public"."sale_days" "d"
+     JOIN "totals" "t" ON (("t"."sale_day_id" = "d"."id")))
+     LEFT JOIN LATERAL ( SELECT "p"."left_in_box_cents"
+           FROM "public"."sale_days" "p"
+          WHERE (("p"."phase" = 'closed'::"public"."sale_phase") AND ("p"."sale_date" < "d"."sale_date"))
+          ORDER BY "p"."sale_date" DESC
+         LIMIT 1) "prev" ON (true))
+     LEFT JOIN "public"."profiles" "sb" ON (("sb"."id" = "d"."selling_by")))
+     LEFT JOIN "public"."profiles" "cb" ON (("cb"."id" = "d"."closed_by")));
 
-ALTER VIEW "public"."stock_by_type" OWNER TO "postgres";
+ALTER VIEW "public"."sale_day_cash" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."settings" (
+    "id" boolean DEFAULT true NOT NULL,
+    "float_cents" integer DEFAULT 3000 NOT NULL,
+    "gst_rate" numeric(5,4) DEFAULT 0.05 NOT NULL,
+    "treasurer_email" "text",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid",
+    CONSTRAINT "settings_float_cents_check" CHECK (("float_cents" >= 0)),
+    CONSTRAINT "settings_id_check" CHECK ("id")
+);
+
+ALTER TABLE "public"."settings" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "item_id" "uuid" NOT NULL,
+    "qty" integer NOT NULL,
+    "reason" "public"."movement_reason" NOT NULL,
+    "purchase_line_id" "uuid",
+    "sale_day_id" "uuid",
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    "refund_id" "uuid",
+    CONSTRAINT "stock_movements_qty_check" CHECK (("qty" <> 0)),
+    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = 'correction'::"public"."movement_reason")))
+);
+
+ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true') AS
  SELECT "type",
@@ -1775,11 +1254,7 @@ CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true
            FROM "public"."item_overview" "i"
           WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."is_new") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
            FROM "public"."item_overview" "i"
-          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents",
-    ( SELECT "avg"("s"."pieces_per_day_out") AS "avg"
-           FROM ("public"."item_sale_stats" "s"
-             JOIN "public"."items" "i" ON (("i"."id" = "s"."item_id")))
-          WHERE (("i"."type" = "t"."type") AND ("s"."pieces_per_day_out" IS NOT NULL))) AS "pieces_per_day_out"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents"
    FROM ( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type");
 
 ALTER VIEW "public"."type_benchmarks" OWNER TO "postgres";
@@ -1813,7 +1288,7 @@ ALTER TABLE ONLY "public"."audit_log"
     ADD CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id");
 
 ALTER TABLE ONLY "public"."cash_counts"
-    ADD CONSTRAINT "cash_counts_pkey" PRIMARY KEY ("sale_day_id", "denom_cents");
+    ADD CONSTRAINT "cash_counts_pkey" PRIMARY KEY ("sale_day_id", "kind", "denom_cents");
 
 ALTER TABLE ONLY "public"."items"
     ADD CONSTRAINT "items_pkey" PRIMARY KEY ("id");
@@ -1836,20 +1311,14 @@ ALTER TABLE ONLY "public"."purchases"
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_pkey" PRIMARY KEY ("id");
 
-ALTER TABLE ONLY "public"."sale_day_items"
-    ADD CONSTRAINT "sale_day_items_pkey" PRIMARY KEY ("sale_day_id", "item_id");
-
-ALTER TABLE ONLY "public"."sale_day_signoffs"
-    ADD CONSTRAINT "sale_day_signoffs_pkey" PRIMARY KEY ("sale_day_id", "user_id");
-
 ALTER TABLE ONLY "public"."sale_days"
     ADD CONSTRAINT "sale_days_pkey" PRIMARY KEY ("id");
 
+ALTER TABLE ONLY "public"."sale_days"
+    ADD CONSTRAINT "sale_days_sale_date_key" UNIQUE ("sale_date");
+
 ALTER TABLE ONLY "public"."settings"
     ADD CONSTRAINT "settings_pkey" PRIMARY KEY ("id");
-
-ALTER TABLE ONLY "public"."shopping_trips"
-    ADD CONSTRAINT "shopping_trips_pkey" PRIMARY KEY ("id");
 
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_pkey" PRIMARY KEY ("id");
@@ -1865,9 +1334,7 @@ CREATE UNIQUE INDEX "profiles_email_key" ON "public"."profiles" USING "btree" ("
 
 CREATE INDEX "purchase_refunds_purchase_line_id_idx" ON "public"."purchase_refunds" USING "btree" ("purchase_line_id");
 
-CREATE UNIQUE INDEX "sale_days_one_open" ON "public"."sale_days" USING "btree" ((true)) WHERE ("phase" <> 'closed'::"public"."sale_phase");
-
-CREATE UNIQUE INDEX "shopping_trips_one_open" ON "public"."shopping_trips" USING "btree" ((true)) WHERE ("released_at" IS NULL);
+CREATE UNIQUE INDEX "sale_days_one_open" ON "public"."sale_days" USING "btree" ("phase") WHERE ("phase" = 'open'::"public"."sale_phase");
 
 CREATE INDEX "stock_movements_item_id_idx" ON "public"."stock_movements" USING "btree" ("item_id");
 
@@ -1896,7 +1363,7 @@ CREATE OR REPLACE VIEW "public"."item_stock" WITH ("security_invoker"='true') AS
      LEFT JOIN "public"."stock_movements" "m" ON (("m"."item_id" = "i"."id")))
   GROUP BY "i"."id";
 
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('sale_day_id', 'denom_cents');
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('sale_day_id');
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."items" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
@@ -1908,10 +1375,6 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."purchases" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_day_items" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('sale_day_id', 'item_id');
-
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_day_signoffs" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('sale_day_id', 'user_id');
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
 CREATE OR REPLACE TRIGGER "audit" AFTER UPDATE ON "public"."settings" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
@@ -1922,19 +1385,9 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 CREATE OR REPLACE TRIGGER "cash_counts_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."cash_counts_guard"();
 
-CREATE OR REPLACE TRIGGER "clear_signoffs" AFTER INSERT OR DELETE OR UPDATE ON "public"."cash_counts" FOR EACH ROW EXECUTE FUNCTION "public"."clear_signoffs"();
-
-CREATE OR REPLACE TRIGGER "clear_signoffs" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_day_items" FOR EACH ROW EXECUTE FUNCTION "public"."clear_signoffs"();
-
-CREATE OR REPLACE TRIGGER "clear_signoffs" AFTER UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."sale_days_clear_signoffs"();
-
 CREATE OR REPLACE TRIGGER "items_touch" BEFORE UPDATE ON "public"."items" FOR EACH ROW EXECUTE FUNCTION "public"."items_touch"();
 
 CREATE OR REPLACE TRIGGER "profiles_guard" BEFORE UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."profiles_guard"();
-
-CREATE OR REPLACE TRIGGER "sale_day_items_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."sale_day_items" FOR EACH ROW EXECUTE FUNCTION "public"."sale_day_items_guard"();
-
-CREATE OR REPLACE TRIGGER "sale_days_guard" BEFORE UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."sale_days_guard"();
 
 CREATE OR REPLACE TRIGGER "settings_touch" BEFORE UPDATE ON "public"."settings" FOR EACH ROW EXECUTE FUNCTION "public"."settings_touch"();
 
@@ -1964,29 +1417,20 @@ ALTER TABLE ONLY "public"."purchases"
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_paid_by_fkey" FOREIGN KEY ("paid_by") REFERENCES "public"."profiles"("id");
 
-ALTER TABLE ONLY "public"."sale_day_items"
-    ADD CONSTRAINT "sale_day_items_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id");
+ALTER TABLE ONLY "public"."sale_days"
+    ADD CONSTRAINT "sale_days_closed_by_fkey" FOREIGN KEY ("closed_by") REFERENCES "public"."profiles"("id");
 
-ALTER TABLE ONLY "public"."sale_day_items"
-    ADD CONSTRAINT "sale_day_items_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."sale_days"
+    ADD CONSTRAINT "sale_days_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."profiles"("id");
 
-ALTER TABLE ONLY "public"."sale_day_signoffs"
-    ADD CONSTRAINT "sale_day_signoffs_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id") ON DELETE CASCADE;
-
-ALTER TABLE ONLY "public"."sale_day_signoffs"
-    ADD CONSTRAINT "sale_day_signoffs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id");
-
-ALTER TABLE ONLY "public"."shopping_trips"
-    ADD CONSTRAINT "shopping_trips_volunteer_id_fkey" FOREIGN KEY ("volunteer_id") REFERENCES "public"."profiles"("id");
+ALTER TABLE ONLY "public"."sale_days"
+    ADD CONSTRAINT "sale_days_selling_by_fkey" FOREIGN KEY ("selling_by") REFERENCES "public"."profiles"("id");
 
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id");
 
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_purchase_line_id_fkey" FOREIGN KEY ("purchase_line_id") REFERENCES "public"."purchase_lines"("id");
-
-ALTER TABLE ONLY "public"."stock_movements"
-    ADD CONSTRAINT "stock_movements_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id");
 
 ALTER TABLE ONLY "public"."volunteer_invites"
     ADD CONSTRAINT "volunteer_invites_accepted_by_fkey" FOREIGN KEY ("accepted_by") REFERENCES "public"."profiles"("id");
@@ -2005,19 +1449,11 @@ ALTER TABLE "public"."cash_counts" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."items" ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "member_insert" ON "public"."shopping_trips" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_member"() AND ("volunteer_id" = "auth"."uid"())));
-
 CREATE POLICY "member_insert" ON "public"."stock_movements" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_member"() AND ("reason" = ANY (ARRAY['donated'::"public"."movement_reason", 'correction'::"public"."movement_reason"]))));
 
-CREATE POLICY "member_release" ON "public"."shopping_trips" FOR UPDATE TO "authenticated" USING (("volunteer_id" = "auth"."uid"())) WITH CHECK (("volunteer_id" = "auth"."uid"()));
-
-CREATE POLICY "member_write" ON "public"."cash_counts" TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
+CREATE POLICY "member_write" ON "public"."cash_counts" FOR UPDATE TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
 
 CREATE POLICY "member_write" ON "public"."items" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_member"());
-
-CREATE POLICY "member_write" ON "public"."sale_day_items" TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
-
-CREATE POLICY "member_write" ON "public"."sale_days" FOR UPDATE TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
 
 CREATE POLICY "member_write_u" ON "public"."items" FOR UPDATE TO "authenticated" USING ("public"."is_member"()) WITH CHECK ("public"."is_member"());
 
@@ -2043,27 +1479,15 @@ CREATE POLICY "read_all" ON "public"."purchase_refunds" FOR SELECT TO "authentic
 
 CREATE POLICY "read_all" ON "public"."purchases" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-CREATE POLICY "read_all" ON "public"."sale_day_items" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-CREATE POLICY "read_all" ON "public"."sale_day_signoffs" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
 CREATE POLICY "read_all" ON "public"."sale_days" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
 CREATE POLICY "read_all" ON "public"."settings" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
-CREATE POLICY "read_all" ON "public"."shopping_trips" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
 CREATE POLICY "read_all" ON "public"."stock_movements" FOR SELECT TO "authenticated" USING ("public"."is_member"());
-
-ALTER TABLE "public"."sale_day_items" ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE "public"."sale_day_signoffs" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."sale_days" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."settings" ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE "public"."shopping_trips" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."stock_movements" ENABLE ROW LEVEL SECURITY;
 
@@ -2072,10 +1496,6 @@ ALTER TABLE "public"."volunteer_invites" ENABLE ROW LEVEL SECURITY;
 ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."cash_counts";
-
-ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."sale_day_items";
-
-ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."sale_day_signoffs";
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."sale_days";
 
@@ -2096,9 +1516,9 @@ GRANT ALL ON FUNCTION "public"."audit_row"() TO "anon";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."begin_count"("p_sale_day" "uuid") TO "anon";
-GRANT ALL ON FUNCTION "public"."begin_count"("p_sale_day" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."begin_count"("p_sale_day" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."cancel_sale_day"("p_sale_day" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."cancel_sale_day"("p_sale_day" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."cancel_sale_day"("p_sale_day" "uuid") TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "authenticated";
@@ -2108,17 +1528,9 @@ GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "anon";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "anon";
-GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."clear_signoffs"() TO "service_role";
-
-GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") TO "anon";
-GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid") TO "service_role";
-
-GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "anon";
-GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."create_sale_day"("p_date" "date") TO "service_role";
+GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid", "p_left_in_box_cents" integer, "p_note" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid", "p_left_in_box_cents" integer, "p_note" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."close_sale_day"("p_sale_day" "uuid", "p_left_in_box_cents" integer, "p_note" "text") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."display_name_check"("p_name" "text", "p_profile" "uuid", "p_invite" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."display_name_check"("p_name" "text", "p_profile" "uuid", "p_invite" "uuid") TO "service_role";
@@ -2156,9 +1568,17 @@ GRANT ALL ON FUNCTION "public"."items_touch"() TO "anon";
 GRANT ALL ON FUNCTION "public"."items_touch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."items_touch"() TO "service_role";
 
+GRANT ALL ON FUNCTION "public"."local_today"() TO "anon";
+GRANT ALL ON FUNCTION "public"."local_today"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."local_today"() TO "service_role";
+
 GRANT ALL ON FUNCTION "public"."log_purchase"("p" "jsonb") TO "anon";
 GRANT ALL ON FUNCTION "public"."log_purchase"("p" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."log_purchase"("p" "jsonb") TO "service_role";
+
+GRANT ALL ON FUNCTION "public"."open_sale_day"("p_date" "date") TO "anon";
+GRANT ALL ON FUNCTION "public"."open_sale_day"("p_date" "date") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."open_sale_day"("p_date" "date") TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "anon";
 GRANT ALL ON FUNCTION "public"."profiles_guard"() TO "authenticated";
@@ -2175,18 +1595,6 @@ GRANT ALL ON FUNCTION "public"."require_member"() TO "anon";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."require_member"() TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."sale_day_items_guard"() TO "anon";
-GRANT ALL ON FUNCTION "public"."sale_day_items_guard"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."sale_day_items_guard"() TO "service_role";
-
-GRANT ALL ON FUNCTION "public"."sale_days_clear_signoffs"() TO "anon";
-GRANT ALL ON FUNCTION "public"."sale_days_clear_signoffs"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."sale_days_clear_signoffs"() TO "service_role";
-
-GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "anon";
-GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."sale_days_guard"() TO "service_role";
-
 REVOKE ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_member_active"("p_id" "uuid", "p_active" boolean) TO "service_role";
@@ -2195,17 +1603,9 @@ GRANT ALL ON FUNCTION "public"."settings_touch"() TO "anon";
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."settings_touch"() TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "anon";
-GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."sign_off"("p_sale_day" "uuid") TO "service_role";
-
-GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) TO "anon";
-GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."start_sale"("p_sale_day" "uuid", "p_float_cents" integer) TO "service_role";
-
-GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "anon";
-GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."suggest_lineup"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."start_selling"("p_sale_day" "uuid", "p_note" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."start_selling"("p_sale_day" "uuid", "p_note" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."start_selling"("p_sale_day" "uuid", "p_note" "text") TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) TO "anon";
 GRANT ALL ON FUNCTION "public"."treasurer_report_week"("p_now" timestamp with time zone) TO "authenticated";
@@ -2282,70 +1682,6 @@ GRANT ALL ON TABLE "public"."claims" TO "anon";
 GRANT ALL ON TABLE "public"."claims" TO "authenticated";
 GRANT ALL ON TABLE "public"."claims" TO "service_role";
 
-GRANT ALL ON TABLE "public"."sale_days" TO "anon";
-GRANT ALL ON TABLE "public"."sale_days" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_days" TO "service_role";
-
-GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
-GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
-GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_check_stock_losses" TO "anon";
-GRANT ALL ON TABLE "public"."insights_check_stock_losses" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_check_stock_losses" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_day_items" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_items" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_items" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_day_item_results" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_item_results" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_item_results" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_fading_items" TO "anon";
-GRANT ALL ON TABLE "public"."insights_fading_items" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_fading_items" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_items" TO "anon";
-GRANT ALL ON TABLE "public"."insights_items" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_items" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_signoffs" TO "service_role";
-
-GRANT ALL ON TABLE "public"."sale_day_totals" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_totals" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_totals" TO "service_role";
-
-GRANT ALL ON TABLE "public"."settings" TO "anon";
-GRANT ALL ON TABLE "public"."settings" TO "authenticated";
-GRANT ALL ON TABLE "public"."settings" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_sale_days" TO "anon";
-GRANT ALL ON TABLE "public"."insights_sale_days" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_sale_days" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_slowest_item" TO "anon";
-GRANT ALL ON TABLE "public"."insights_slowest_item" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_slowest_item" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_sold_out_items" TO "anon";
-GRANT ALL ON TABLE "public"."insights_sold_out_items" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_sold_out_items" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_term" TO "anon";
-GRANT ALL ON TABLE "public"."insights_term" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_term" TO "service_role";
-
-GRANT ALL ON TABLE "public"."insights_treat_share" TO "anon";
-GRANT ALL ON TABLE "public"."insights_treat_share" TO "authenticated";
-GRANT ALL ON TABLE "public"."insights_treat_share" TO "service_role";
-
-GRANT ALL ON TABLE "public"."item_sale_stats" TO "anon";
-GRANT ALL ON TABLE "public"."item_sale_stats" TO "authenticated";
-GRANT ALL ON TABLE "public"."item_sale_stats" TO "service_role";
-
 GRANT ALL ON TABLE "public"."item_stock" TO "anon";
 GRANT ALL ON TABLE "public"."item_stock" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_stock" TO "service_role";
@@ -2354,29 +1690,25 @@ GRANT ALL ON TABLE "public"."item_overview" TO "anon";
 GRANT ALL ON TABLE "public"."item_overview" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_overview" TO "service_role";
 
-GRANT ALL ON TABLE "public"."lineup_options" TO "anon";
-GRANT ALL ON TABLE "public"."lineup_options" TO "authenticated";
-GRANT ALL ON TABLE "public"."lineup_options" TO "service_role";
-
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "service_role";
 
-GRANT ALL ON TABLE "public"."sale_day_lineup" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_lineup" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_lineup" TO "service_role";
+GRANT ALL ON TABLE "public"."sale_days" TO "anon";
+GRANT ALL ON TABLE "public"."sale_days" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_days" TO "service_role";
 
-GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "anon";
-GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "authenticated";
-GRANT ALL ON TABLE "public"."sale_day_lineup_totals" TO "service_role";
+GRANT ALL ON TABLE "public"."sale_day_cash" TO "anon";
+GRANT ALL ON TABLE "public"."sale_day_cash" TO "authenticated";
+GRANT ALL ON TABLE "public"."sale_day_cash" TO "service_role";
 
-GRANT ALL ON TABLE "public"."shopping_trips" TO "anon";
-GRANT ALL ON TABLE "public"."shopping_trips" TO "authenticated";
-GRANT ALL ON TABLE "public"."shopping_trips" TO "service_role";
+GRANT ALL ON TABLE "public"."settings" TO "anon";
+GRANT ALL ON TABLE "public"."settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."settings" TO "service_role";
 
-GRANT ALL ON TABLE "public"."stock_by_type" TO "anon";
-GRANT ALL ON TABLE "public"."stock_by_type" TO "authenticated";
-GRANT ALL ON TABLE "public"."stock_by_type" TO "service_role";
+GRANT ALL ON TABLE "public"."stock_movements" TO "anon";
+GRANT ALL ON TABLE "public"."stock_movements" TO "authenticated";
+GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
 
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "anon";
 GRANT ALL ON TABLE "public"."type_benchmarks" TO "authenticated";

@@ -1,41 +1,68 @@
 import { describe, expect, it } from 'vitest'
-import { differenceLabel, floatToSend, stepIndex } from '@/lib/sale-day'
+import {
+  countErrorMessage,
+  countSyncStatus,
+  openDiffLabel,
+} from '@/lib/sale-day'
+import { formatCents } from '@/lib/money'
 
-describe('stepIndex', () => {
-  it('splits the lineup phase into Lineup and Check stock', () => {
-    expect(stepIndex('lineup', false)).toBe(0)
-    expect(stepIndex('lineup', true)).toBe(1)
+describe('openDiffLabel', () => {
+  it('says nothing when the box matches or there is nothing to compare', () => {
+    expect(openDiffLabel(0, formatCents)).toBeNull()
+    expect(openDiffLabel(null, formatCents)).toBeNull()
   })
 
-  it('follows the phase once the sale has started', () => {
-    expect(stepIndex('selling', false)).toBe(2)
-    expect(stepIndex('counting', false)).toBe(3)
-    expect(stepIndex('closed', false)).toBe(3)
-  })
-})
-
-describe('differenceLabel', () => {
-  const at = (qty: number, reason: string) =>
-    differenceLabel({ id: '1', name: 'Mini bars', qty, reason })
-
-  it('says what was reported before the sale', () => {
-    expect(at(-2, 'damaged')).toBe('2 damaged (Mini bars)')
-    expect(at(-1, 'missing')).toBe('1 missing (Mini bars)')
-    expect(at(3, 'found')).toBe('3 extra found (Mini bars)')
+  it('says which way the box is off', () => {
+    expect(openDiffLabel(-200, formatCents)).toBe(
+      '$2.00 less than left last time',
+    )
+    expect(openDiffLabel(525, formatCents)).toBe(
+      '$5.25 more than left last time',
+    )
   })
 })
 
-describe('floatToSend', () => {
-  it('sends nothing when the box matches the setting', () => {
-    expect(floatToSend(3000, 3000)).toBeNull()
+describe('countErrorMessage', () => {
+  it('words a dropped connection plainly', () => {
+    expect(countErrorMessage(new TypeError('Failed to fetch'))).toBe(
+      'No connection. Change not saved.',
+    )
+    expect(countErrorMessage({ message: 'Load failed' })).toBe(
+      'No connection. Change not saved.',
+    )
   })
 
-  it('sends nothing when the float was not touched', () => {
-    expect(floatToSend(null, 3000)).toBeNull()
+  it('passes a database refusal through as-is', () => {
+    expect(countErrorMessage({ message: 'This sale day is closed.' })).toBe(
+      'This sale day is closed.',
+    )
+  })
+})
+
+describe('countSyncStatus', () => {
+  const write = (
+    status: 'pending' | 'success' | 'error',
+    scope: string,
+    submittedAt: number,
+  ) => ({ options: { scope: { id: scope } }, state: { status, submittedAt } })
+
+  it('is saved with nothing written', () => {
+    expect(countSyncStatus([])).toBe('saved')
   })
 
-  it('sends the counted amount in cents when it differs', () => {
-    expect(floatToSend(2500, 3000)).toBe(2500)
-    expect(floatToSend(0, 3000)).toBe(0)
+  it('is saving while any write is in flight', () => {
+    expect(
+      countSyncStatus([write('error', 'a', 1), write('pending', 'b', 2)]),
+    ).toBe('saving')
+  })
+
+  it('is failed until the same row saves again', () => {
+    expect(countSyncStatus([write('error', 'a', 1)])).toBe('failed')
+    expect(
+      countSyncStatus([write('error', 'a', 1), write('success', 'b', 2)]),
+    ).toBe('failed')
+    expect(
+      countSyncStatus([write('error', 'a', 1), write('success', 'a', 2)]),
+    ).toBe('saved')
   })
 })

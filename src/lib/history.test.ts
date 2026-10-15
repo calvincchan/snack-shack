@@ -9,25 +9,6 @@ const row = (
 ) => ({ field, old_value, new_value, item_name })
 
 describe('describeChange', () => {
-  it('words a count change on the sale day sheet', () => {
-    expect(
-      describeChange(row('left_count', '14', '12'), { withItem: true }),
-    ).toBe('BBQ chips count changed 14 → 12')
-  })
-
-  it('leaves the item name off on the item sheet', () => {
-    expect(describeChange(row('left_count', '14', '12'))).toBe(
-      'count changed 14 → 12',
-    )
-  })
-
-  it('says checked, not changed, for a first check stock number', () => {
-    expect(describeChange(row('check_count', null, '28'))).toBe('checked at 28')
-    expect(describeChange(row('check_count', '28', '30'))).toBe(
-      'check changed 28 → 30',
-    )
-  })
-
   it('reads prices the way the table does', () => {
     expect(describeChange(row('price', '100/1', '100/2'))).toBe(
       'price changed $1 → 2 for $1',
@@ -37,14 +18,8 @@ describe('describeChange', () => {
     )
   })
 
-  it('names the sale day steps', () => {
-    expect(describeChange(row('phase', 'lineup', 'selling', null))).toBe(
-      'Sale started',
-    )
-    expect(describeChange(row('phase', 'selling', 'counting', null))).toBe(
-      'Count up started',
-    )
-    expect(describeChange(row('phase', 'counting', 'closed', null))).toBe(
+  it('names closing a sale day', () => {
+    expect(describeChange(row('phase', 'open', 'closed', null))).toBe(
       'Sale day closed',
     )
   })

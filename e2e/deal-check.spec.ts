@@ -9,6 +9,7 @@ test('deal check works out the box and carries it into Log purchase', async ({
 }) => {
   await signIn(page, COORDINATOR_EMAIL)
   await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Deal check' }).click()
 
   // The prototype's example: $17.99 for 130 mini bars, GST already on the label.
   await page.getByLabel('Shelf price').fill('17.99')
@@ -25,11 +26,9 @@ test('deal check works out the box and carries it into Log purchase', async ({
   await expect(result).toContainText('$65.00')
   await expect(result).toContainText('$47.01')
 
-  // The seeded sale days give treats a rate of 22 pieces a day, so the 130
-  // pieces last about 5.9 sale days: just under the six that warn.
   await expect(result).toContainText('than our usual treats')
-  await expect(result).toContainText('Lasts about 5.9 sale days')
-  await expect(result).not.toContainText('make sure it fits')
+  // Sale days no longer count stock, so there is no "lasts about" (ADR-0016).
+  await expect(result).not.toContainText('Lasts about')
 
   await page.getByRole('button', { name: 'Bought it' }).click()
 
@@ -49,6 +48,7 @@ test('deal check works out the box and carries it into Log purchase', async ({
 test('adding GST changes the numbers', async ({ page }) => {
   await signIn(page, COORDINATOR_EMAIL)
   await page.getByRole('link', { name: 'Buy' }).click()
+  await page.getByRole('tab', { name: 'Deal check' }).click()
 
   await page.getByLabel('Shelf price').fill('17.99')
   await page.getByLabel('Pieces in the box').fill('130')

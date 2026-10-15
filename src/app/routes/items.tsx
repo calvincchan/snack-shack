@@ -3,13 +3,7 @@ import { toast } from 'sonner'
 import { cn } from 'cn'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
 import { ItemEditor } from '@/app/items/item-editor'
-import {
-  useItems,
-  useOpenSaleDay,
-  useSaveItem,
-  type Item,
-  type LockedItem,
-} from '@/lib/items'
+import { useItems, useSaveItem, type Item } from '@/lib/items'
 import { formatCents } from '@/lib/money'
 import {
   formatMargin,
@@ -24,7 +18,6 @@ export function ItemsPage() {
   const [editing, setEditing] = useState<string | null>(null)
 
   const items = useItems({ includeArchived: showArchived })
-  const saleDay = useOpenSaleDay()
 
   const all = items.data ?? []
   const needPrice = all.filter(
@@ -34,10 +27,6 @@ export function ItemsPage() {
     (item) => item.priceCents !== null && !item.archived,
   )
   const archived = all.filter((item) => item.archived)
-
-  const sellingNow = saleDay.data != null && saleDay.data.phase !== 'lineup'
-  const lockedFor = (item: Item) =>
-    sellingNow ? (saleDay.data?.locked[item.id] ?? null) : null
 
   return (
     <div className="flex flex-col gap-6 p-4 pb-8">
@@ -75,7 +64,6 @@ export function ItemsPage() {
               <ItemRow
                 key={item.id}
                 item={item}
-                locked={lockedFor(item)}
                 onOpen={() => setEditing(item.id)}
               />
             ))}
@@ -85,7 +73,7 @@ export function ItemsPage() {
 
       {showArchived && archived.length > 0 && (
         <section className="flex flex-col gap-3">
-          <SectionHeading title="Archived" note="Not offered in a lineup" />
+          <SectionHeading title="Archived" note="Hidden from the list" />
           <ul
             aria-label="Archived items"
             className="border-border bg-card divide-border divide-y overflow-hidden rounded-xl border opacity-70"
@@ -94,7 +82,6 @@ export function ItemsPage() {
               <ItemRow
                 key={item.id}
                 item={item}
-                locked={null}
                 onOpen={() => setEditing(item.id)}
               />
             ))}
@@ -119,7 +106,6 @@ export function ItemsPage() {
       <ItemEditor
         key={editing}
         item={all.find((item) => item.id === editing) ?? null}
-        saleDay={saleDay.data ?? null}
         onClose={() => setEditing(null)}
       />
     </div>
@@ -149,35 +135,7 @@ function ItemName({ item }: { item: Item }) {
   )
 }
 
-/** "today $2" / "today still a treat" when an edit does not apply until the next sale day. */
-function TodayNote({ item, locked }: { item: Item; locked: LockedItem }) {
-  const priceChanged =
-    locked.priceCents !== item.priceCents ||
-    (locked.bundleSize ?? 1) !== item.bundleSize
-  const typeChanged = locked.type !== null && locked.type !== item.type
-
-  if (!priceChanged && !typeChanged) return null
-
-  return (
-    <span className="text-warn text-sm">
-      {priceChanged &&
-        `today ${priceLabel(locked.priceCents, locked.bundleSize ?? 1)}`}
-      {priceChanged && typeChanged && ' · '}
-      {typeChanged &&
-        `today still a ${locked.type === 'treat' ? 'treat' : 'snack'}`}
-    </span>
-  )
-}
-
-function ItemRow({
-  item,
-  locked,
-  onOpen,
-}: {
-  item: Item
-  locked: LockedItem | null
-  onOpen: () => void
-}) {
+function ItemRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
   const margin = marginOf(
     item.costPerPieceCents,
     item.priceCents!,
@@ -200,7 +158,6 @@ function ItemRow({
           </p>
           <span className="flex flex-wrap items-center gap-2">
             <BandPill band={marginBand(margin)} />
-            {locked && <TodayNote item={item} locked={locked} />}
           </span>
         </div>
         <span className="font-heading text-foreground shrink-0 text-lg font-semibold tabular-nums">
