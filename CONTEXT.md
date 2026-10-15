@@ -91,7 +91,7 @@ _Avoid_: Bundle, combo, multi-buy
 The price option the app recommends from an item's cost per piece.
 
 **Needs a price**:
-A new item logged with "Decide later"; it waits on the Items tab until priced.
+A new item logged in Log purchase, which sets no price; it waits on the Items tab until priced.
 
 **Cost per piece**:
 What one piece cost the team, tax included.

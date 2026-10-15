@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import type { BoughtIt } from '@/app/buy/deal-check'
 import { useAuth } from '@/lib/auth'
 import { useItems, type Item } from '@/lib/items'
 import {
@@ -67,11 +68,7 @@ function costPerPiece(line: LineDraft): number | null {
   return cents / pieces
 }
 
-export type PrefilledLine = {
-  type: Enums<'item_type'>
-  pieces: number
-  costCents: number
-}
+export type PrefilledLine = BoughtIt
 
 /** Deal check hands its numbers over; the buyer still needs to name the item. */
 function prefilled(line: PrefilledLine): LineDraft {
