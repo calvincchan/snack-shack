@@ -21,12 +21,6 @@ import {
 } from '@/lib/money'
 import type { Enums } from '@/lib/database.types'
 
-/**
- * One receipt is one claim. The form is plain state rather than a form
- * library: nearly every control here is a custom button. Prices are not set
- * here; the Items tab does that.
- */
-
 type LineDraft = {
   key: string
   /** An existing item's id, or 'new'. */
@@ -80,6 +74,11 @@ function prefilled(line: PrefilledLine): LineDraft {
   }
 }
 
+/**
+ * One receipt is one claim. The form is plain state rather than a form
+ * library: nearly every control here is a custom button. Prices are not set
+ * here; the Items tab does that.
+ */
 export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
   // Kept across retries so a save that failed halfway cannot create a second
   // claim (the database function is idempotent on this id).

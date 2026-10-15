@@ -154,7 +154,7 @@ test('a second receipt line tops up an item that is already stocked', async ({
   await page.getByLabel('Cost incl. tax').fill('22.80')
 
   // Same cost per piece as the seeded box, so the weighted average holds.
-  await expect(page.getByText('Keep the price')).toHaveCount(0)
+  await expect(page.getByText('Cost $0.38 a piece (38.0¢)')).toBeVisible()
 
   await page
     .getByLabel('Attach a photo of the receipt')
@@ -171,4 +171,6 @@ test('a second receipt line tops up an item that is already stocked', async ({
   const row = allItems(page).filter({ hasText: 'Pretzel twists' })
   await expect(row).toContainText('120 on hand')
   await expect(row).toContainText('$0.38 a piece')
+  // The seeded $1 price is kept.
+  await expect(row).toContainText('$1')
 })

@@ -84,7 +84,7 @@ select public.log_purchase(jsonb_build_object(
     jsonb_build_object('new_item', jsonb_build_object('name', 'Seaweed snack', 'type', 'snack'),
                        'pieces', 24, 'cost_cents', 2040, 'price_cents', 200))));
 
--- SS-004. Rice crackers are logged with "Decide later", so they need a price.
+-- SS-004. Rice crackers are logged without a price, so they need one.
 select public.log_purchase('{
   "purchased_on": "2026-09-25", "store": "Superstore",
   "buyer_id": "00000000-0000-0000-0000-00000000000b", "receipt_path": "seed/superstore-0925.jpg",
