@@ -73,7 +73,9 @@ test('a second phone counts the close and closes the sale day', async ({
   // Revenue is close − open: $100 − $31. Left in box defaults to the change
   // float, which another spec may have changed, so set it.
   await expect(page.getByText('$69.00')).toBeVisible()
-  await page.getByLabel('Dollars left in box').fill('30')
+  await page
+    .getByRole('textbox', { name: 'Dollars left in box', exact: true })
+    .fill('30')
   await expect(page.getByText('$70.00')).toBeVisible()
 
   await page.getByRole('button', { name: 'Close sale day' }).click()
