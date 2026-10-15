@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { itemsQueryKey } from '@/lib/items'
+import { shrinkPhoto } from '@/lib/photo'
 import type { Enums } from '@/lib/database.types'
 
 export const STORES = [
@@ -65,12 +66,13 @@ export function useLogPurchase() {
 
   return useMutation({
     mutationFn: async (purchase: Purchase) => {
-      const extension = purchase.receipt.name.split('.').pop() ?? 'jpg'
+      const receipt = await shrinkPhoto(purchase.receipt)
+      const extension = receipt.name.split('.').pop() ?? 'jpg'
       const receiptPath = `${purchase.id}/receipt.${extension}`
 
       const { error: uploadError } = await supabase.storage
         .from('receipts')
-        .upload(receiptPath, purchase.receipt, { upsert: true })
+        .upload(receiptPath, receipt, { upsert: true })
       if (uploadError) throw uploadError
 
       const { data, error } = await supabase.rpc('log_purchase', {
