@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Trash2 } from 'lucide-react'
-import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { BandPill } from '@/components/item-bits'
+import type { BoughtIt } from '@/app/buy/deal-check'
 import { useAuth } from '@/lib/auth'
 import { useItems, type Item } from '@/lib/items'
 import {
@@ -20,20 +19,7 @@ import {
   dollarStringToCents,
   formatCents,
 } from '@/lib/money'
-import {
-  formatMargin,
-  marginBand,
-  priceLabel,
-  priceOptions,
-} from '@/lib/pricing'
 import type { Enums } from '@/lib/database.types'
-
-/**
- * One receipt is one claim. The form is plain state rather than a form
- * library: nearly every control here is a custom button, and the interesting
- * work is the arithmetic under each line.
- */
-type Chosen = { priceCents: number; bundleSize: number } | null
 
 type LineDraft = {
   key: string
@@ -44,7 +30,6 @@ type LineDraft = {
   storage: Enums<'storage_kind'>
   pieces: string
   cost: string
-  price: Chosen
 }
 
 function emptyLine(): LineDraft {
@@ -56,7 +41,6 @@ function emptyLine(): LineDraft {
     storage: 'shelf',
     pieces: '',
     cost: '',
-    price: null,
   }
 }
 
@@ -78,13 +62,7 @@ function costPerPiece(line: LineDraft): number | null {
   return cents / pieces
 }
 
-export type PrefilledLine = {
-  type: Enums<'item_type'>
-  pieces: number
-  costCents: number
-  priceCents: number
-  bundleSize: number
-}
+export type PrefilledLine = BoughtIt
 
 /** Deal check hands its numbers over; the buyer still needs to name the item. */
 function prefilled(line: PrefilledLine): LineDraft {
@@ -93,10 +71,14 @@ function prefilled(line: PrefilledLine): LineDraft {
     type: line.type,
     pieces: String(line.pieces),
     cost: centsToDollarString(line.costCents),
-    price: { priceCents: line.priceCents, bundleSize: line.bundleSize },
   }
 }
 
+/**
+ * One receipt is one claim. The form is plain state rather than a form
+ * library: nearly every control here is a custom button. Prices are not set
+ * here; the Items tab does that.
+ */
 export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
   // Kept across retries so a save that failed halfway cannot create a second
   // claim (the database function is idempotent on this id).
@@ -168,8 +150,6 @@ export function LogPurchase({ prefill }: { prefill?: PrefilledLine | null }) {
             : null,
         pieces,
         costCents: cents,
-        priceCents: line.price?.priceCents ?? null,
-        bundleSize: line.price?.bundleSize ?? 1,
       })
     }
 
@@ -350,7 +330,6 @@ function ReceiptLine({
   onRemove: () => void
 }) {
   const isNew = line.itemId === 'new'
-  const existing = items.find((item) => item.id === line.itemId) ?? null
   const perPiece = costPerPiece(line)
 
   return (
@@ -379,9 +358,7 @@ function ReceiptLine({
           id={`item-${line.key}`}
           className="border-input bg-card text-foreground min-h-12 rounded-md border px-3"
           value={line.itemId}
-          onChange={(event) =>
-            onChange({ itemId: event.target.value, price: null })
-          }
+          onChange={(event) => onChange({ itemId: event.target.value })}
         >
           <option value="new">＋ New item</option>
           {items.map((item) => (
@@ -482,111 +459,14 @@ function ReceiptLine({
       </div>
 
       {perPiece !== null && (
-        <PriceChoice
-          line={line}
-          perPiece={perPiece}
-          isNew={isNew}
-          existing={existing}
-          onChange={onChange}
-        />
-      )}
-    </section>
-  )
-}
-
-function PriceChoice({
-  line,
-  perPiece,
-  isNew,
-  existing,
-  onChange,
-}: {
-  line: LineDraft
-  perPiece: number
-  isNew: boolean
-  existing: Item | null
-  onChange: (change: Partial<LineDraft>) => void
-}) {
-  const options = priceOptions(perPiece)
-  const suggested = options.find((option) => option.suggested)!
-
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span>
+        <p className="text-muted-foreground text-sm">
           Cost{' '}
-          <span className="font-semibold tabular-nums">
+          <span className="text-foreground font-semibold tabular-nums">
             {formatCents(perPiece)}
           </span>{' '}
           a piece ({perPiece.toFixed(1)}¢)
-        </span>
-        <BandPill band={marginBand(suggested.margin)} />
-      </p>
-
-      <div className="grid grid-cols-2 gap-2">
-        {options.map((option) => {
-          const chosen =
-            line.price?.priceCents === option.priceCents &&
-            line.price?.bundleSize === option.bundleSize
-          return (
-            <button
-              key={`${option.priceCents}-${option.bundleSize}`}
-              type="button"
-              aria-pressed={chosen}
-              onClick={() =>
-                onChange({
-                  price: {
-                    priceCents: option.priceCents,
-                    bundleSize: option.bundleSize,
-                  },
-                })
-              }
-              className={cn(
-                'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
-                chosen && 'border-primary ring-primary ring-2',
-              )}
-            >
-              <span className="flex w-full items-baseline justify-between gap-2">
-                <span className="font-heading text-lg font-semibold">
-                  {priceLabel(option.priceCents, option.bundleSize)}
-                </span>
-                {option.suggested && (
-                  <span className="text-ok text-xs font-semibold tracking-wide uppercase">
-                    Suggested
-                  </span>
-                )}
-              </span>
-              <span className="text-muted-foreground text-sm">
-                {option.band.label} · {formatMargin(option.margin)} margin
-              </span>
-            </button>
-          )
-        })}
-
-        <button
-          type="button"
-          aria-pressed={line.price === null}
-          onClick={() => onChange({ price: null })}
-          className={cn(
-            'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
-            line.price === null && 'border-primary ring-primary ring-2',
-          )}
-        >
-          <span className="font-heading text-lg font-semibold">
-            {isNew ? 'Decide later' : 'Keep the price'}
-          </span>
-          <span className="text-muted-foreground text-sm">
-            {isNew
-              ? "Won't show on Sell yet"
-              : `Still ${priceLabel(existing?.priceCents ?? null, existing?.bundleSize ?? 1)}`}
-          </span>
-        </button>
-      </div>
-
-      <p className="text-muted-foreground text-sm">
-        Deal prices work without pre-bagging: kids take 2 from the box and the
-        count up counts pieces.
-      </p>
-    </div>
+        </p>
+      )}
+    </section>
   )
 }
