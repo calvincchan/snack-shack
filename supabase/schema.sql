@@ -63,7 +63,8 @@ CREATE TYPE "public"."movement_reason" AS ENUM (
     'donated',
     'correction',
     'returned',
-    'count'
+    'count',
+    'repacked'
 );
 
 ALTER TYPE "public"."movement_reason" OWNER TO "postgres";
@@ -214,6 +215,19 @@ CREATE OR REPLACE FUNCTION "public"."cents_text"("p_cents" integer) RETURNS "tex
 $_$;
 
 ALTER FUNCTION "public"."cents_text"("p_cents" integer) OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."check_repack_side"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+begin
+  if (new.qty > 0) <> (new.item_id = (select pack_item_id from public.repacks where id = new.repack_id)) then
+    raise exception 'A repack adds to the item made and takes from the items that went in.';
+  end if;
+  return new;
+end $$;
+
+ALTER FUNCTION "public"."check_repack_side"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."claims_report"() RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
@@ -654,6 +668,86 @@ begin
 end $$;
 
 ALTER FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") OWNER TO "postgres";
+
+CREATE OR REPLACE FUNCTION "public"."repack"("p" "jsonb") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_id uuid := (p ->> 'id')::uuid;
+  v_pack uuid := (p ->> 'pack_item_id')::uuid;
+  v_packs int := (p ->> 'packs')::int;
+  v_src jsonb;
+  v_item uuid;
+  v_per int;
+  v_seen uuid[] := '{}';
+  v_cents numeric := 0;
+  v_cost numeric;
+  v_on_hand int;
+  v_archived boolean;
+begin
+  perform public.require_member();
+  if v_id is null then raise exception 'A repack needs an id.'; end if;
+  if exists (select 1 from public.repacks where id = v_id) then return v_id; end if;
+
+  if v_packs is null or v_packs < 1 then raise exception 'Make at least one pack.'; end if;
+  if p -> 'sources' is null or jsonb_typeof(p -> 'sources') <> 'array'
+     or jsonb_array_length(p -> 'sources') = 0 then
+    raise exception 'Add at least one item that went in.';
+  end if;
+
+  if v_pack is null then
+    if p -> 'new_item' is null then raise exception 'Pick the item you made.'; end if;
+    if coalesce(trim(p -> 'new_item' ->> 'name'), '') = '' then
+      raise exception 'Give the new item a name.';
+    end if;
+    insert into public.items (name, type, storage, price_cents, bundle_size)
+    values (trim(p -> 'new_item' ->> 'name'),
+            (p -> 'new_item' ->> 'type')::public.item_type,
+            coalesce((p -> 'new_item' ->> 'storage')::public.storage_kind, 'shelf'),
+            (p -> 'new_item' ->> 'price_cents')::int,
+            coalesce((p -> 'new_item' ->> 'bundle_size')::int, 1))
+    returning id into v_pack;
+  else
+    select archived into v_archived from public.items where id = v_pack;
+    if not found then raise exception 'That item no longer exists.'; end if;
+    if v_archived then raise exception 'That item is archived.'; end if;
+  end if;
+
+  insert into public.repacks (id, pack_item_id, packs, note)
+  values (v_id, v_pack, v_packs, nullif(trim(p ->> 'note'), ''));
+
+  for v_src in select * from jsonb_array_elements(p -> 'sources') loop
+    v_item := (v_src ->> 'item_id')::uuid;
+    v_per := (v_src ->> 'pieces_per_pack')::int;
+    if v_per is null or v_per < 1 then raise exception 'Pieces per pack must be 1 or more.'; end if;
+    if v_item = v_pack then raise exception 'An item cannot go into itself.'; end if;
+    if v_item = any (v_seen) then raise exception 'Each item can be added once.'; end if;
+    v_seen := v_seen || v_item;
+
+    select unit_cost_cents, archived into v_cost, v_archived
+    from public.items where id = v_item;
+    if not found then raise exception 'That item no longer exists.'; end if;
+    if v_archived then raise exception 'That item is archived.'; end if;
+
+    v_cents := v_cents + v_packs * v_per * v_cost;
+    insert into public.stock_movements (item_id, qty, reason, repack_id)
+    values (v_item, -(v_packs * v_per), 'repacked', v_id);
+  end loop;
+
+  select on_hand, unit_cost_cents into v_on_hand, v_cost from public.item_stock where id = v_pack;
+  v_on_hand := greatest(v_on_hand, 0);
+  update public.items
+     set unit_cost_cents = round(((v_on_hand * v_cost) + v_cents) / (v_on_hand + v_packs), 2)
+   where id = v_pack;
+
+  insert into public.stock_movements (item_id, qty, reason, repack_id)
+  values (v_pack, v_packs, 'repacked', v_id);
+
+  return v_id;
+end $$;
+
+ALTER FUNCTION "public"."repack"("p" "jsonb") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."require_coordinator"() RETURNS "void"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
@@ -1226,8 +1320,10 @@ CREATE TABLE IF NOT EXISTS "public"."stock_movements" (
     "created_by" "uuid" DEFAULT "public"."actor"(),
     "refund_id" "uuid",
     "seq" bigint NOT NULL,
+    "repack_id" "uuid",
     CONSTRAINT "stock_movements_qty_check" CHECK ((("qty" <> 0) OR ("reason" = 'count'::"public"."movement_reason"))),
-    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = ANY (ARRAY['correction'::"public"."movement_reason", 'count'::"public"."movement_reason"]))))
+    CONSTRAINT "stock_movements_repack" CHECK ((("reason" = 'repacked'::"public"."movement_reason") = ("repack_id" IS NOT NULL))),
+    CONSTRAINT "stock_movements_sign" CHECK (((("reason" = ANY (ARRAY['purchase'::"public"."movement_reason", 'found'::"public"."movement_reason"])) AND ("qty" > 0)) OR (("reason" = ANY (ARRAY['sold'::"public"."movement_reason", 'out'::"public"."movement_reason", 'missing'::"public"."movement_reason", 'damaged'::"public"."movement_reason", 'donated'::"public"."movement_reason", 'returned'::"public"."movement_reason"])) AND ("qty" < 0)) OR ("reason" = ANY (ARRAY['correction'::"public"."movement_reason", 'count'::"public"."movement_reason", 'repacked'::"public"."movement_reason"]))))
 );
 
 ALTER TABLE "public"."stock_movements" OWNER TO "postgres";
@@ -1260,11 +1356,26 @@ CREATE OR REPLACE VIEW "public"."item_counts" WITH ("security_invoker"='true') A
                FROM "public"."stock_movements" "c"
               WHERE (("c"."item_id" = "i"."id") AND ("c"."reason" = 'count'::"public"."movement_reason") AND ((("c"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date" = (("lc"."created_at" AT TIME ZONE 'America/Vancouver'::"text"))::"date"))))::integer)
             ELSE NULL::integer
-        END AS "pieces_gone"
+        END AS "pieces_gone",
+    (( SELECT COALESCE("sum"("m"."qty"), (0)::bigint) AS "coalesce"
+           FROM "public"."stock_movements" "m"
+          WHERE (("m"."item_id" = "i"."id") AND ("m"."reason" = 'repacked'::"public"."movement_reason") AND (("lc"."seq" IS NULL) OR ("m"."seq" > "lc"."seq")))))::integer AS "repacked_since"
    FROM ("public"."items" "i"
      LEFT JOIN "last_count" "lc" ON (("lc"."item_id" = "i"."id")));
 
 ALTER VIEW "public"."item_counts" OWNER TO "postgres";
+
+CREATE TABLE IF NOT EXISTS "public"."repacks" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "pack_item_id" "uuid" NOT NULL,
+    "packs" integer NOT NULL,
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "repacks_packs_check" CHECK (("packs" >= 1))
+);
+
+ALTER TABLE "public"."repacks" OWNER TO "postgres";
 
 CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true') AS
  SELECT "i"."id" AS "item_id",
@@ -1281,10 +1392,13 @@ CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true'
         CASE
             WHEN ("i"."price_cents" IS NOT NULL) THEN ((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric))
             ELSE NULL::numeric
-        END AS "margin"
+        END AS "margin",
+    (EXISTS ( SELECT 1
+           FROM "public"."repacks" "r"
+          WHERE ("r"."pack_item_id" = "i"."id"))) AS "made_by_repack"
    FROM ("public"."items" "i"
      JOIN "public"."item_counts" "c" ON (("c"."item_id" = "i"."id")))
-  WHERE (("c"."pieces_gone" IS NOT NULL) AND (NOT "i"."archived"));
+  WHERE (("c"."pieces_gone" IS NOT NULL) AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL));
 
 ALTER VIEW "public"."insights_items" OWNER TO "postgres";
 
@@ -1295,7 +1409,7 @@ CREATE OR REPLACE VIEW "public"."insights_low_margin_items" WITH ("security_invo
     ((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) AS "margin"
    FROM ("public"."items" "i"
      JOIN "public"."item_counts" "c" ON (("c"."item_id" = "i"."id")))
-  WHERE ((NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("c"."bought_since" > 0) AND (((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) < 0.3));
+  WHERE ((NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND (("c"."bought_since" > 0) OR ("c"."repacked_since" > 0)) AND (((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) < 0.3));
 
 ALTER VIEW "public"."insights_low_margin_items" OWNER TO "postgres";
 
@@ -1401,7 +1515,14 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
     "c"."last_counted_at",
     "c"."last_counted_pieces",
     "c"."bought_since",
-    "c"."pieces_gone"
+    "c"."pieces_gone",
+    "c"."repacked_since",
+    (EXISTS ( SELECT 1
+           FROM "public"."repacks" "r"
+          WHERE ("r"."pack_item_id" = "s"."id"))) AS "made_by_repack",
+    (EXISTS ( SELECT 1
+           FROM "public"."stock_movements" "m"
+          WHERE (("m"."item_id" = "s"."id") AND ("m"."reason" = 'repacked'::"public"."movement_reason") AND ("m"."qty" < 0)))) AS "in_repacks"
    FROM ((("public"."item_stock" "s"
      LEFT JOIN LATERAL ( SELECT "pr"."display_name" AS "buyer_name",
             "p"."purchased_on"
@@ -1465,9 +1586,9 @@ CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true
  SELECT "type",
     COALESCE(( SELECT "avg"("i"."unit_cost_cents") AS "avg"
            FROM "public"."item_overview" "i"
-          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."is_new") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."is_new") AND (NOT "i"."made_by_repack") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
            FROM "public"."item_overview" "i"
-          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."made_by_repack") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents"
    FROM ( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type");
 
 ALTER VIEW "public"."type_benchmarks" OWNER TO "postgres";
@@ -1521,6 +1642,9 @@ ALTER TABLE ONLY "public"."purchases"
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_pkey" PRIMARY KEY ("id");
 
+ALTER TABLE ONLY "public"."repacks"
+    ADD CONSTRAINT "repacks_pkey" PRIMARY KEY ("id");
+
 ALTER TABLE ONLY "public"."sale_days"
     ADD CONSTRAINT "sale_days_pkey" PRIMARY KEY ("id");
 
@@ -1544,9 +1668,13 @@ CREATE UNIQUE INDEX "profiles_email_key" ON "public"."profiles" USING "btree" ("
 
 CREATE INDEX "purchase_refunds_purchase_line_id_idx" ON "public"."purchase_refunds" USING "btree" ("purchase_line_id");
 
+CREATE INDEX "repacks_pack_item_id_idx" ON "public"."repacks" USING "btree" ("pack_item_id");
+
 CREATE UNIQUE INDEX "sale_days_one_open" ON "public"."sale_days" USING "btree" ("phase") WHERE ("phase" = 'open'::"public"."sale_phase");
 
 CREATE INDEX "stock_movements_item_id_idx" ON "public"."stock_movements" USING "btree" ("item_id");
+
+CREATE INDEX "stock_movements_repack_id_idx" ON "public"."stock_movements" USING "btree" ("repack_id") WHERE ("repack_id" IS NOT NULL);
 
 CREATE INDEX "stock_movements_sale_day_id_idx" ON "public"."stock_movements" USING "btree" ("sale_day_id");
 
@@ -1587,6 +1715,8 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."purchases" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."repacks" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sale_days" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
 
 CREATE OR REPLACE TRIGGER "audit" AFTER UPDATE ON "public"."settings" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"('id');
@@ -1604,6 +1734,8 @@ CREATE OR REPLACE TRIGGER "profiles_guard" BEFORE UPDATE ON "public"."profiles" 
 CREATE OR REPLACE TRIGGER "settings_touch" BEFORE UPDATE ON "public"."settings" FOR EACH ROW EXECUTE FUNCTION "public"."settings_touch"();
 
 CREATE OR REPLACE TRIGGER "stock_movements_append_only" BEFORE DELETE OR UPDATE ON "public"."stock_movements" FOR EACH ROW EXECUTE FUNCTION "public"."forbid_change"();
+
+CREATE OR REPLACE TRIGGER "stock_movements_repack_side" BEFORE INSERT ON "public"."stock_movements" FOR EACH ROW WHEN (("new"."reason" = 'repacked'::"public"."movement_reason")) EXECUTE FUNCTION "public"."check_repack_side"();
 
 ALTER TABLE ONLY "public"."cash_counts"
     ADD CONSTRAINT "cash_counts_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id") ON DELETE CASCADE;
@@ -1629,6 +1761,9 @@ ALTER TABLE ONLY "public"."purchases"
 ALTER TABLE ONLY "public"."purchases"
     ADD CONSTRAINT "purchases_paid_by_fkey" FOREIGN KEY ("paid_by") REFERENCES "public"."profiles"("id");
 
+ALTER TABLE ONLY "public"."repacks"
+    ADD CONSTRAINT "repacks_pack_item_id_fkey" FOREIGN KEY ("pack_item_id") REFERENCES "public"."items"("id");
+
 ALTER TABLE ONLY "public"."sale_days"
     ADD CONSTRAINT "sale_days_closed_by_fkey" FOREIGN KEY ("closed_by") REFERENCES "public"."profiles"("id");
 
@@ -1643,6 +1778,9 @@ ALTER TABLE ONLY "public"."stock_movements"
 
 ALTER TABLE ONLY "public"."stock_movements"
     ADD CONSTRAINT "stock_movements_purchase_line_id_fkey" FOREIGN KEY ("purchase_line_id") REFERENCES "public"."purchase_lines"("id");
+
+ALTER TABLE ONLY "public"."stock_movements"
+    ADD CONSTRAINT "stock_movements_repack_id_fkey" FOREIGN KEY ("repack_id") REFERENCES "public"."repacks"("id");
 
 ALTER TABLE ONLY "public"."volunteer_invites"
     ADD CONSTRAINT "volunteer_invites_accepted_by_fkey" FOREIGN KEY ("accepted_by") REFERENCES "public"."profiles"("id");
@@ -1693,11 +1831,15 @@ CREATE POLICY "read_all" ON "public"."purchase_refunds" FOR SELECT TO "authentic
 
 CREATE POLICY "read_all" ON "public"."purchases" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
+CREATE POLICY "read_all" ON "public"."repacks" FOR SELECT TO "authenticated" USING ("public"."is_member"());
+
 CREATE POLICY "read_all" ON "public"."sale_days" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
 CREATE POLICY "read_all" ON "public"."settings" FOR SELECT TO "authenticated" USING ("public"."is_member"());
 
 CREATE POLICY "read_all" ON "public"."stock_movements" FOR SELECT TO "authenticated" USING ("public"."is_member"());
+
+ALTER TABLE "public"."repacks" ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE "public"."sale_days" ENABLE ROW LEVEL SECURITY;
 
@@ -1741,6 +1883,10 @@ GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "anon";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "service_role";
+
+GRANT ALL ON FUNCTION "public"."check_repack_side"() TO "anon";
+GRANT ALL ON FUNCTION "public"."check_repack_side"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."check_repack_side"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."claims_report"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."claims_report"() TO "authenticated";
@@ -1811,6 +1957,10 @@ GRANT ALL ON FUNCTION "public"."record_claims_send"("p_sent_to" "text", "p_claim
 REVOKE ALL ON FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."refund_purchase_line"("p_id" "uuid", "p_line" "uuid", "p_pieces" integer, "p_amount_cents" integer, "p_refunded_on" "date", "p_slip_path" "text", "p_note" "text") TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."repack"("p" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."repack"("p" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."repack"("p" "jsonb") TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."require_coordinator"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."require_coordinator"() TO "authenticated";
@@ -1927,6 +2077,10 @@ GRANT ALL ON TABLE "public"."stock_movements" TO "service_role";
 GRANT ALL ON TABLE "public"."item_counts" TO "anon";
 GRANT ALL ON TABLE "public"."item_counts" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_counts" TO "service_role";
+
+GRANT ALL ON TABLE "public"."repacks" TO "anon";
+GRANT ALL ON TABLE "public"."repacks" TO "authenticated";
+GRANT ALL ON TABLE "public"."repacks" TO "service_role";
 
 GRANT ALL ON TABLE "public"."insights_items" TO "anon";
 GRANT ALL ON TABLE "public"."insights_items" TO "authenticated";

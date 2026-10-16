@@ -4,7 +4,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { NewItemFields } from '@/components/new-item-fields'
 import type { BoughtIt } from '@/app/buy/deal-check'
 import { useAuth } from '@/lib/auth'
 import { useItems, type Item } from '@/lib/items'
@@ -361,75 +361,24 @@ function ReceiptLine({
           onChange={(event) => onChange({ itemId: event.target.value })}
         >
           <option value="new">＋ New item</option>
-          {items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
+          {items
+            .filter((item) => !item.madeByRepack)
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
         </select>
       </div>
 
       {isNew && (
-        <>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`name-${line.key}`}>Name kids will see</Label>
-            <Input
-              id={`name-${line.key}`}
-              className="min-h-12"
-              placeholder="e.g. Rice crackers"
-              value={line.name}
-              onChange={(event) => onChange({ name: event.target.value })}
-            />
-          </div>
-
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            aria-label={`Type for receipt line ${index + 1}`}
-            className="w-full"
-            value={line.type}
-            onValueChange={(value) =>
-              value && onChange({ type: value as LineDraft['type'] })
-            }
-          >
-            <ToggleGroupItem
-              value="snack"
-              className="text-foreground min-h-12 flex-1"
-            >
-              Snack
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="treat"
-              className="text-foreground min-h-12 flex-1"
-            >
-              Treat (sugary)
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            aria-label={`Storage for receipt line ${index + 1}`}
-            className="w-full"
-            value={line.storage}
-            onValueChange={(value) =>
-              value && onChange({ storage: value as LineDraft['storage'] })
-            }
-          >
-            <ToggleGroupItem
-              value="shelf"
-              className="text-foreground min-h-12 flex-1"
-            >
-              Shelf
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="freezer"
-              className="text-foreground min-h-12 flex-1"
-            >
-              ❄ Freezer
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </>
+        <NewItemFields
+          id={line.key}
+          context={`for receipt line ${index + 1}`}
+          existingNames={items.map((item) => item.name)}
+          value={line}
+          onChange={onChange}
+        />
       )}
 
       <div className="grid grid-cols-2 gap-3">

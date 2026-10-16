@@ -1,56 +1,72 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
 import { ItemEditor } from '@/app/items/item-editor'
 import { CountStock } from '@/app/items/count-stock'
-import { stockLine, useItems, useSaveItem, type Item } from '@/lib/items'
-import { formatCents } from '@/lib/money'
+import { Repack } from '@/app/items/repack'
 import {
-  formatMargin,
-  marginBand,
-  marginOf,
-  priceLabel,
-  priceOptions,
-} from '@/lib/pricing'
+  editOf,
+  isRepackOnly,
+  itemName,
+  needsPrice,
+  stockLine,
+  useItems,
+  useSaveItem,
+  type Item,
+} from '@/lib/items'
+import { PriceOptionGrid } from '@/components/price-option-grid'
+import { formatCents } from '@/lib/money'
+import { formatMargin, marginBand, marginOf, priceLabel } from '@/lib/pricing'
 
 export function ItemsPage() {
   const [showArchived, setShowArchived] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [counting, setCounting] = useState(false)
+  const [repacking, setRepacking] = useState(false)
 
   const items = useItems({ includeArchived: showArchived })
 
   const all = items.data ?? []
-  const needPrice = all.filter(
-    (item) => item.priceCents === null && !item.archived,
-  )
-  const priced = all.filter(
-    (item) => item.priceCents !== null && !item.archived,
-  )
+  const active = all.filter((item) => !item.archived)
+  const needPrice = active.filter(needsPrice)
+  const priced = active.filter((item) => item.priceCents !== null)
+  const repackOnly = active.filter(isRepackOnly)
   const archived = all.filter((item) => item.archived)
 
   if (counting) {
     return (
       <CountStock
-        items={priced.concat(needPrice)}
+        items={priced.concat(needPrice, repackOnly)}
         onDone={() => setCounting(false)}
       />
     )
+  }
+
+  if (repacking) {
+    return <Repack items={active} onDone={() => setRepacking(false)} />
   }
 
   return (
     <div className="flex flex-col gap-6 p-4 pb-8">
       <h1 className="sr-only">Items</h1>
 
-      <Button
-        variant="outline"
-        className="text-foreground min-h-12 self-start"
-        onClick={() => setCounting(true)}
-      >
-        Count stock
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          className="text-foreground min-h-12 flex-1"
+          onClick={() => setCounting(true)}
+        >
+          Count stock
+        </Button>
+        <Button
+          variant="outline"
+          className="text-foreground min-h-12 flex-1"
+          onClick={() => setRepacking(true)}
+        >
+          Repack
+        </Button>
+      </div>
 
       {items.isPending && (
         <p className="text-muted-foreground text-sm">Loading…</p>
@@ -79,6 +95,24 @@ export function ItemsPage() {
           >
             {priced.map((item) => (
               <ItemRow
+                key={item.id}
+                item={item}
+                onOpen={() => setEditing(item.id)}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {repackOnly.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <SectionHeading title="Repack only" note="Not sold on their own" />
+          <ul
+            aria-label="Repack only items"
+            className="border-border bg-card divide-border divide-y overflow-hidden rounded-xl border"
+          >
+            {repackOnly.map((item) => (
+              <RepackOnlyRow
                 key={item.id}
                 item={item}
                 onOpen={() => setEditing(item.id)}
@@ -145,7 +179,7 @@ function SectionHeading({ title, note }: { title: string; note?: string }) {
 function ItemName({ item }: { item: Item }) {
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <span className="font-medium">{item.name}</span>
+      <span className="font-medium">{itemName(item)}</span>
       {item.isNew && <Tag>New</Tag>}
       {item.storage === 'freezer' && <Tag>❄ Freezer</Tag>}
     </span>
@@ -185,6 +219,26 @@ function ItemRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
   )
 }
 
+function RepackOnlyRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="text-foreground hover:bg-accent flex w-full items-center gap-3 p-3 text-left"
+      >
+        <TypeDot type={item.type} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <ItemName item={item} />
+          <p className="text-muted-foreground text-sm tabular-nums">
+            {stockLine(item)} · {formatCents(item.costPerPieceCents)} a piece
+          </p>
+        </div>
+      </button>
+    </li>
+  )
+}
+
 function NeedsPriceCard({ item }: { item: Item }) {
   const save = useSaveItem()
 
@@ -202,56 +256,26 @@ function NeedsPriceCard({ item }: { item: Item }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {priceOptions(item.costPerPieceCents).map((option) => (
-          <button
-            key={`${option.priceCents}-${option.bundleSize}`}
-            type="button"
-            disabled={save.isPending}
-            onClick={() =>
-              save.mutate(
-                {
-                  id: item.id,
-                  version: item.version,
-                  edit: {
-                    name: item.name,
-                    type: item.type,
-                    storage: item.storage,
-                    priceCents: option.priceCents,
-                    bundleSize: option.bundleSize,
-                  },
-                },
-                {
-                  onSuccess: () =>
-                    toast.success(
-                      `${item.name} is ${priceLabel(option.priceCents, option.bundleSize)}.`,
-                    ),
-                  onError: (error) => toast.error(error.message),
-                },
-              )
-            }
-            className={cn(
-              'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
-              'hover:bg-accent disabled:opacity-60',
-              option.suggested && 'border-primary',
-            )}
-          >
-            <span className="flex w-full items-baseline justify-between gap-2">
-              <span className="font-heading text-lg font-semibold">
-                {priceLabel(option.priceCents, option.bundleSize)}
-              </span>
-              {option.suggested && (
-                <span className="text-ok text-xs font-semibold tracking-wide uppercase">
-                  Suggested
-                </span>
-              )}
-            </span>
-            <span className="text-muted-foreground text-sm">
-              {option.band.label} · {formatMargin(option.margin)} margin
-            </span>
-          </button>
-        ))}
-      </div>
+      <PriceOptionGrid
+        costPerPieceCents={item.costPerPieceCents}
+        disabled={save.isPending}
+        onPick={(option) =>
+          save.mutate(
+            {
+              id: item.id,
+              version: item.version,
+              edit: { ...editOf(item), ...option },
+            },
+            {
+              onSuccess: () =>
+                toast.success(
+                  `${item.name} is ${priceLabel(option.priceCents, option.bundleSize)}.`,
+                ),
+              onError: (error) => toast.error(error.message),
+            },
+          )
+        }
+      />
     </div>
   )
 }

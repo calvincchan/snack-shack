@@ -4,7 +4,12 @@ import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Stepper } from '@/components/stepper'
 import { TypeDot } from '@/components/item-bits'
-import { lastCountedLine, useSaveStockCount, type Item } from '@/lib/items'
+import {
+  itemName,
+  lastCountedLine,
+  useSaveStockCount,
+  type Item,
+} from '@/lib/items'
 
 const GROUPS = [
   { storage: 'shelf', title: 'Shelf' },
@@ -119,7 +124,7 @@ function CountRow({
     <li className="flex items-center gap-3 p-3">
       <TypeDot type={item.type} />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-medium">{item.name}</span>
+        <span className="font-medium">{itemName(item)}</span>
         <span className="text-muted-foreground text-sm tabular-nums">
           {last ?? 'Not counted yet'}
         </span>

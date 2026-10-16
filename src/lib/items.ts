@@ -22,6 +22,12 @@ export type Item = {
   boughtSince: number
   /** Pieces gone between the last two counts; null until counted twice. */
   piecesGone: number | null
+  /** Net repacked pieces since the last count: + made, − used (ADR-0019). */
+  repackedSince: number
+  /** A pack item: a repack made it (ADR-0019). Shown with 🎁. */
+  madeByRepack: boolean
+  /** Has gone into a repack. With no price, the item is Repack only. */
+  inRepacks: boolean
   isNew: boolean
   archived: boolean
   version: number
@@ -44,6 +50,9 @@ function toItem(row: OverviewRow): Item {
     lastCountedPieces: row.last_counted_pieces,
     boughtSince: row.bought_since ?? 0,
     piecesGone: row.pieces_gone,
+    repackedSince: row.repacked_since ?? 0,
+    madeByRepack: row.made_by_repack ?? false,
+    inRepacks: row.in_repacks ?? false,
     isNew: row.is_new ?? true,
     archived: row.archived ?? false,
     version: row.version!,
@@ -60,14 +69,37 @@ const shortDate = (when: string) =>
     timeZone: 'America/Vancouver',
   })
 
-/** "Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48". */
+/**
+ * What happened since the last count, naming only what did: "Counted 24 on
+ * Oct 1 · then bought 48", "Counted 2 on Oct 16 · then made 5", "Not counted
+ * · bought 250, 155 into packs", or just "Counted 24 on Oct 1".
+ */
 export function stockLine(
-  item: Pick<Item, 'lastCountedAt' | 'lastCountedPieces' | 'boughtSince'>,
+  item: Pick<
+    Item,
+    'lastCountedAt' | 'lastCountedPieces' | 'boughtSince' | 'repackedSince'
+  >,
 ): string {
+  const since = [
+    item.boughtSince > 0 && `bought ${item.boughtSince}`,
+    item.boughtSince < 0 && `returned ${-item.boughtSince}`,
+    // A pack item gains from repacks; a source item loses to them.
+    item.repackedSince > 0 && `made ${item.repackedSince}`,
+    item.repackedSince < 0 && `${-item.repackedSince} into packs`,
+  ]
+    .filter(Boolean)
+    .join(', ')
+
   if (item.lastCountedAt === null || item.lastCountedPieces === null) {
-    return `Not counted · bought ${item.boughtSince}`
+    return since ? `Not counted · ${since}` : 'Not counted'
   }
-  return `Counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)} · bought ${item.boughtSince} since`
+  const counted = `Counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)}`
+  return since ? `${counted} · then ${since}` : counted
+}
+
+/** "+31", "−155" (a true minus sign). */
+export function signedPieces(pieces: number): string {
+  return pieces > 0 ? `+${pieces}` : `−${Math.abs(pieces)}`
 }
 
 /** "Last counted 24 on Oct 1", or null when never counted. */
@@ -100,6 +132,32 @@ export type ItemEdit = {
   storage: Enums<'storage_kind'>
   priceCents: number | null
   bundleSize: number
+}
+
+/** The editable fields of an item, as they are now. */
+export function editOf(item: Item): ItemEdit {
+  return {
+    name: item.name,
+    type: item.type,
+    storage: item.storage,
+    priceCents: item.priceCents,
+    bundleSize: item.bundleSize,
+  }
+}
+
+/** Not priced yet. Repack only items need no price. */
+export function needsPrice(item: Pick<Item, 'priceCents' | 'inRepacks'>) {
+  return item.priceCents === null && !item.inRepacks
+}
+
+/** No price and has gone into a repack: never sold on its own. */
+export function isRepackOnly(item: Pick<Item, 'priceCents' | 'inRepacks'>) {
+  return item.priceCents === null && item.inRepacks
+}
+
+/** The name as shown: "🎁 Candy pack" for a pack item. Never saved. */
+export function itemName(item: { name: string; madeByRepack: boolean }) {
+  return item.madeByRepack ? `🎁 ${item.name}` : item.name
 }
 
 /** Someone else saved first; the caller decides whose edit wins. */

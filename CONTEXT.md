@@ -122,8 +122,15 @@ _Avoid_: Inventory, stocktake, audit
 Making a new item out of pieces of other items, such as 5 Peach Slices and 1 Sour Keys Gummy into one candy pack. It moves stock and cost from the source items to the pack item.
 _Avoid_: Bundle, kit, recipe, pre-bag
 
+**Pack item**:
+An item a repack made, such as Candy pack. Shown with 🎁. It goes into no other pack and isn't bought at the store.
+_Avoid_: Bundle, kit
+
 **Repack only**:
-An item that is never sold on its own, only repacked. It needs no price.
+A source item with no price, such as Peach Slices. Never sold on its own, so it needs no price. Not a setting: giving it a price makes it a regular item again.
+
+**Source item**:
+An item whose pieces went into a repack, such as Peach Slices in a candy pack. The app calls these "What went in", and the Items line says "155 into packs".
 _Avoid_: Ingredient, component
 
 **Deal check**:

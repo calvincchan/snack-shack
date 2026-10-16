@@ -99,7 +99,7 @@ Three segments: **Log purchase · Claims · Deal check**.
 
 **Log purchase** (one receipt = one claim)
 - Date, store (Costco / Superstore / Walmart / Other), **Bought by** (the volunteer to reimburse). Volunteers log their own; only the coordinator sees the picker and can log for someone else.
-- One card per receipt line: pick an existing item or **＋ New item** (name, Snack/Treat, Shelf/❄ Freezer), **pieces in total**, **cost incl. tax**. Assorted variety packs are **one item** (e.g. "Chips, assorted").
+- One card per receipt line: pick an existing item (pack items are left out, since stores don't sell them) or **＋ New item** (name, Snack/Treat, Shelf/❄ Freezer), **pieces in total**, **cost incl. tax**. Assorted variety packs are **one item** (e.g. "Chips, assorted").
 - Once pieces and cost are entered: cost per piece as plain text. No price is set here. A new item waits on the Items tab under *Needs a price*; an existing item keeps its price.
 - Receipt photo is **required**, shrunk on the phone to about 1600 px JPEG before upload. Only snack lines are logged; personal items on the same receipt are left off.
 - **Save and claim reimbursement:** adds the pieces to stock, updates item costs, creates the claim.
@@ -117,14 +117,16 @@ Three segments: **Log purchase · Claims · Deal check**.
 
 ### 4.3 Items
 
-- **Needs a price:** new items logged in Log purchase. Each shows cost per piece and the price options with band, margin and a **Suggested** marker. One tap on a price option prices the item.
-- **All items:** name, New tag, ❄ label, stock ("Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48"), cost per piece, margin %, band pill, price. Tap to open the editor:
+- **Needs a price:** new items logged in Log purchase. Each shows cost per piece and the price options with band, margin and a **Suggested** marker. One tap on a price option prices the item. An unpriced item that has gone into a repack moves to *Repack only* instead.
+- **All items:** name (🎁 before a pack item, everywhere it is shown), New tag, ❄ label, stock since the last count, naming only what happened ("Counted 24 on Oct 1 · then bought 48", "Counted 2 on Oct 16 · then made 5" for a pack item, "Not counted · bought 250, 155 into packs" for a source item, or just "Counted 24 on Oct 1"), cost per piece, margin %, band pill, price. Tap to open the editor:
   - **Price:** the four options with band and margin; current one highlighted, suggested one marked.
   - **Type:** Snack / Treat.
   - **Storage:** Shelf / ❄ Freezer.
   - **Name kids see.**
   - **Archive this item:** it stays in the history but is no longer shown in the list. *Show archived items* brings the list back, and the editor puts one back on the list.
+- **Repack only:** items with no price that have gone into a repack (ADR-0019). Stock and cost per piece; tap to edit. Giving one a price moves it back to *All items*.
 - **Count stock** button opens §4.4.
+- **Repack** button opens §4.4a.
 - Anyone on the team can edit any item, and changes apply at once. There is **no separate sale or clearance price**; to discount old stock, change the price.
 
 ### 4.4 Stock count
@@ -133,6 +135,15 @@ About once a term (ADR-0016). Any volunteer, any time.
 - Every active item, grouped by storage (Shelf, then ❄ Freezer) so volunteers walk the room once. Each row: a stepper (blank until touched) and "last counted 24 on Oct 1".
 - Skipped items stay uncounted. **Save count** posts one `count` movement per counted item for the difference from the ledger, and shows "Saved 12 items".
 - Saving twice on the same day is fine; the second save posts only the new difference.
+
+### 4.4a Repack
+
+Pieces of some items made into another item, such as 5 Peach Slices and 1 Sour Keys Gummy into one candy pack (ADR-0019). Any volunteer, three steps:
+1. **What went in:** every item except pack items. Tap each item and set pieces per pack with a stepper. Shows what one pack costs.
+2. **What you made:** only pack items (🎁), to make more of one, or **＋ New item** with the same name, Snack/Treat and Shelf/❄ Freezer fields as Log purchase, plus the four price options with band, margin and **Suggested**. With no pack items yet, New item opens by itself. A name that matches an existing item shows "There is already an item called …" (the same warning appears in Log purchase). Then **How many packs?**
+3. **Check and save:** each item's stock change ("Peach Slices −155", "🎁 Candy pack +31"), cost per pack, price, margin and band. A source item with fewer pieces on record than are going in shows "Mini bars: 200 going in, but only 130 on record. Check the numbers." Saving is still allowed. **Save repack** shows "Repacked 31 Candy packs".
+
+The warning never blocks, and there is no undo; the next stock count fixes the stock.
 
 ### 4.5 Insights
 
@@ -177,6 +188,7 @@ Money is stored as **integer cents**. Stock is stored as **pieces** (single bars
 
 - Receipt line cost is entered **including tax**. Cost per piece = line cost ÷ pieces.
 - Item cost used for margins and Insights: **weighted average** across stock on hand when a new purchase arrives (see `DATA_MODEL.md`). The prototype used the latest purchase cost; weighted average is the decided rule (ADR-0008).
+- A **repack** blends its pieces' cost (their cost per piece × pieces) into the pack item's weighted average the same way. The source items' cost doesn't change.
 
 ### 5.3 Margin bands
 
@@ -210,16 +222,17 @@ options         = price options with margins (5.3); rec = suggested
 deals           = floor(pieces ÷ rec.bundle_size)
 sales           = deals × rec.price
 profit          = sales − total
-usual cost      = average cost per piece of active, non-new items of the same type
+usual cost      = average cost per piece of active, non-new items of the same type (pack items left out)
 ```
 
 Output: band pill with the suggested price and margin; cost each; deals × price = sales; profit or loss on the box; "Cheaper/Pricier than our usual treats ($0.52 each on average)"; all four options with band and margin; **Bought it** button. (The old "lasts about N sale days" line needed per-day sales and is gone, ADR-0016.)
 
 ### 5.5 Stock and the ledger
 
-- Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), count (±, the difference at a stock count), donated (−), returned (−, a refund), correction (±, including the + that undoes a refund). Rows from before ADR-0015 may also be sold, out, missing, damaged or found.
-- Current stock = sum of the item's rows. Sale days don't post anything, so it's only accurate right after a stock count; the app shows "counted · bought since" instead.
+- Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), count (±, the difference at a stock count), donated (−), returned (−, a refund), repacked (− from each item that went in, + to the item made), correction (±, including the + that undoes a refund). Rows from before ADR-0015 may also be sold, out, missing, damaged or found.
+- Current stock = sum of the item's rows. Sale days don't post anything, so it's only accurate right after a stock count; the app shows the last count and what was bought, made or put into packs since instead.
 - **Bought since** = purchase rows minus returned rows since the item's last count.
+- **Repacked since** = repacked rows since the item's last count. Repacks are in the ledger, so they never show up as pieces gone.
 - **Pieces gone** between two counts = −(the count rows of the later count day, summed, Vancouver time), so saving twice in a day doesn't shrink it. It covers sold, eaten and lost. Needs counts on two different days.
 - Donations before summer are logged as **donated** movements.
 
@@ -252,7 +265,7 @@ Each rule is a query plus a sentence template. Show a sentence only when it appl
 2. **Revenue trend:** the last sale day's revenue against the average. "Revenue $12 above the usual $85."
 3. **Open count off:** sale days whose open count didn't match the last left in box this term. "Check the box between sale days."
 4. **Slowest mover:** the item with the fewest pieces gone between its last two counts. "Try a lower price on the Items tab."
-5. **Low margin stock:** items in a Low margin or At a loss band with stock bought since the last count.
+5. **Low margin stock:** items in a Low margin or At a loss band with stock bought, or packs made, since the last count.
 
 ### 5.9 Claims and the treasurer
 
@@ -314,4 +327,4 @@ The prototype's look was approved. Carry it over as shadcn/ui theme tokens.
 
 ## 8. Out of scope (for now)
 
-Per-sale logging, stock counts on sale days, a Sell helper or kid rules in the app, card payments, barcode scanning, pre-bagging, splitting variety packs into flavours, separate sale/clearance prices, a "healthy pick" tag, an approval step for claims, e-transfer or one-tap payment links, AI-written insights, multiple schools. Reasons are in [`adr/`](adr/).
+Per-sale logging, stock counts on sale days, a Sell helper or kid rules in the app, card payments, barcode scanning, pre-bagging deal items (repacking into a new item is in, ADR-0019), splitting variety packs into flavours, separate sale/clearance prices, a "healthy pick" tag, an approval step for claims, e-transfer or one-tap payment links, AI-written insights, multiple schools. Reasons are in [`adr/`](adr/).

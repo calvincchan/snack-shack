@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { cn } from 'cn'
 import {
   Sheet,
   SheetContent,
@@ -22,25 +21,18 @@ import { Label } from '@/components/ui/label'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   ItemChangedError,
+  editOf,
+  itemName,
   stockLine,
   useSaveItem,
   useSetArchived,
   type Item,
   type ItemEdit,
 } from '@/lib/items'
-import { formatMargin, priceLabel, priceOptions } from '@/lib/pricing'
+import { priceLabel } from '@/lib/pricing'
+import { PriceOptionGrid } from '@/components/price-option-grid'
 import { timeAgo } from '@/lib/time'
 import { HistoryList } from '@/components/history-list'
-
-function editOf(item: Item): ItemEdit {
-  return {
-    name: item.name,
-    type: item.type,
-    storage: item.storage,
-    priceCents: item.priceCents,
-    bundleSize: item.bundleSize,
-  }
-}
 
 export function ItemEditor({
   item,
@@ -90,7 +82,7 @@ export function ItemEditor({
           className="max-h-[90dvh] gap-4 overflow-y-auto"
         >
           <SheetHeader>
-            <SheetTitle>{item.name}</SheetTitle>
+            <SheetTitle>{itemName(item)}</SheetTitle>
             <SheetDescription>
               {stockLine(item)} · {priceLabel(item.priceCents, item.bundleSize)}
             </SheetDescription>
@@ -101,46 +93,11 @@ export function ItemEditor({
               <legend className="text-muted-foreground pb-2 text-xs font-semibold tracking-wide uppercase">
                 Price
               </legend>
-              <div className="grid grid-cols-2 gap-2">
-                {priceOptions(item.costPerPieceCents).map((option) => {
-                  const chosen =
-                    edit.priceCents === option.priceCents &&
-                    edit.bundleSize === option.bundleSize
-                  return (
-                    <button
-                      key={`${option.priceCents}-${option.bundleSize}`}
-                      type="button"
-                      aria-pressed={chosen}
-                      onClick={() =>
-                        setEdit({
-                          ...edit,
-                          priceCents: option.priceCents,
-                          bundleSize: option.bundleSize,
-                        })
-                      }
-                      className={cn(
-                        'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
-                        chosen && 'border-primary ring-primary ring-2',
-                      )}
-                    >
-                      <span className="flex w-full items-baseline justify-between gap-2">
-                        <span className="font-heading text-lg font-semibold">
-                          {priceLabel(option.priceCents, option.bundleSize)}
-                        </span>
-                        {option.suggested && (
-                          <span className="text-ok text-xs font-semibold tracking-wide uppercase">
-                            Suggested
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-muted-foreground text-sm">
-                        {option.band.label} · {formatMargin(option.margin)}{' '}
-                        margin
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
+              <PriceOptionGrid
+                costPerPieceCents={item.costPerPieceCents}
+                chosen={edit}
+                onPick={(option) => setEdit({ ...edit, ...option })}
+              />
             </fieldset>
 
             <div className="flex flex-col gap-2">

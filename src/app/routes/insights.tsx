@@ -2,6 +2,7 @@ import { formatCents } from '@/lib/money'
 import { formatSaleDate, formatSaleDateShort } from '@/lib/time'
 import { openDiffLabel, type SaleDay } from '@/lib/sale-day'
 import { formatMargin } from '@/lib/pricing'
+import { itemName } from '@/lib/items'
 import {
   monthLabel,
   sentences,
@@ -228,7 +229,7 @@ function ItemsSinceCount({ items }: { items: CountedItem[] }) {
               className="flex items-center justify-between gap-3 py-2 text-sm"
             >
               <div className="flex flex-col">
-                <b>{item.name}</b>
+                <b>{itemName(item)}</b>
                 <span className="text-muted-foreground text-xs tabular-nums">
                   {item.piecesGone} gone
                   {item.revenueEstimateCents !== null &&
