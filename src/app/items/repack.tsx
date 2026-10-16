@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Stepper } from '@/components/stepper'
 import { BandPill, TypeDot } from '@/components/item-bits'
 import { NewItemFields, type NewItemDraft } from '@/components/new-item-fields'
-import { signedPieces, type Item } from '@/lib/items'
+import { itemName, signedPieces, type Item } from '@/lib/items'
 import { formatCents } from '@/lib/money'
 import {
   formatMargin,
@@ -50,6 +50,10 @@ export function Repack({
   const [packs, setPacks] = useState<number | null>(null)
   const repack = useRepack()
 
+  // Pack items are what you make; everything else is what goes in.
+  const ingredients = items.filter((item) => !item.madeByRepack)
+  const packItems = items.filter((item) => item.madeByRepack)
+
   // A preview, like the price options: repack() works out the stored cost.
   const costPerPack = costPerPackCents(sources, items)
   const packItem = items.find((item) => item.id === packItemId)
@@ -73,7 +77,12 @@ export function Repack({
         ? prev.filter((s) => s.itemId !== itemId)
         : [...prev, { itemId, perPack: 1 }],
     )
-    if (itemId === packItemId) setPackItemId(null)
+  }
+
+  function toMade() {
+    setStep(1)
+    // Nothing made before: go straight to the new item.
+    if (packItems.length === 0) startNewItem()
   }
 
   function startNewItem() {
@@ -148,7 +157,7 @@ export function Repack({
             Tap each item, then set how many pieces go in one pack.
           </p>
           <ul className="flex flex-col gap-2" aria-label="Items">
-            {items.map((item) => {
+            {ingredients.map((item) => {
               const source = sources.find((s) => s.itemId === item.id)
               return (
                 <li
@@ -197,7 +206,7 @@ export function Repack({
             size="lg"
             className="text-primary-foreground min-h-12"
             disabled={sources.length === 0}
-            onClick={() => setStep(1)}
+            onClick={toMade}
           >
             Next
           </Button>
@@ -210,32 +219,29 @@ export function Repack({
             What did you make?
           </h2>
           <div className="flex flex-col gap-2">
-            {items
-              .filter((item) => !sources.some((s) => s.itemId === item.id))
-              .filter((item) => !item.repackOnly)
-              .map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={packItemId === item.id}
-                  onClick={() => {
-                    setPackItemId(item.id)
-                    setNewItem(null)
-                  }}
-                  className={cn(
-                    'border-border text-foreground flex min-h-12 items-center gap-3 rounded-xl border p-3 text-left',
-                    packItemId === item.id
-                      ? 'border-primary bg-accent'
-                      : 'bg-card',
-                  )}
-                >
-                  <TypeDot type={item.type} />
-                  <span className="flex-1 font-medium">{item.name}</span>
-                  <span className="text-muted-foreground text-sm">
-                    {priceLabel(item.priceCents, item.bundleSize)}
-                  </span>
-                </button>
-              ))}
+            {packItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={packItemId === item.id}
+                onClick={() => {
+                  setPackItemId(item.id)
+                  setNewItem(null)
+                }}
+                className={cn(
+                  'border-border text-foreground flex min-h-12 items-center gap-3 rounded-xl border p-3 text-left',
+                  packItemId === item.id
+                    ? 'border-primary bg-accent'
+                    : 'bg-card',
+                )}
+              >
+                <TypeDot type={item.type} />
+                <span className="flex-1 font-medium">{itemName(item)}</span>
+                <span className="text-muted-foreground text-sm">
+                  {priceLabel(item.priceCents, item.bundleSize)}
+                </span>
+              </button>
+            ))}
             <button
               type="button"
               aria-pressed={newItem !== null}
@@ -255,6 +261,7 @@ export function Repack({
                 id="repack"
                 context="for the new item"
                 placeholder="e.g. Candy pack"
+                existingNames={items.map((item) => item.name)}
                 value={newItem}
                 onChange={(change) => setNewItem({ ...newItem, ...change })}
               />
@@ -321,7 +328,7 @@ export function Repack({
               </li>
             ))}
             <li className="flex items-center justify-between p-3 tabular-nums">
-              <span className="font-medium">{packName}</span>
+              <span className="font-medium">🛍️ {packName}</span>
               <span className="font-heading text-ok text-lg font-semibold">
                 {signedPieces(packs ?? 0)}
               </span>

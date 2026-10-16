@@ -685,7 +685,6 @@ declare
   v_cost numeric;
   v_on_hand int;
   v_archived boolean;
-  v_repack_only boolean;
 begin
   perform public.require_member();
   if v_id is null then raise exception 'A repack needs an id.'; end if;
@@ -710,11 +709,9 @@ begin
             coalesce((p -> 'new_item' ->> 'bundle_size')::int, 1))
     returning id into v_pack;
   else
-    select archived, repack_only into v_archived, v_repack_only
-    from public.items where id = v_pack;
+    select archived into v_archived from public.items where id = v_pack;
     if not found then raise exception 'That item no longer exists.'; end if;
     if v_archived then raise exception 'That item is archived.'; end if;
-    if v_repack_only then raise exception 'That item is repack only, so it cannot be made.'; end if;
   end if;
 
   insert into public.repacks (id, pack_item_id, packs, note)
@@ -1015,7 +1012,6 @@ CREATE TABLE IF NOT EXISTS "public"."items" (
     "created_by" "uuid" DEFAULT "public"."actor"(),
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_by" "uuid" DEFAULT "public"."actor"(),
-    "repack_only" boolean DEFAULT false NOT NULL,
     CONSTRAINT "items_name_check" CHECK (("length"(TRIM(BOTH FROM "name")) > 0)),
     CONSTRAINT "items_price_option" CHECK ((("price_cents" IS NULL) OR (("price_cents" = 100) AND ("bundle_size" = ANY (ARRAY[1, 2, 3]))) OR (("price_cents" = 200) AND ("bundle_size" = 1)))),
     CONSTRAINT "items_unit_cost_cents_check" CHECK (("unit_cost_cents" >= (0)::numeric))
@@ -1369,6 +1365,18 @@ CREATE OR REPLACE VIEW "public"."item_counts" WITH ("security_invoker"='true') A
 
 ALTER VIEW "public"."item_counts" OWNER TO "postgres";
 
+CREATE TABLE IF NOT EXISTS "public"."repacks" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "pack_item_id" "uuid" NOT NULL,
+    "packs" integer NOT NULL,
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "public"."actor"(),
+    CONSTRAINT "repacks_packs_check" CHECK (("packs" >= 1))
+);
+
+ALTER TABLE "public"."repacks" OWNER TO "postgres";
+
 CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true') AS
  SELECT "i"."id" AS "item_id",
     "i"."name",
@@ -1384,10 +1392,13 @@ CREATE OR REPLACE VIEW "public"."insights_items" WITH ("security_invoker"='true'
         CASE
             WHEN ("i"."price_cents" IS NOT NULL) THEN ((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric))
             ELSE NULL::numeric
-        END AS "margin"
+        END AS "margin",
+    (EXISTS ( SELECT 1
+           FROM "public"."repacks" "r"
+          WHERE ("r"."pack_item_id" = "i"."id"))) AS "made_by_repack"
    FROM ("public"."items" "i"
      JOIN "public"."item_counts" "c" ON (("c"."item_id" = "i"."id")))
-  WHERE (("c"."pieces_gone" IS NOT NULL) AND (NOT "i"."archived") AND (NOT "i"."repack_only"));
+  WHERE (("c"."pieces_gone" IS NOT NULL) AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL));
 
 ALTER VIEW "public"."insights_items" OWNER TO "postgres";
 
@@ -1398,7 +1409,7 @@ CREATE OR REPLACE VIEW "public"."insights_low_margin_items" WITH ("security_invo
     ((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) AS "margin"
    FROM ("public"."items" "i"
      JOIN "public"."item_counts" "c" ON (("c"."item_id" = "i"."id")))
-  WHERE ((NOT "i"."archived") AND (NOT "i"."repack_only") AND ("i"."price_cents" IS NOT NULL) AND ("c"."bought_since" > 0) AND (((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) < 0.3));
+  WHERE ((NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("c"."bought_since" > 0) AND (((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) < 0.3));
 
 ALTER VIEW "public"."insights_low_margin_items" OWNER TO "postgres";
 
@@ -1506,9 +1517,13 @@ CREATE OR REPLACE VIEW "public"."item_overview" WITH ("security_invoker"='true')
     "c"."bought_since",
     "c"."pieces_gone",
     "c"."repacked_since",
-    "it"."repack_only"
-   FROM (((("public"."item_stock" "s"
-     JOIN "public"."items" "it" ON (("it"."id" = "s"."id")))
+    (EXISTS ( SELECT 1
+           FROM "public"."repacks" "r"
+          WHERE ("r"."pack_item_id" = "s"."id"))) AS "made_by_repack",
+    (EXISTS ( SELECT 1
+           FROM "public"."stock_movements" "m"
+          WHERE (("m"."item_id" = "s"."id") AND ("m"."reason" = 'repacked'::"public"."movement_reason") AND ("m"."qty" < 0)))) AS "in_repacks"
+   FROM ((("public"."item_stock" "s"
      LEFT JOIN LATERAL ( SELECT "pr"."display_name" AS "buyer_name",
             "p"."purchased_on"
            FROM (("public"."purchase_lines" "l"
@@ -1545,18 +1560,6 @@ ALTER TABLE "public"."purchases" ALTER COLUMN "claim_no" ADD GENERATED ALWAYS AS
     CACHE 1
 );
 
-CREATE TABLE IF NOT EXISTS "public"."repacks" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "pack_item_id" "uuid" NOT NULL,
-    "packs" integer NOT NULL,
-    "note" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "public"."actor"(),
-    CONSTRAINT "repacks_packs_check" CHECK (("packs" >= 1))
-);
-
-ALTER TABLE "public"."repacks" OWNER TO "postgres";
-
 CREATE TABLE IF NOT EXISTS "public"."settings" (
     "id" boolean DEFAULT true NOT NULL,
     "float_cents" integer DEFAULT 3000 NOT NULL,
@@ -1583,9 +1586,9 @@ CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true
  SELECT "type",
     COALESCE(( SELECT "avg"("i"."unit_cost_cents") AS "avg"
            FROM "public"."item_overview" "i"
-          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."repack_only") AND (NOT "i"."is_new") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."is_new") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
            FROM "public"."item_overview" "i"
-          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."repack_only") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents"
    FROM ( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type");
 
 ALTER VIEW "public"."type_benchmarks" OWNER TO "postgres";
@@ -2075,6 +2078,10 @@ GRANT ALL ON TABLE "public"."item_counts" TO "anon";
 GRANT ALL ON TABLE "public"."item_counts" TO "authenticated";
 GRANT ALL ON TABLE "public"."item_counts" TO "service_role";
 
+GRANT ALL ON TABLE "public"."repacks" TO "anon";
+GRANT ALL ON TABLE "public"."repacks" TO "authenticated";
+GRANT ALL ON TABLE "public"."repacks" TO "service_role";
+
 GRANT ALL ON TABLE "public"."insights_items" TO "anon";
 GRANT ALL ON TABLE "public"."insights_items" TO "authenticated";
 GRANT ALL ON TABLE "public"."insights_items" TO "service_role";
@@ -2114,10 +2121,6 @@ GRANT ALL ON TABLE "public"."last_claims_send" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."purchases_claim_no_seq" TO "service_role";
-
-GRANT ALL ON TABLE "public"."repacks" TO "anon";
-GRANT ALL ON TABLE "public"."repacks" TO "authenticated";
-GRANT ALL ON TABLE "public"."repacks" TO "service_role";
 
 GRANT ALL ON TABLE "public"."settings" TO "anon";
 GRANT ALL ON TABLE "public"."settings" TO "authenticated";

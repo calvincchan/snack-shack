@@ -20,8 +20,11 @@ test('a repack moves stock into a new item and shows on Items', async ({
   await expect(page.getByText('One pack costs $1.04')).toBeVisible()
   await page.getByRole('button', { name: 'Next' }).click()
 
-  // 2. What you made: a new item at $2, 3 packs.
-  await page.getByRole('button', { name: 'New item' }).click()
+  // 2. What you made: nothing made before, so New item is open. $2, 3 packs.
+  await expect(page.getByRole('button', { name: 'New item' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await page.getByLabel('Name kids will see').fill('Movie night pack')
   await page
     .getByRole('radiogroup', { name: 'Type for the new item' })
@@ -51,26 +54,34 @@ test('a repack moves stock into a new item and shows on Items', async ({
   ).toContainText('repacked −6')
 })
 
-test('an item set to repack only moves to its own list', async ({ page }) => {
+test('a second repack adds to the pack item', async ({ page }) => {
   await signIn(page, COORDINATOR_EMAIL)
   await page.getByRole('link', { name: /^Items/ }).click()
-
-  await page
-    .getByRole('list', { name: 'All items' })
-    .getByRole('button', { name: /Movie night pack/ })
-    .click()
-  await page.getByRole('radio', { name: 'Repack only' }).click()
-  await expect(
-    page.getByText(
-      'Only used in repacks. Needs no price and stays out of Insights.',
-    ),
-  ).toBeVisible()
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
-
   await expect(
     page
-      .getByRole('list', { name: 'Repack only items' })
+      .getByRole('list', { name: 'All items' })
+      .getByRole('button', { name: /🛍️ Movie night pack/ }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Repack', exact: true }).click()
+
+  // 1. Pack items do not go into packs.
+  const ingredients = page.getByRole('list', { name: 'Items' })
+  await expect(ingredients).not.toContainText('Movie night pack')
+  await page.getByRole('button', { name: /Popcorn, lightly salted/ }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
+
+  // 2. Only pack items, plus New item.
+  await expect(page.getByRole('button', { name: /Popcorn/ })).toHaveCount(0)
+  await page.getByRole('button', { name: /🛍️ Movie night pack/ }).click()
+  await page.getByRole('textbox', { name: 'Packs made' }).fill('2')
+  await page.getByRole('button', { name: 'Next' }).click()
+  await page.getByRole('button', { name: 'Save repack' }).click()
+
+  await expect(page.getByText('Repacked 2 Movie night packs')).toBeVisible()
+  await expect(
+    page
+      .getByRole('list', { name: 'All items' })
       .getByRole('listitem')
       .filter({ hasText: 'Movie night pack' }),
-  ).toContainText('repacked +3')
+  ).toContainText('repacked +5')
 })

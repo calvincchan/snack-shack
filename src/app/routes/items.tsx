@@ -7,6 +7,8 @@ import { CountStock } from '@/app/items/count-stock'
 import { Repack } from '@/app/items/repack'
 import {
   editOf,
+  isRepackOnly,
+  itemName,
   needsPrice,
   stockLine,
   useItems,
@@ -28,10 +30,8 @@ export function ItemsPage() {
   const all = items.data ?? []
   const active = all.filter((item) => !item.archived)
   const needPrice = active.filter(needsPrice)
-  const priced = active.filter(
-    (item) => item.priceCents !== null && !item.repackOnly,
-  )
-  const repackOnly = active.filter((item) => item.repackOnly)
+  const priced = active.filter((item) => item.priceCents !== null)
+  const repackOnly = active.filter(isRepackOnly)
   const archived = all.filter((item) => item.archived)
 
   if (counting) {
@@ -179,7 +179,7 @@ function SectionHeading({ title, note }: { title: string; note?: string }) {
 function ItemName({ item }: { item: Item }) {
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <span className="font-medium">{item.name}</span>
+      <span className="font-medium">{itemName(item)}</span>
       {item.isNew && <Tag>New</Tag>}
       {item.storage === 'freezer' && <Tag>❄ Freezer</Tag>}
     </span>
@@ -276,30 +276,6 @@ function NeedsPriceCard({ item }: { item: Item }) {
           )
         }
       />
-
-      <button
-        type="button"
-        disabled={save.isPending}
-        className="text-muted-foreground min-h-11 self-start text-sm underline underline-offset-4 disabled:opacity-60"
-        onClick={() =>
-          save.mutate(
-            {
-              id: item.id,
-              version: item.version,
-              edit: { ...editOf(item), priceCents: null, repackOnly: true },
-            },
-            {
-              onSuccess: () =>
-                toast.success(
-                  `${item.name} is repack only. It needs no price.`,
-                ),
-              onError: (error) => toast.error(error.message),
-            },
-          )
-        }
-      >
-        Not sold on its own? Mark repack only
-      </button>
     </div>
   )
 }

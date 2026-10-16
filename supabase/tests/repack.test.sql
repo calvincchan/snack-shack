@@ -102,21 +102,22 @@ select public.save_stock_count(format('[{"item_id":"%s","pieces":80}]', (select 
 select is((select pieces_gone from public.item_counts where item_id = (select id from ids where name = 'Peach Slices')),
   5, 'repacked pieces are not counted as gone');
 
--- Repack only items stay out of insights and Deal check.
-update public.items set repack_only = true where name in ('Peach Slices', 'Sour Keys');
-select is((select repack_only from public.item_overview where name = 'Peach Slices'), true, 'Items reads the flag');
+-- Pack items and repack sources are derived, never stored.
+select is((select made_by_repack || ' ' || in_repacks from public.item_overview where name = 'Candy pack'),
+  'true false', 'a pack item is one a repack made');
+select is((select made_by_repack || ' ' || in_repacks from public.item_overview where name = 'Peach Slices'),
+  'false true', 'a source has gone into a repack');
+select is((select made_by_repack || ' ' || in_repacks from public.item_overview where name = 'Chips'),
+  'false false', 'other items are neither');
+
+-- Unpriced Peach Slices (Repack only) stay out of item insights and Deal check.
 select is((select count(*)::int from public.insights_items where name = 'Peach Slices'), 0,
-  'repack only items are left out of item insights');
-reset role;
-update public.items set price_cents = 100 where name = 'Peach Slices';
-set local role authenticated;
-select is((select count(*)::int from public.insights_low_margin_items where name = 'Peach Slices'), 0,
-  'and out of low margin stock even with a price');
+  'items with no price are left out of item insights');
 select is((select count(*)::int from public.insights_slowest_item where name = 'Peach Slices'), 0,
   'and out of the slowest mover');
 select is((select usual_cost_cents from public.type_benchmarks where type = 'treat'),
   (select unit_cost_cents from public.items where name = 'Candy pack'),
-  'and out of the Deal check benchmark');
+  'the Deal check benchmark uses priced items only');
 
 -- Rules.
 select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 0, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
@@ -150,9 +151,6 @@ select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000
 select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
   (select id from ids where name = 'Chips'), (select id from ids where name = 'Sour Keys')),
   'P0001', 'That item is archived.', 'no archived pack item');
-select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
-  (select id from ids where name = 'Peach Slices'), (select id from ids where name = 'Sour Keys')),
-  'P0001', 'That item is repack only, so it cannot be made.', 'no repack only pack item');
 select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "99999999-0000-0000-0000-000000000000", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
   (select id from ids where name = 'Sour Keys')),
   'P0001', 'That item no longer exists.', 'the pack item must exist');

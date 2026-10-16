@@ -22,6 +22,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   ItemChangedError,
   editOf,
+  itemName,
   stockLine,
   useSaveItem,
   useSetArchived,
@@ -81,7 +82,7 @@ export function ItemEditor({
           className="max-h-[90dvh] gap-4 overflow-y-auto"
         >
           <SheetHeader>
-            <SheetTitle>{item.name}</SheetTitle>
+            <SheetTitle>{itemName(item)}</SheetTitle>
             <SheetDescription>
               {stockLine(item)} · {priceLabel(item.priceCents, item.bundleSize)}
             </SheetDescription>
@@ -162,44 +163,6 @@ export function ItemEditor({
                   ❄ Freezer
                 </ToggleGroupItem>
               </ToggleGroup>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label
-                id="edit-selling"
-                className="text-muted-foreground text-xs font-semibold tracking-wide uppercase"
-              >
-                Selling
-              </Label>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                aria-labelledby="edit-selling"
-                className="w-full"
-                value={edit.repackOnly ? 'repack' : 'sold'}
-                onValueChange={(value) =>
-                  value && setEdit({ ...edit, repackOnly: value === 'repack' })
-                }
-              >
-                <ToggleGroupItem
-                  value="sold"
-                  className="text-foreground min-h-12 flex-1"
-                >
-                  Sold on its own
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  value="repack"
-                  className="text-foreground min-h-12 flex-1"
-                >
-                  Repack only
-                </ToggleGroupItem>
-              </ToggleGroup>
-              {edit.repackOnly && (
-                <p className="text-muted-foreground text-sm">
-                  Only used in repacks. Needs no price and stays out of
-                  Insights.
-                </p>
-              )}
             </div>
 
             <div className="flex flex-col gap-2">

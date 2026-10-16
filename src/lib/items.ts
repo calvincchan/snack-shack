@@ -24,8 +24,10 @@ export type Item = {
   piecesGone: number | null
   /** Net repacked pieces since the last count: + made, − used (ADR-0019). */
   repackedSince: number
-  /** Never sold on its own, only repacked; needs no price. */
-  repackOnly: boolean
+  /** A pack item: a repack made it (ADR-0019). Shown with 🛍️. */
+  madeByRepack: boolean
+  /** Has gone into a repack. With no price, the item is Repack only. */
+  inRepacks: boolean
   isNew: boolean
   archived: boolean
   version: number
@@ -49,7 +51,8 @@ function toItem(row: OverviewRow): Item {
     boughtSince: row.bought_since ?? 0,
     piecesGone: row.pieces_gone,
     repackedSince: row.repacked_since ?? 0,
-    repackOnly: row.repack_only ?? false,
+    madeByRepack: row.made_by_repack ?? false,
+    inRepacks: row.in_repacks ?? false,
     isNew: row.is_new ?? true,
     archived: row.archived ?? false,
     version: row.version!,
@@ -117,7 +120,6 @@ export type ItemEdit = {
   storage: Enums<'storage_kind'>
   priceCents: number | null
   bundleSize: number
-  repackOnly: boolean
 }
 
 /** The editable fields of an item, as they are now. */
@@ -128,13 +130,22 @@ export function editOf(item: Item): ItemEdit {
     storage: item.storage,
     priceCents: item.priceCents,
     bundleSize: item.bundleSize,
-    repackOnly: item.repackOnly,
   }
 }
 
-/** Sold on its own but not priced yet. Repack only items need no price. */
-export function needsPrice(item: Pick<Item, 'priceCents' | 'repackOnly'>) {
-  return item.priceCents === null && !item.repackOnly
+/** Not priced yet. Repack only items need no price. */
+export function needsPrice(item: Pick<Item, 'priceCents' | 'inRepacks'>) {
+  return item.priceCents === null && !item.inRepacks
+}
+
+/** No price and has gone into a repack: never sold on its own. */
+export function isRepackOnly(item: Pick<Item, 'priceCents' | 'inRepacks'>) {
+  return item.priceCents === null && item.inRepacks
+}
+
+/** The name as shown: "🛍️ Candy pack" for a pack item. Never saved. */
+export function itemName(item: { name: string; madeByRepack: boolean }) {
+  return item.madeByRepack ? `🛍️ ${item.name}` : item.name
 }
 
 /** Someone else saved first; the caller decides whose edit wins. */
@@ -187,7 +198,6 @@ export function useSaveItem() {
           storage: edit.storage,
           price_cents: edit.priceCents,
           bundle_size: edit.bundleSize,
-          repack_only: edit.repackOnly,
         })
         .eq('id', id)
         .eq('version', version)

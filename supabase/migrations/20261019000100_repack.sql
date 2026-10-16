@@ -1,16 +1,11 @@
 -- Repacking (ADR-0019, #85). Volunteers make a new item out of pieces of other
 -- items, such as 5 Peach Slices and 1 Sour Keys Gummy into one candy pack.
--- repack() moves the stock and the cost over in one transaction; Repack only
--- items are never sold on their own, so they need no price and stay out of the
--- item insights.
+-- repack() moves the stock and the cost over in one transaction. Items get no
+-- flag: a pack item is one a repack made, and an item with no price that has
+-- gone into a repack is Repack only.
 
 -------------------------------------------------------------------------------
--- 1. Items that are only repacked
--------------------------------------------------------------------------------
-alter table public.items add column repack_only boolean not null default false;
-
--------------------------------------------------------------------------------
--- 2. A repack, and its movements in the ledger
+-- 1. A repack, and its movements in the ledger
 -------------------------------------------------------------------------------
 create table public.repacks (
   id           uuid primary key default gen_random_uuid(),  -- client supplies it (idempotent retries)
@@ -66,7 +61,7 @@ create trigger stock_movements_repack_side before insert on public.stock_movemen
   for each row when (new.reason = 'repacked') execute function public.check_repack_side();
 
 -------------------------------------------------------------------------------
--- 3. Items tab: repacked pieces since the last count, and the flag
+-- 2. Items tab: repacked pieces since the last count, pack items, repack sources
 -------------------------------------------------------------------------------
 create or replace view public.item_counts with (security_invoker = true) as
 with last_count as (
@@ -117,9 +112,12 @@ select s.*,
        c.bought_since,
        c.pieces_gone,
        c.repacked_since,
-       it.repack_only
+       -- A pack item is one a repack made; never stored, so it cannot drift.
+       exists (select 1 from public.repacks r where r.pack_item_id = s.id) as made_by_repack,
+       -- Has gone into a repack. With no price, the item is Repack only.
+       exists (select 1 from public.stock_movements m
+                where m.item_id = s.id and m.reason = 'repacked' and m.qty < 0) as in_repacks
 from public.item_stock s
-join public.items it on it.id = s.id
 left join lateral (
   select pr.display_name as buyer_name, p.purchased_on
   from public.purchase_lines l
@@ -133,7 +131,7 @@ left join public.profiles editor on editor.id = s.updated_by
 left join public.item_counts c on c.item_id = s.id;
 
 -------------------------------------------------------------------------------
--- 4. Repack only items stay out of the item insights and Deal check
+-- 3. Item insights count only items with a price: one without is not sold
 -------------------------------------------------------------------------------
 create or replace view public.insights_items with (security_invoker = true) as
 select i.id as item_id,
@@ -148,38 +146,17 @@ select i.id as item_id,
        end as revenue_estimate_cents,
        case when i.price_cents is not null
             then 1 - (i.unit_cost_cents * i.bundle_size) / i.price_cents
-       end as margin
+       end as margin,
+       exists (select 1 from public.repacks r where r.pack_item_id = i.id) as made_by_repack
   from public.items i
   join public.item_counts c on c.item_id = i.id
- where c.pieces_gone is not null and not i.archived and not i.repack_only;
+ where c.pieces_gone is not null and not i.archived and i.price_cents is not null;
 
--- insights_slowest_item reads insights_items, so it follows.
-
-create or replace view public.insights_low_margin_items with (security_invoker = true) as
-select i.id as item_id, i.name, c.bought_since,
-       1 - (i.unit_cost_cents * i.bundle_size) / i.price_cents as margin
-  from public.items i
-  join public.item_counts c on c.item_id = i.id
- where not i.archived
-   and not i.repack_only
-   and i.price_cents is not null
-   and c.bought_since > 0
-   and 1 - (i.unit_cost_cents * i.bundle_size) / i.price_cents < 0.3;
-
-create or replace view public.type_benchmarks with (security_invoker = true) as
-select t.type,
-       coalesce(
-         (select avg(i.unit_cost_cents) from public.item_overview i
-           where i.type = t.type and not i.archived and not i.repack_only and not i.is_new
-             and i.price_cents is not null and i.unit_cost_cents > 0),
-         (select avg(i.unit_cost_cents) from public.item_overview i
-           where i.type = t.type and not i.archived and not i.repack_only
-             and i.price_cents is not null and i.unit_cost_cents > 0)
-       ) as usual_cost_cents
-from (values ('snack'::public.item_type), ('treat'::public.item_type)) t(type);
+-- insights_slowest_item reads insights_items, so it follows. The low margin
+-- list and the Deal check benchmark already need a price.
 
 -------------------------------------------------------------------------------
--- 5. Record a repack
+-- 4. Record a repack
 -------------------------------------------------------------------------------
 -- p: {
 --   "id": "...",                         client-generated; a retry returns it again
@@ -206,7 +183,6 @@ declare
   v_cost numeric;
   v_on_hand int;
   v_archived boolean;
-  v_repack_only boolean;
 begin
   perform public.require_member();
   if v_id is null then raise exception 'A repack needs an id.'; end if;
@@ -231,11 +207,9 @@ begin
             coalesce((p -> 'new_item' ->> 'bundle_size')::int, 1))
     returning id into v_pack;
   else
-    select archived, repack_only into v_archived, v_repack_only
-    from public.items where id = v_pack;
+    select archived into v_archived from public.items where id = v_pack;
     if not found then raise exception 'That item no longer exists.'; end if;
     if v_archived then raise exception 'That item is archived.'; end if;
-    if v_repack_only then raise exception 'That item is repack only, so it cannot be made.'; end if;
   end if;
 
   insert into public.repacks (id, pack_item_id, packs, note)

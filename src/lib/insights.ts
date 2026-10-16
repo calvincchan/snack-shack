@@ -38,6 +38,8 @@ export type CountedItem = {
   revenueEstimateCents: number | null
   /** Null while the item has no price. */
   margin: number | null
+  /** A pack item (ADR-0019), shown with 🛍️. */
+  madeByRepack: boolean
 }
 
 /** The facts behind each rule; a null or empty entry means it doesn't apply. */
@@ -83,6 +85,7 @@ export function toCountedItem(row: ItemRow): CountedItem {
     piecesGone: row.pieces_gone ?? 0,
     revenueEstimateCents: row.revenue_estimate_cents,
     margin: row.margin,
+    madeByRepack: row.made_by_repack ?? false,
   }
 }
 

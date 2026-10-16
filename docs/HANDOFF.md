@@ -99,7 +99,7 @@ Three segments: **Log purchase · Claims · Deal check**.
 
 **Log purchase** (one receipt = one claim)
 - Date, store (Costco / Superstore / Walmart / Other), **Bought by** (the volunteer to reimburse). Volunteers log their own; only the coordinator sees the picker and can log for someone else.
-- One card per receipt line: pick an existing item or **＋ New item** (name, Snack/Treat, Shelf/❄ Freezer), **pieces in total**, **cost incl. tax**. Assorted variety packs are **one item** (e.g. "Chips, assorted").
+- One card per receipt line: pick an existing item (pack items are left out, since stores don't sell them) or **＋ New item** (name, Snack/Treat, Shelf/❄ Freezer), **pieces in total**, **cost incl. tax**. Assorted variety packs are **one item** (e.g. "Chips, assorted").
 - Once pieces and cost are entered: cost per piece as plain text. No price is set here. A new item waits on the Items tab under *Needs a price*; an existing item keeps its price.
 - Receipt photo is **required**, shrunk on the phone to about 1600 px JPEG before upload. Only snack lines are logged; personal items on the same receipt are left off.
 - **Save and claim reimbursement:** adds the pieces to stock, updates item costs, creates the claim.
@@ -117,15 +117,14 @@ Three segments: **Log purchase · Claims · Deal check**.
 
 ### 4.3 Items
 
-- **Needs a price:** new items logged in Log purchase. Each shows cost per piece and the price options with band, margin and a **Suggested** marker. One tap on a price option prices the item. **Not sold on its own? Mark repack only** moves it to *Repack only* instead.
-- **All items:** name, New tag, ❄ label, stock ("Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48", plus "· repacked −155" when pieces were repacked since the count), cost per piece, margin %, band pill, price. Tap to open the editor:
+- **Needs a price:** new items logged in Log purchase. Each shows cost per piece and the price options with band, margin and a **Suggested** marker. One tap on a price option prices the item. An unpriced item that has gone into a repack moves to *Repack only* instead.
+- **All items:** name (🛍️ before a pack item, everywhere it is shown), New tag, ❄ label, stock ("Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48", plus "· repacked −155" when pieces were repacked since the count), cost per piece, margin %, band pill, price. Tap to open the editor:
   - **Price:** the four options with band and margin; current one highlighted, suggested one marked.
   - **Type:** Snack / Treat.
   - **Storage:** Shelf / ❄ Freezer.
-  - **Selling:** Sold on its own / Repack only. A repack only item needs no price and stays out of Insights.
   - **Name kids see.**
   - **Archive this item:** it stays in the history but is no longer shown in the list. *Show archived items* brings the list back, and the editor puts one back on the list.
-- **Repack only:** items never sold on their own, only repacked (ADR-0019). Stock and cost per piece; tap to edit.
+- **Repack only:** items with no price that have gone into a repack (ADR-0019). Stock and cost per piece; tap to edit. Giving one a price moves it back to *All items*.
 - **Count stock** button opens §4.4.
 - **Repack** button opens §4.4a.
 - Anyone on the team can edit any item, and changes apply at once. There is **no separate sale or clearance price**; to discount old stock, change the price.
@@ -140,9 +139,9 @@ About once a term (ADR-0016). Any volunteer, any time.
 ### 4.4a Repack
 
 Pieces of some items made into another item, such as 5 Peach Slices and 1 Sour Keys Gummy into one candy pack (ADR-0019). Any volunteer, three steps:
-1. **What went in:** tap each item and set pieces per pack with a stepper. Shows what one pack costs.
-2. **What you made:** pick an item, or **＋ New item** with the same name, Snack/Treat and Shelf/❄ Freezer fields as Log purchase, plus the four price options with band, margin and **Suggested**. Then **How many packs?**
-3. **Check and save:** each item's stock change ("Peach Slices −155", "Candy pack +31"), cost per pack, price, margin and band. **Save repack** shows "Repacked 31 Candy pack".
+1. **What went in:** every item except pack items. Tap each item and set pieces per pack with a stepper. Shows what one pack costs.
+2. **What you made:** only pack items (🛍️), to make more of one, or **＋ New item** with the same name, Snack/Treat and Shelf/❄ Freezer fields as Log purchase, plus the four price options with band, margin and **Suggested**. With no pack items yet, New item opens by itself. A name that matches an existing item shows "There is already an item called …" (the same warning appears in Log purchase). Then **How many packs?**
+3. **Check and save:** each item's stock change ("Peach Slices −155", "🛍️ Candy pack +31"), cost per pack, price, margin and band. **Save repack** shows "Repacked 31 Candy packs".
 
 There is no on-hand check and no undo; the next stock count absorbs mistakes.
 

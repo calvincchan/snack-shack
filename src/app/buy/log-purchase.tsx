@@ -361,11 +361,13 @@ function ReceiptLine({
           onChange={(event) => onChange({ itemId: event.target.value })}
         >
           <option value="new">＋ New item</option>
-          {items.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
+          {items
+            .filter((item) => !item.madeByRepack)
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
         </select>
       </div>
 
@@ -373,6 +375,7 @@ function ReceiptLine({
         <NewItemFields
           id={line.key}
           context={`for receipt line ${index + 1}`}
+          existingNames={items.map((item) => item.name)}
           value={line}
           onChange={onChange}
         />

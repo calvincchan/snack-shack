@@ -156,7 +156,6 @@ export type Database = {
           id: string
           name: string
           price_cents: number | null
-          repack_only: boolean
           storage: Database['public']['Enums']['storage_kind']
           type: Database['public']['Enums']['item_type']
           unit_cost_cents: number
@@ -173,7 +172,6 @@ export type Database = {
           id?: string
           name: string
           price_cents?: number | null
-          repack_only?: boolean
           storage?: Database['public']['Enums']['storage_kind']
           type: Database['public']['Enums']['item_type']
           unit_cost_cents?: number
@@ -189,7 +187,6 @@ export type Database = {
           id?: string
           name?: string
           price_cents?: number | null
-          repack_only?: boolean
           storage?: Database['public']['Enums']['storage_kind']
           type?: Database['public']['Enums']['item_type']
           unit_cost_cents?: number
@@ -917,6 +914,7 @@ export type Database = {
           bundle_size: number | null
           item_id: string | null
           last_counted_at: string | null
+          made_by_repack: boolean | null
           margin: number | null
           name: string | null
           pieces_gone: number | null
@@ -1004,16 +1002,17 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: string | null
+          in_repacks: boolean | null
           is_new: boolean | null
           last_bought_by: string | null
           last_bought_on: string | null
           last_counted_at: string | null
           last_counted_pieces: number | null
+          made_by_repack: boolean | null
           name: string | null
           on_hand: number | null
           pieces_gone: number | null
           price_cents: number | null
-          repack_only: boolean | null
           repacked_since: number | null
           storage: Database['public']['Enums']['storage_kind'] | null
           type: Database['public']['Enums']['item_type'] | null

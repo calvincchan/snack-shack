@@ -17,6 +17,7 @@ export function NewItemFields({
   id,
   context,
   placeholder = 'e.g. Rice crackers',
+  existingNames = [],
   value,
   onChange,
 }: {
@@ -25,10 +26,16 @@ export function NewItemFields({
   /** Ends the toggle labels for screen readers: "for receipt line 1". */
   context?: string
   placeholder?: string
+  /** Active item names, to warn before a second item with the same name. */
+  existingNames?: string[]
   value: NewItemDraft
   onChange: (change: Partial<NewItemDraft>) => void
 }) {
   const suffix = context ? ` ${context}` : ''
+  const typed = value.name.trim().toLowerCase()
+  const twin = typed
+    ? existingNames.find((name) => name.trim().toLowerCase() === typed)
+    : undefined
 
   return (
     <>
@@ -41,6 +48,11 @@ export function NewItemFields({
           value={value.name}
           onChange={(event) => onChange({ name: event.target.value })}
         />
+        {twin && (
+          <p className="text-warn text-sm">
+            There is already an item called {twin}.
+          </p>
+        )}
       </div>
 
       <ToggleGroup
