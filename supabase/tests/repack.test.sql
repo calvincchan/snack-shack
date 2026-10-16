@@ -1,7 +1,7 @@
 -- Repacking (ADR-0019, pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(40);
+select plan(42);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items cascade;
@@ -115,9 +115,20 @@ select is((select count(*)::int from public.insights_items where name = 'Peach S
   'items with no price are left out of item insights');
 select is((select count(*)::int from public.insights_slowest_item where name = 'Peach Slices'), 0,
   'and out of the slowest mover');
-select is((select usual_cost_cents from public.type_benchmarks where type = 'treat'),
-  (select unit_cost_cents from public.items where name = 'Candy pack'),
-  'the Deal check benchmark uses priced items only');
+select is((select usual_cost_cents from public.type_benchmarks where type = 'treat'), null,
+  'the Deal check benchmark leaves out unpriced items and pack items');
+
+-- A low margin pack item: 2 Chips (50¢) a pack at $1. Making packs restocks it.
+select public.repack(format('{
+  "id": "20000000-0000-0000-0000-000000000004",
+  "new_item": {"name": "Chip duo", "type": "snack", "price_cents": 100},
+  "packs": 2,
+  "sources": [{"item_id": "%s", "pieces_per_pack": 2}]}',
+  (select id from ids where name = 'Chips'))::jsonb);
+select is((select count(*)::int from public.insights_low_margin_items where name = 'Chip duo'), 1,
+  'a low margin pack item made since the count is low margin stock');
+select is((select usual_cost_cents from public.type_benchmarks where type = 'snack'), 50.00::numeric,
+  'the Deal check benchmark leaves out the pack item');
 
 -- Rules.
 select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 0, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,

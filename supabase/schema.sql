@@ -1409,7 +1409,7 @@ CREATE OR REPLACE VIEW "public"."insights_low_margin_items" WITH ("security_invo
     ((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) AS "margin"
    FROM ("public"."items" "i"
      JOIN "public"."item_counts" "c" ON (("c"."item_id" = "i"."id")))
-  WHERE ((NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("c"."bought_since" > 0) AND (((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) < 0.3));
+  WHERE ((NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND (("c"."bought_since" > 0) OR ("c"."repacked_since" > 0)) AND (((1)::numeric - (("i"."unit_cost_cents" * ("i"."bundle_size")::numeric) / ("i"."price_cents")::numeric)) < 0.3));
 
 ALTER VIEW "public"."insights_low_margin_items" OWNER TO "postgres";
 
@@ -1586,9 +1586,9 @@ CREATE OR REPLACE VIEW "public"."type_benchmarks" WITH ("security_invoker"='true
  SELECT "type",
     COALESCE(( SELECT "avg"("i"."unit_cost_cents") AS "avg"
            FROM "public"."item_overview" "i"
-          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."is_new") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."is_new") AND (NOT "i"."made_by_repack") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric))), ( SELECT "avg"("i"."unit_cost_cents") AS "avg"
            FROM "public"."item_overview" "i"
-          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents"
+          WHERE (("i"."type" = "t"."type") AND (NOT "i"."archived") AND (NOT "i"."made_by_repack") AND ("i"."price_cents" IS NOT NULL) AND ("i"."unit_cost_cents" > (0)::numeric)))) AS "usual_cost_cents"
    FROM ( VALUES ('snack'::"public"."item_type"), ('treat'::"public"."item_type")) "t"("type");
 
 ALTER VIEW "public"."type_benchmarks" OWNER TO "postgres";

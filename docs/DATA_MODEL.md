@@ -62,7 +62,7 @@ All views use `security_invoker = true`, so row level security still applies.
 | `claim_lines` | Every purchase line with `item_name`, plus `pieces_left` and `cents_left` after refunds |
 | `claim_refunds` | Each refund with its `purchase_id` and who logged it |
 | `sale_day_cash` | Per sale day: `open_cents`, `close_cents`, `revenue_cents = close − open`, `left_in_box_cents`, `deposit_cents = close − left in box`, `expected_open_cents` (the previous closed sale day's left in box, by date), `open_diff_cents`, notes, who opened and closed it |
-| `type_benchmarks` | Per type: what a piece usually costs, for Deal check (HANDOFF §5.4) |
+| `type_benchmarks` | Per type: what a piece usually costs, for Deal check (HANDOFF §5.4). Pack items left out (ADR-0019) |
 | `change_history` | One row per changed field, read from `audit_log`, for the history lists: item edits (`name`, `price` as `cents/bundle`, `type`, `storage`, `archived`) and sale day `phase`. Skips unit cost, version bumps and an item's first pricing in `log_purchase` |
 
 ## Functions (the only way to do the important things)

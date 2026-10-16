@@ -131,7 +131,7 @@ left join public.profiles editor on editor.id = s.updated_by
 left join public.item_counts c on c.item_id = s.id;
 
 -------------------------------------------------------------------------------
--- 3. Item insights count only items with a price: one without is not sold
+-- 3. Insights: priced items only; pack items restock and skip Deal check
 -------------------------------------------------------------------------------
 create or replace view public.insights_items with (security_invoker = true) as
 select i.id as item_id,
@@ -152,8 +152,33 @@ select i.id as item_id,
   join public.item_counts c on c.item_id = i.id
  where c.pieces_gone is not null and not i.archived and i.price_cents is not null;
 
--- insights_slowest_item reads insights_items, so it follows. The low margin
--- list and the Deal check benchmark already need a price.
+-- insights_slowest_item reads insights_items, so it follows.
+
+-- Low margin stock: packs made since the count restock a pack item the way
+-- purchases restock a bought one.
+create or replace view public.insights_low_margin_items with (security_invoker = true) as
+select i.id as item_id, i.name, c.bought_since,
+       1 - (i.unit_cost_cents * i.bundle_size) / i.price_cents as margin
+  from public.items i
+  join public.item_counts c on c.item_id = i.id
+ where not i.archived
+   and i.price_cents is not null
+   and (c.bought_since > 0 or c.repacked_since > 0)
+   and 1 - (i.unit_cost_cents * i.bundle_size) / i.price_cents < 0.3;
+
+-- Deal check compares a store box with what we usually pay a piece. A pack
+-- item's piece is a whole pack, never bought in a store, so it stays out.
+create or replace view public.type_benchmarks with (security_invoker = true) as
+select t.type,
+       coalesce(
+         (select avg(i.unit_cost_cents) from public.item_overview i
+           where i.type = t.type and not i.archived and not i.is_new and not i.made_by_repack
+             and i.price_cents is not null and i.unit_cost_cents > 0),
+         (select avg(i.unit_cost_cents) from public.item_overview i
+           where i.type = t.type and not i.archived and not i.made_by_repack
+             and i.price_cents is not null and i.unit_cost_cents > 0)
+       ) as usual_cost_cents
+from (values ('snack'::public.item_type), ('treat'::public.item_type)) t(type);
 
 -------------------------------------------------------------------------------
 -- 4. Record a repack

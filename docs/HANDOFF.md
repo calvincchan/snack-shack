@@ -222,7 +222,7 @@ options         = price options with margins (5.3); rec = suggested
 deals           = floor(pieces ÷ rec.bundle_size)
 sales           = deals × rec.price
 profit          = sales − total
-usual cost      = average cost per piece of active, non-new items of the same type
+usual cost      = average cost per piece of active, non-new items of the same type (pack items left out)
 ```
 
 Output: band pill with the suggested price and margin; cost each; deals × price = sales; profit or loss on the box; "Cheaper/Pricier than our usual treats ($0.52 each on average)"; all four options with band and margin; **Bought it** button. (The old "lasts about N sale days" line needed per-day sales and is gone, ADR-0016.)
@@ -265,7 +265,7 @@ Each rule is a query plus a sentence template. Show a sentence only when it appl
 2. **Revenue trend:** the last sale day's revenue against the average. "Revenue $12 above the usual $85."
 3. **Open count off:** sale days whose open count didn't match the last left in box this term. "Check the box between sale days."
 4. **Slowest mover:** the item with the fewest pieces gone between its last two counts. "Try a lower price on the Items tab."
-5. **Low margin stock:** items in a Low margin or At a loss band with stock bought since the last count.
+5. **Low margin stock:** items in a Low margin or At a loss band with stock bought, or packs made, since the last count.
 
 ### 5.9 Claims and the treasurer
 
