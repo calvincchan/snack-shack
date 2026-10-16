@@ -82,7 +82,7 @@ test('a stock count replaces "not counted" and skipped items post nothing', asyn
 
   await expect(page.getByText('Saved 1 item')).toBeVisible()
   const row = allItems(page).filter({ hasText: 'Rice crackers' })
-  await expect(row).toContainText(/Counted 20 on \w+ \d+ · bought 0 since/)
+  await expect(row).toContainText(/Counted 20 on \w+ \d+ · \$/)
   await expect(
     allItems(page).filter({ hasText: 'Nestlé mini bars, assorted' }),
   ).toContainText('Not counted')

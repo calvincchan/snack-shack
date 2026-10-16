@@ -47,11 +47,11 @@ test('a repack moves stock into a new item and shows on Items', async ({
     .getByRole('list', { name: 'All items' })
     .getByRole('listitem')
   await expect(allItems.filter({ hasText: 'Movie night pack' })).toContainText(
-    'Not counted · bought 0 · repacked +3',
+    'Not counted · made 3',
   )
   await expect(
     allItems.filter({ hasText: 'Popcorn, lightly salted' }),
-  ).toContainText('repacked −6')
+  ).toContainText('6 into packs')
 })
 
 test('a second repack adds to the pack item', async ({ page }) => {
@@ -83,5 +83,5 @@ test('a second repack adds to the pack item', async ({ page }) => {
       .getByRole('list', { name: 'All items' })
       .getByRole('listitem')
       .filter({ hasText: 'Movie night pack' }),
-  ).toContainText('repacked +5')
+  ).toContainText('made 5')
 })

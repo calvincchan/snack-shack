@@ -118,7 +118,7 @@ Three segments: **Log purchase · Claims · Deal check**.
 ### 4.3 Items
 
 - **Needs a price:** new items logged in Log purchase. Each shows cost per piece and the price options with band, margin and a **Suggested** marker. One tap on a price option prices the item. An unpriced item that has gone into a repack moves to *Repack only* instead.
-- **All items:** name (🛍️ before a pack item, everywhere it is shown), New tag, ❄ label, stock ("Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48", plus "· repacked −155" when pieces were repacked since the count), cost per piece, margin %, band pill, price. Tap to open the editor:
+- **All items:** name (🛍️ before a pack item, everywhere it is shown), New tag, ❄ label, stock since the last count, naming only what happened ("Counted 24 on Oct 1 · then bought 48", "Counted 2 on Oct 16 · then made 5" for a pack item, "Not counted · bought 250, 155 into packs" for a source item, or just "Counted 24 on Oct 1"), cost per piece, margin %, band pill, price. Tap to open the editor:
   - **Price:** the four options with band and margin; current one highlighted, suggested one marked.
   - **Type:** Snack / Treat.
   - **Storage:** Shelf / ❄ Freezer.
@@ -230,7 +230,7 @@ Output: band pill with the suggested price and margin; cost each; deals × price
 ### 5.5 Stock and the ledger
 
 - Stock is a **ledger**. Nothing ever edits a stock number. Every change is a row: purchase (+), count (±, the difference at a stock count), donated (−), returned (−, a refund), repacked (− from each item that went in, + to the item made), correction (±, including the + that undoes a refund). Rows from before ADR-0015 may also be sold, out, missing, damaged or found.
-- Current stock = sum of the item's rows. Sale days don't post anything, so it's only accurate right after a stock count; the app shows "counted · bought since" instead.
+- Current stock = sum of the item's rows. Sale days don't post anything, so it's only accurate right after a stock count; the app shows the last count and what was bought, made or put into packs since instead.
 - **Bought since** = purchase rows minus returned rows since the item's last count.
 - **Repacked since** = repacked rows since the item's last count. Repacks are in the ledger, so they never show up as pieces gone.
 - **Pieces gone** between two counts = −(the count rows of the later count day, summed, Vancouver time), so saving twice in a day doesn't shrink it. It covers sold, eaten and lost. Needs counts on two different days.

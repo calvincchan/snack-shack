@@ -69,20 +69,32 @@ const shortDate = (when: string) =>
     timeZone: 'America/Vancouver',
   })
 
-/** "Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48". */
+/**
+ * What happened since the last count, naming only what did: "Counted 24 on
+ * Oct 1 · then bought 48", "Counted 2 on Oct 16 · then made 5", "Not counted
+ * · bought 250, 155 into packs", or just "Counted 24 on Oct 1".
+ */
 export function stockLine(
   item: Pick<
     Item,
     'lastCountedAt' | 'lastCountedPieces' | 'boughtSince' | 'repackedSince'
   >,
 ): string {
-  const repacked = item.repackedSince
-    ? ` · repacked ${signedPieces(item.repackedSince)}`
-    : ''
+  const since = [
+    item.boughtSince > 0 && `bought ${item.boughtSince}`,
+    item.boughtSince < 0 && `returned ${-item.boughtSince}`,
+    // A pack item gains from repacks; a source item loses to them.
+    item.repackedSince > 0 && `made ${item.repackedSince}`,
+    item.repackedSince < 0 && `${-item.repackedSince} into packs`,
+  ]
+    .filter(Boolean)
+    .join(', ')
+
   if (item.lastCountedAt === null || item.lastCountedPieces === null) {
-    return `Not counted · bought ${item.boughtSince}${repacked}`
+    return since ? `Not counted · ${since}` : 'Not counted'
   }
-  return `Counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)} · bought ${item.boughtSince} since${repacked}`
+  const counted = `Counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)}`
+  return since ? `${counted} · then ${since}` : counted
 }
 
 /** "+31", "−155" (a true minus sign). */
