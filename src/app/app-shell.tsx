@@ -17,7 +17,7 @@ import { NoProfilePage } from '@/app/routes/no-profile'
 import { AccountMenu } from '@/app/account-menu'
 import { InstallBanner } from '@/components/install-banner'
 import { useAuth } from '@/lib/auth'
-import { useItems } from '@/lib/items'
+import { needsPrice, useItems } from '@/lib/items'
 import { useSaleDay } from '@/lib/sale-day'
 import { formatSaleDate } from '@/lib/time'
 
@@ -52,9 +52,7 @@ export function AppShell() {
 function MemberShell() {
   const items = useItems()
   const saleDay = useSaleDay()
-  const needPrice = (items.data ?? []).filter(
-    (item) => item.priceCents === null && !item.repackOnly,
-  ).length
+  const needPrice = (items.data ?? []).filter(needsPrice).length
 
   return (
     <BrowserRouter>

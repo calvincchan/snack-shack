@@ -2,15 +2,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { itemsQueryKey, type Item } from '@/lib/items'
 import type { NewItemDraft } from '@/components/new-item-fields'
+import type { PriceOption } from '@/lib/pricing'
 
 /** One item that went into a pack, and how many of its pieces each pack holds. */
 export type RepackSource = { itemId: string; perPack: number }
 
 /** The new item made by a repack, with the price it sells at. */
-export type NewPackItem = NewItemDraft & {
-  priceCents: number
-  bundleSize: number
-}
+export type NewPackItem = NewItemDraft & PriceOption
 
 export type Repack = {
   /** Client-generated, so a retry cannot repeat the repack. */

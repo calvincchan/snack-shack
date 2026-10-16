@@ -671,6 +671,7 @@ declare
   v_cents numeric := 0;
   v_cost numeric;
   v_on_hand int;
+  v_archived boolean;
 begin
   perform public.require_member();
   if v_id is null then raise exception 'A repack needs an id.'; end if;
@@ -695,12 +696,9 @@ begin
             coalesce((p -> 'new_item' ->> 'bundle_size')::int, 1))
     returning id into v_pack;
   else
-    if not exists (select 1 from public.items where id = v_pack) then
-      raise exception 'That item no longer exists.';
-    end if;
-    if exists (select 1 from public.items where id = v_pack and archived) then
-      raise exception 'That item is archived.';
-    end if;
+    select archived into v_archived from public.items where id = v_pack;
+    if not found then raise exception 'That item no longer exists.'; end if;
+    if v_archived then raise exception 'That item is archived.'; end if;
   end if;
 
   insert into public.repacks (id, pack_item_id, packs, note)
@@ -714,11 +712,10 @@ begin
     if v_item = any (v_seen) then raise exception 'Each item can be added once.'; end if;
     v_seen := v_seen || v_item;
 
-    select unit_cost_cents into v_cost from public.items where id = v_item;
+    select unit_cost_cents, archived into v_cost, v_archived
+    from public.items where id = v_item;
     if not found then raise exception 'That item no longer exists.'; end if;
-    if exists (select 1 from public.items where id = v_item and archived) then
-      raise exception 'That item is archived.';
-    end if;
+    if v_archived then raise exception 'That item is archived.'; end if;
 
     v_cents := v_cents + v_packs * v_per * v_cost;
     insert into public.stock_movements (item_id, qty, reason, repack_id)

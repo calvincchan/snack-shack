@@ -14,7 +14,9 @@ import {
   marginOf,
   priceLabel,
   priceOptions,
+  type PriceOption,
 } from '@/lib/pricing'
+import { PriceOptionGrid } from '@/components/price-option-grid'
 import {
   costPerPackCents,
   repackMoves,
@@ -23,8 +25,6 @@ import {
 } from '@/lib/repack'
 
 const STEPS = ['What went in', 'What you made', 'Check'] as const
-
-type Price = { priceCents: number; bundleSize: number }
 
 /**
  * Repack (ADR-0019): pieces of some items made into another item, in three
@@ -43,14 +43,15 @@ export function Repack({
   const [sources, setSources] = useState<RepackSource[]>([])
   const [packItemId, setPackItemId] = useState<string | null>(null)
   const [newItem, setNewItem] = useState<NewItemDraft | null>(null)
-  const [price, setPrice] = useState<Price | null>(null)
+  const [price, setPrice] = useState<PriceOption | null>(null)
   const [packs, setPacks] = useState<number | null>(null)
   const repack = useRepack()
 
+  // A preview, like the price options: repack() works out the stored cost.
   const costPerPack = costPerPackCents(sources, items)
   const packItem = items.find((item) => item.id === packItemId)
   const packName = newItem ? newItem.name.trim() : (packItem?.name ?? '')
-  const sellsAt: Price | null = newItem
+  const sellsAt: PriceOption | null = newItem
     ? price
     : packItem?.priceCents != null
       ? { priceCents: packItem.priceCents, bundleSize: packItem.bundleSize }
@@ -80,12 +81,13 @@ export function Repack({
   }
 
   function submit() {
+    if (packs === null) return
     repack.mutate(
       {
         id,
         packItemId: newItem ? null : packItemId,
         newItem: newItem && price ? { ...newItem, ...price } : null,
-        packs: packs!,
+        packs,
         sources,
       },
       {
@@ -253,45 +255,11 @@ export function Repack({
                 <legend className="text-muted-foreground pb-2 text-xs font-semibold tracking-wide uppercase">
                   Price
                 </legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {priceOptions(costPerPack).map((option) => {
-                    const chosen =
-                      price?.priceCents === option.priceCents &&
-                      price.bundleSize === option.bundleSize
-                    return (
-                      <button
-                        key={`${option.priceCents}-${option.bundleSize}`}
-                        type="button"
-                        aria-pressed={chosen}
-                        onClick={() =>
-                          setPrice({
-                            priceCents: option.priceCents,
-                            bundleSize: option.bundleSize,
-                          })
-                        }
-                        className={cn(
-                          'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
-                          chosen && 'border-primary ring-primary ring-2',
-                        )}
-                      >
-                        <span className="flex w-full items-baseline justify-between gap-2">
-                          <span className="font-heading text-lg font-semibold">
-                            {priceLabel(option.priceCents, option.bundleSize)}
-                          </span>
-                          {option.suggested && (
-                            <span className="text-ok text-xs font-semibold tracking-wide uppercase">
-                              Suggested
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-muted-foreground text-sm">
-                          {option.band.label} · {formatMargin(option.margin)}{' '}
-                          margin
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
+                <PriceOptionGrid
+                  costPerPieceCents={costPerPack}
+                  chosen={price}
+                  onPick={setPrice}
+                />
               </fieldset>
             </div>
           )}

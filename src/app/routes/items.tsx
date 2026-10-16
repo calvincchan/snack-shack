@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
 import { ItemEditor } from '@/app/items/item-editor'
 import { CountStock } from '@/app/items/count-stock'
 import { Repack } from '@/app/items/repack'
-import { stockLine, useItems, useSaveItem, type Item } from '@/lib/items'
-import { formatCents } from '@/lib/money'
 import {
-  formatMargin,
-  marginBand,
-  marginOf,
-  priceLabel,
-  priceOptions,
-} from '@/lib/pricing'
+  editOf,
+  needsPrice,
+  stockLine,
+  useItems,
+  useSaveItem,
+  type Item,
+} from '@/lib/items'
+import { PriceOptionGrid } from '@/components/price-option-grid'
+import { formatCents } from '@/lib/money'
+import { formatMargin, marginBand, marginOf, priceLabel } from '@/lib/pricing'
 
 export function ItemsPage() {
   const [showArchived, setShowArchived] = useState(false)
@@ -26,9 +27,7 @@ export function ItemsPage() {
 
   const all = items.data ?? []
   const active = all.filter((item) => !item.archived)
-  const needPrice = active.filter(
-    (item) => item.priceCents === null && !item.repackOnly,
-  )
+  const needPrice = active.filter(needsPrice)
   const priced = active.filter(
     (item) => item.priceCents !== null && !item.repackOnly,
   )
@@ -257,57 +256,26 @@ function NeedsPriceCard({ item }: { item: Item }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {priceOptions(item.costPerPieceCents).map((option) => (
-          <button
-            key={`${option.priceCents}-${option.bundleSize}`}
-            type="button"
-            disabled={save.isPending}
-            onClick={() =>
-              save.mutate(
-                {
-                  id: item.id,
-                  version: item.version,
-                  edit: {
-                    name: item.name,
-                    type: item.type,
-                    storage: item.storage,
-                    priceCents: option.priceCents,
-                    bundleSize: option.bundleSize,
-                    repackOnly: item.repackOnly,
-                  },
-                },
-                {
-                  onSuccess: () =>
-                    toast.success(
-                      `${item.name} is ${priceLabel(option.priceCents, option.bundleSize)}.`,
-                    ),
-                  onError: (error) => toast.error(error.message),
-                },
-              )
-            }
-            className={cn(
-              'border-border text-foreground bg-card flex min-h-16 flex-col items-start gap-1 rounded-lg border p-3 text-left',
-              'hover:bg-accent disabled:opacity-60',
-              option.suggested && 'border-primary',
-            )}
-          >
-            <span className="flex w-full items-baseline justify-between gap-2">
-              <span className="font-heading text-lg font-semibold">
-                {priceLabel(option.priceCents, option.bundleSize)}
-              </span>
-              {option.suggested && (
-                <span className="text-ok text-xs font-semibold tracking-wide uppercase">
-                  Suggested
-                </span>
-              )}
-            </span>
-            <span className="text-muted-foreground text-sm">
-              {option.band.label} · {formatMargin(option.margin)} margin
-            </span>
-          </button>
-        ))}
-      </div>
+      <PriceOptionGrid
+        costPerPieceCents={item.costPerPieceCents}
+        disabled={save.isPending}
+        onPick={(option) =>
+          save.mutate(
+            {
+              id: item.id,
+              version: item.version,
+              edit: { ...editOf(item), ...option },
+            },
+            {
+              onSuccess: () =>
+                toast.success(
+                  `${item.name} is ${priceLabel(option.priceCents, option.bundleSize)}.`,
+                ),
+              onError: (error) => toast.error(error.message),
+            },
+          )
+        }
+      />
 
       <button
         type="button"
@@ -318,14 +286,7 @@ function NeedsPriceCard({ item }: { item: Item }) {
             {
               id: item.id,
               version: item.version,
-              edit: {
-                name: item.name,
-                type: item.type,
-                storage: item.storage,
-                priceCents: null,
-                bundleSize: item.bundleSize,
-                repackOnly: true,
-              },
+              edit: { ...editOf(item), priceCents: null, repackOnly: true },
             },
             {
               onSuccess: () =>

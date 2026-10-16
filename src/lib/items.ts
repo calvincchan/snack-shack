@@ -68,8 +68,10 @@ const shortDate = (when: string) =>
 
 /** "Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48". */
 export function stockLine(
-  item: Pick<Item, 'lastCountedAt' | 'lastCountedPieces' | 'boughtSince'> &
-    Partial<Pick<Item, 'repackedSince'>>,
+  item: Pick<
+    Item,
+    'lastCountedAt' | 'lastCountedPieces' | 'boughtSince' | 'repackedSince'
+  >,
 ): string {
   const repacked = item.repackedSince
     ? ` · repacked ${signedPieces(item.repackedSince)}`
@@ -116,6 +118,23 @@ export type ItemEdit = {
   priceCents: number | null
   bundleSize: number
   repackOnly: boolean
+}
+
+/** The editable fields of an item, as they are now. */
+export function editOf(item: Item): ItemEdit {
+  return {
+    name: item.name,
+    type: item.type,
+    storage: item.storage,
+    priceCents: item.priceCents,
+    bundleSize: item.bundleSize,
+    repackOnly: item.repackOnly,
+  }
+}
+
+/** Sold on its own but not priced yet. Repack only items need no price. */
+export function needsPrice(item: Pick<Item, 'priceCents' | 'repackOnly'>) {
+  return item.priceCents === null && !item.repackOnly
 }
 
 /** Someone else saved first; the caller decides whose edit wins. */
