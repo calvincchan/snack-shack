@@ -111,12 +111,20 @@ Pieces on hand, the sum of an item's stock movements. Sale days don't change it,
 _Avoid_: Inventory
 
 **Stock movement**:
-One recorded change to an item's stock: purchase, count (the difference found at a stock count), donated, returned (pieces taken back to the store in a refund) or correction. Older rows may be sold, out, missing, damaged or found, from when sale days counted stock.
+One recorded change to an item's stock: purchase, count (the difference found at a stock count), repacked (± a repack), donated, returned (pieces taken back to the store in a refund) or correction. Older rows may be sold, out, missing, damaged or found, from when sale days counted stock.
 _Avoid_: Adjustment, transaction
 
 **Stock count**:
 Counting every item on hand, about once a term. Skipped items stay uncounted. Pieces gone between two counts were sold, eaten or lost.
 _Avoid_: Inventory, stocktake, audit
+
+**Repack**:
+Making a new item out of pieces of other items, such as 5 Peach Slices and 1 Sour Keys Gummy into one candy pack. It moves stock and cost from the source items to the pack item.
+_Avoid_: Bundle, kit, recipe, pre-bag
+
+**Repack only**:
+An item that is never sold on its own, only repacked. It needs no price.
+_Avoid_: Ingredient, component
 
 **Deal check**:
 The in-aisle calculator for judging whether a box is worth buying.
