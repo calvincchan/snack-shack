@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
 import { ItemEditor } from '@/app/items/item-editor'
 import { CountStock } from '@/app/items/count-stock'
+import { Repack } from '@/app/items/repack'
 import { stockLine, useItems, useSaveItem, type Item } from '@/lib/items'
 import { formatCents } from '@/lib/money'
 import {
@@ -19,38 +20,54 @@ export function ItemsPage() {
   const [showArchived, setShowArchived] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [counting, setCounting] = useState(false)
+  const [repacking, setRepacking] = useState(false)
 
   const items = useItems({ includeArchived: showArchived })
 
   const all = items.data ?? []
-  const needPrice = all.filter(
-    (item) => item.priceCents === null && !item.archived,
+  const active = all.filter((item) => !item.archived)
+  const needPrice = active.filter(
+    (item) => item.priceCents === null && !item.repackOnly,
   )
-  const priced = all.filter(
-    (item) => item.priceCents !== null && !item.archived,
+  const priced = active.filter(
+    (item) => item.priceCents !== null && !item.repackOnly,
   )
+  const repackOnly = active.filter((item) => item.repackOnly)
   const archived = all.filter((item) => item.archived)
 
   if (counting) {
     return (
       <CountStock
-        items={priced.concat(needPrice)}
+        items={priced.concat(needPrice, repackOnly)}
         onDone={() => setCounting(false)}
       />
     )
+  }
+
+  if (repacking) {
+    return <Repack items={active} onDone={() => setRepacking(false)} />
   }
 
   return (
     <div className="flex flex-col gap-6 p-4 pb-8">
       <h1 className="sr-only">Items</h1>
 
-      <Button
-        variant="outline"
-        className="text-foreground min-h-12 self-start"
-        onClick={() => setCounting(true)}
-      >
-        Count stock
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          className="text-foreground min-h-12"
+          onClick={() => setCounting(true)}
+        >
+          Count stock
+        </Button>
+        <Button
+          variant="outline"
+          className="text-foreground min-h-12"
+          onClick={() => setRepacking(true)}
+        >
+          Repack
+        </Button>
+      </div>
 
       {items.isPending && (
         <p className="text-muted-foreground text-sm">Loading…</p>
@@ -79,6 +96,24 @@ export function ItemsPage() {
           >
             {priced.map((item) => (
               <ItemRow
+                key={item.id}
+                item={item}
+                onOpen={() => setEditing(item.id)}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {repackOnly.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <SectionHeading title="Repack only" note="Not sold on their own" />
+          <ul
+            aria-label="Repack only items"
+            className="border-border bg-card divide-border divide-y overflow-hidden rounded-xl border"
+          >
+            {repackOnly.map((item) => (
+              <RepackOnlyRow
                 key={item.id}
                 item={item}
                 onOpen={() => setEditing(item.id)}
@@ -185,6 +220,26 @@ function ItemRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
   )
 }
 
+function RepackOnlyRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="text-foreground hover:bg-accent flex w-full items-center gap-3 p-3 text-left"
+      >
+        <TypeDot type={item.type} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <ItemName item={item} />
+          <p className="text-muted-foreground text-sm tabular-nums">
+            {stockLine(item)} · {formatCents(item.costPerPieceCents)} a piece
+          </p>
+        </div>
+      </button>
+    </li>
+  )
+}
+
 function NeedsPriceCard({ item }: { item: Item }) {
   const save = useSaveItem()
 
@@ -219,6 +274,7 @@ function NeedsPriceCard({ item }: { item: Item }) {
                     storage: item.storage,
                     priceCents: option.priceCents,
                     bundleSize: option.bundleSize,
+                    repackOnly: item.repackOnly,
                   },
                 },
                 {
@@ -252,6 +308,37 @@ function NeedsPriceCard({ item }: { item: Item }) {
           </button>
         ))}
       </div>
+
+      <button
+        type="button"
+        disabled={save.isPending}
+        className="text-muted-foreground min-h-11 self-start text-sm underline underline-offset-4 disabled:opacity-60"
+        onClick={() =>
+          save.mutate(
+            {
+              id: item.id,
+              version: item.version,
+              edit: {
+                name: item.name,
+                type: item.type,
+                storage: item.storage,
+                priceCents: null,
+                bundleSize: item.bundleSize,
+                repackOnly: true,
+              },
+            },
+            {
+              onSuccess: () =>
+                toast.success(
+                  `${item.name} is repack only. It needs no price.`,
+                ),
+              onError: (error) => toast.error(error.message),
+            },
+          )
+        }
+      >
+        Not sold on its own? Mark repack only
+      </button>
     </div>
   )
 }

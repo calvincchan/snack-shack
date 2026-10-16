@@ -156,6 +156,7 @@ export type Database = {
           id: string
           name: string
           price_cents: number | null
+          repack_only: boolean
           storage: Database['public']['Enums']['storage_kind']
           type: Database['public']['Enums']['item_type']
           unit_cost_cents: number
@@ -172,6 +173,7 @@ export type Database = {
           id?: string
           name: string
           price_cents?: number | null
+          repack_only?: boolean
           storage?: Database['public']['Enums']['storage_kind']
           type: Database['public']['Enums']['item_type']
           unit_cost_cents?: number
@@ -187,6 +189,7 @@ export type Database = {
           id?: string
           name?: string
           price_cents?: number | null
+          repack_only?: boolean
           storage?: Database['public']['Enums']['storage_kind']
           type?: Database['public']['Enums']['item_type']
           unit_cost_cents?: number
@@ -432,6 +435,84 @@ export type Database = {
           },
         ]
       }
+      repacks: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          pack_item_id: string
+          packs: number
+        }
+        ComputedFields: never
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          pack_item_id: string
+          packs: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          pack_item_id?: string
+          packs?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'repacks_pack_item_id_fkey'
+            columns: ['pack_item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'repacks_pack_item_id_fkey'
+            columns: ['pack_item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_low_margin_items'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'repacks_pack_item_id_fkey'
+            columns: ['pack_item_id']
+            isOneToOne: false
+            referencedRelation: 'insights_slowest_item'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'repacks_pack_item_id_fkey'
+            columns: ['pack_item_id']
+            isOneToOne: false
+            referencedRelation: 'item_counts'
+            referencedColumns: ['item_id']
+          },
+          {
+            foreignKeyName: 'repacks_pack_item_id_fkey'
+            columns: ['pack_item_id']
+            isOneToOne: false
+            referencedRelation: 'item_overview'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'repacks_pack_item_id_fkey'
+            columns: ['pack_item_id']
+            isOneToOne: false
+            referencedRelation: 'item_stock'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'repacks_pack_item_id_fkey'
+            columns: ['pack_item_id']
+            isOneToOne: false
+            referencedRelation: 'items'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       sale_days: {
         Row: {
           close_note: string | null
@@ -539,6 +620,7 @@ export type Database = {
           qty: number
           reason: Database['public']['Enums']['movement_reason']
           refund_id: string | null
+          repack_id: string | null
           sale_day_id: string | null
           seq: number
         }
@@ -553,6 +635,7 @@ export type Database = {
           qty: number
           reason: Database['public']['Enums']['movement_reason']
           refund_id?: string | null
+          repack_id?: string | null
           sale_day_id?: string | null
           seq?: never
         }
@@ -566,6 +649,7 @@ export type Database = {
           qty?: number
           reason?: Database['public']['Enums']['movement_reason']
           refund_id?: string | null
+          repack_id?: string | null
           sale_day_id?: string | null
           seq?: never
         }
@@ -631,6 +715,13 @@ export type Database = {
             columns: ['purchase_line_id']
             isOneToOne: false
             referencedRelation: 'purchase_lines'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'stock_movements_repack_id_fkey'
+            columns: ['repack_id']
+            isOneToOne: false
+            referencedRelation: 'repacks'
             referencedColumns: ['id']
           },
         ]
@@ -900,6 +991,7 @@ export type Database = {
           last_counted_at: string | null
           last_counted_pieces: number | null
           pieces_gone: number | null
+          repacked_since: number | null
         }
         ComputedFields: never
         Relationships: []
@@ -921,6 +1013,8 @@ export type Database = {
           on_hand: number | null
           pieces_gone: number | null
           price_cents: number | null
+          repack_only: boolean | null
+          repacked_since: number | null
           storage: Database['public']['Enums']['storage_kind'] | null
           type: Database['public']['Enums']['item_type'] | null
           unit_cost_cents: number | null
@@ -1061,6 +1155,7 @@ export type Database = {
         }
         Returns: string
       }
+      repack: { Args: { p: Json }; Returns: string }
       require_coordinator: {
         Args: Record<PropertyKey, never>
         Returns: undefined
@@ -1115,6 +1210,7 @@ export type Database = {
         | 'correction'
         | 'returned'
         | 'count'
+        | 'repacked'
       sale_phase: 'open' | 'closed'
       storage_kind: 'shelf' | 'freezer'
       user_role: 'volunteer' | 'treasurer' | 'admin'
@@ -1260,6 +1356,7 @@ export const Constants = {
         'correction',
         'returned',
         'count',
+        'repacked',
       ],
       sale_phase: ['open', 'closed'],
       storage_kind: ['shelf', 'freezer'],

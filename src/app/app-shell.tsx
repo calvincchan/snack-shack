@@ -53,7 +53,7 @@ function MemberShell() {
   const items = useItems()
   const saleDay = useSaleDay()
   const needPrice = (items.data ?? []).filter(
-    (item) => item.priceCents === null,
+    (item) => item.priceCents === null && !item.repackOnly,
   ).length
 
   return (

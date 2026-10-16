@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Repacking moves stock and cost into a new item
@@ -25,4 +25,5 @@ This is not the pre-bagging of deal items that ADR-0004 rejected: a repack makes
 ## Consequences
 
 - New `movement_reason` value `repacked` (±), a `repacks` table, `repack_id` on `stock_movements`, and an `items.repack_only` flag.
+- `repack()` takes one JSON argument and can make the pack item itself, like `log_purchase`, so a retry never leaves a new item without its repack.
 - `bought_since` stays purchases minus returns. The Items line adds the net repacked pieces since the last count.

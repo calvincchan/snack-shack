@@ -22,6 +22,10 @@ export type Item = {
   boughtSince: number
   /** Pieces gone between the last two counts; null until counted twice. */
   piecesGone: number | null
+  /** Net repacked pieces since the last count: + made, − used (ADR-0019). */
+  repackedSince: number
+  /** Never sold on its own, only repacked; needs no price. */
+  repackOnly: boolean
   isNew: boolean
   archived: boolean
   version: number
@@ -44,6 +48,8 @@ function toItem(row: OverviewRow): Item {
     lastCountedPieces: row.last_counted_pieces,
     boughtSince: row.bought_since ?? 0,
     piecesGone: row.pieces_gone,
+    repackedSince: row.repacked_since ?? 0,
+    repackOnly: row.repack_only ?? false,
     isNew: row.is_new ?? true,
     archived: row.archived ?? false,
     version: row.version!,
@@ -62,12 +68,21 @@ const shortDate = (when: string) =>
 
 /** "Counted 24 on Oct 1 · bought 48 since", or "Not counted · bought 48". */
 export function stockLine(
-  item: Pick<Item, 'lastCountedAt' | 'lastCountedPieces' | 'boughtSince'>,
+  item: Pick<Item, 'lastCountedAt' | 'lastCountedPieces' | 'boughtSince'> &
+    Partial<Pick<Item, 'repackedSince'>>,
 ): string {
+  const repacked = item.repackedSince
+    ? ` · repacked ${signedPieces(item.repackedSince)}`
+    : ''
   if (item.lastCountedAt === null || item.lastCountedPieces === null) {
-    return `Not counted · bought ${item.boughtSince}`
+    return `Not counted · bought ${item.boughtSince}${repacked}`
   }
-  return `Counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)} · bought ${item.boughtSince} since`
+  return `Counted ${item.lastCountedPieces} on ${shortDate(item.lastCountedAt)} · bought ${item.boughtSince} since${repacked}`
+}
+
+/** "+31", "−155" (a true minus sign). */
+export function signedPieces(pieces: number): string {
+  return pieces > 0 ? `+${pieces}` : `−${Math.abs(pieces)}`
 }
 
 /** "Last counted 24 on Oct 1", or null when never counted. */
@@ -100,6 +115,7 @@ export type ItemEdit = {
   storage: Enums<'storage_kind'>
   priceCents: number | null
   bundleSize: number
+  repackOnly: boolean
 }
 
 /** Someone else saved first; the caller decides whose edit wins. */
@@ -152,6 +168,7 @@ export function useSaveItem() {
           storage: edit.storage,
           price_cents: edit.priceCents,
           bundle_size: edit.bundleSize,
+          repack_only: edit.repackOnly,
         })
         .eq('id', id)
         .eq('version', version)
