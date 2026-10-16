@@ -216,6 +216,19 @@ $_$;
 
 ALTER FUNCTION "public"."cents_text"("p_cents" integer) OWNER TO "postgres";
 
+CREATE OR REPLACE FUNCTION "public"."check_repack_side"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+begin
+  if (new.qty > 0) <> (new.item_id = (select pack_item_id from public.repacks where id = new.repack_id)) then
+    raise exception 'A repack adds to the item made and takes from the items that went in.';
+  end if;
+  return new;
+end $$;
+
+ALTER FUNCTION "public"."check_repack_side"() OWNER TO "postgres";
+
 CREATE OR REPLACE FUNCTION "public"."claims_report"() RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -672,6 +685,7 @@ declare
   v_cost numeric;
   v_on_hand int;
   v_archived boolean;
+  v_repack_only boolean;
 begin
   perform public.require_member();
   if v_id is null then raise exception 'A repack needs an id.'; end if;
@@ -696,9 +710,11 @@ begin
             coalesce((p -> 'new_item' ->> 'bundle_size')::int, 1))
     returning id into v_pack;
   else
-    select archived into v_archived from public.items where id = v_pack;
+    select archived, repack_only into v_archived, v_repack_only
+    from public.items where id = v_pack;
     if not found then raise exception 'That item no longer exists.'; end if;
     if v_archived then raise exception 'That item is archived.'; end if;
+    if v_repack_only then raise exception 'That item is repack only, so it cannot be made.'; end if;
   end if;
 
   insert into public.repacks (id, pack_item_id, packs, note)
@@ -1716,6 +1732,8 @@ CREATE OR REPLACE TRIGGER "settings_touch" BEFORE UPDATE ON "public"."settings" 
 
 CREATE OR REPLACE TRIGGER "stock_movements_append_only" BEFORE DELETE OR UPDATE ON "public"."stock_movements" FOR EACH ROW EXECUTE FUNCTION "public"."forbid_change"();
 
+CREATE OR REPLACE TRIGGER "stock_movements_repack_side" BEFORE INSERT ON "public"."stock_movements" FOR EACH ROW WHEN (("new"."reason" = 'repacked'::"public"."movement_reason")) EXECUTE FUNCTION "public"."check_repack_side"();
+
 ALTER TABLE ONLY "public"."cash_counts"
     ADD CONSTRAINT "cash_counts_sale_day_id_fkey" FOREIGN KEY ("sale_day_id") REFERENCES "public"."sale_days"("id") ON DELETE CASCADE;
 
@@ -1862,6 +1880,10 @@ GRANT ALL ON FUNCTION "public"."cash_counts_guard"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "anon";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."cents_text"("p_cents" integer) TO "service_role";
+
+GRANT ALL ON FUNCTION "public"."check_repack_side"() TO "anon";
+GRANT ALL ON FUNCTION "public"."check_repack_side"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."check_repack_side"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."claims_report"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."claims_report"() TO "authenticated";

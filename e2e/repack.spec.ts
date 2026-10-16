@@ -39,7 +39,7 @@ test('a repack moves stock into a new item and shows on Items', async ({
   await expect(page.getByText('Costs $1.04 a pack')).toBeVisible()
   await page.getByRole('button', { name: 'Save repack' }).click()
 
-  await expect(page.getByText('Repacked 3 Movie night pack')).toBeVisible()
+  await expect(page.getByText('Repacked 3 Movie night packs')).toBeVisible()
   const allItems = page
     .getByRole('list', { name: 'All items' })
     .getByRole('listitem')

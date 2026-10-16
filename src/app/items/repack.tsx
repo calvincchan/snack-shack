@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { cn } from 'cn'
@@ -19,6 +19,7 @@ import {
 import { PriceOptionGrid } from '@/components/price-option-grid'
 import {
   costPerPackCents,
+  repackedMessage,
   repackMoves,
   useRepack,
   type RepackSource,
@@ -37,8 +38,10 @@ export function Repack({
   items: Item[]
   onDone: () => void
 }) {
-  // One id per repack, kept across retries so a repeat tap cannot double it.
-  const [id] = useState(() => crypto.randomUUID())
+  // One id per repack, kept while a retry sends the same thing so a repeat
+  // tap cannot double it. An edit after an error gets a fresh id, so the
+  // edit is saved rather than answered with the earlier attempt.
+  const attempt = useRef<{ id: string; sent: string } | null>(null)
   const [step, setStep] = useState(0)
   const [sources, setSources] = useState<RepackSource[]>([])
   const [packItemId, setPackItemId] = useState<string | null>(null)
@@ -82,17 +85,21 @@ export function Repack({
 
   function submit() {
     if (packs === null) return
+    const made = {
+      packItemId: newItem ? null : packItemId,
+      newItem: newItem && price ? { ...newItem, ...price } : null,
+      packs,
+      sources,
+    }
+    const sent = JSON.stringify(made)
+    if (attempt.current?.sent !== sent) {
+      attempt.current = { id: crypto.randomUUID(), sent }
+    }
     repack.mutate(
-      {
-        id,
-        packItemId: newItem ? null : packItemId,
-        newItem: newItem && price ? { ...newItem, ...price } : null,
-        packs,
-        sources,
-      },
+      { id: attempt.current.id, ...made },
       {
         onSuccess: () => {
-          toast.success(`Repacked ${packs} ${packName}`)
+          toast.success(repackedMessage(packs, packName))
           onDone()
         },
         onError: (error) => toast.error(error.message),

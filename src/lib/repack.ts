@@ -49,6 +49,12 @@ export function repackMoves(
   }))
 }
 
+/** "Repacked 31 Candy packs", or "Repacked 1 Candy pack". */
+export function repackedMessage(packs: number, packName: string): string {
+  const plural = packs === 1 || /s$/i.test(packName) ? '' : 's'
+  return `Repacked ${packs} ${packName}${plural}`
+}
+
 /**
  * Record a repack (ADR-0019): `repack()` moves the stock and the cost into the
  * pack item in one transaction, making the item first if it is new. Safe to

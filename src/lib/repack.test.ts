@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { costPerPackCents, repackMoves } from '@/lib/repack'
+import { costPerPackCents, repackMoves, repackedMessage } from '@/lib/repack'
 
 const items = [
   { id: 'peach', costPerPieceCents: 4.2 },
@@ -42,5 +42,13 @@ describe('repackMoves', () => {
       { itemId: 'peach', pieces: -155 },
       { itemId: 'keys', pieces: -31 },
     ])
+  })
+})
+
+describe('repackedMessage', () => {
+  it('counts the packs made', () => {
+    expect(repackedMessage(31, 'Candy pack')).toBe('Repacked 31 Candy packs')
+    expect(repackedMessage(1, 'Candy pack')).toBe('Repacked 1 Candy pack')
+    expect(repackedMessage(4, 'Sour Keys')).toBe('Repacked 4 Sour Keys')
   })
 })

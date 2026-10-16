@@ -51,6 +51,20 @@ alter table public.stock_movements add constraint stock_movements_repack check (
   (reason = 'repacked') = (repack_id is not null)
 );
 
+-- The sign of a repacked movement depends on its side, which a check
+-- constraint cannot see: + for the repack's pack item, − for every source.
+create function public.check_repack_side()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if (new.qty > 0) <> (new.item_id = (select pack_item_id from public.repacks where id = new.repack_id)) then
+    raise exception 'A repack adds to the item made and takes from the items that went in.';
+  end if;
+  return new;
+end $$;
+
+create trigger stock_movements_repack_side before insert on public.stock_movements
+  for each row when (new.reason = 'repacked') execute function public.check_repack_side();
+
 -------------------------------------------------------------------------------
 -- 3. Items tab: repacked pieces since the last count, and the flag
 -------------------------------------------------------------------------------
@@ -192,6 +206,7 @@ declare
   v_cost numeric;
   v_on_hand int;
   v_archived boolean;
+  v_repack_only boolean;
 begin
   perform public.require_member();
   if v_id is null then raise exception 'A repack needs an id.'; end if;
@@ -216,9 +231,11 @@ begin
             coalesce((p -> 'new_item' ->> 'bundle_size')::int, 1))
     returning id into v_pack;
   else
-    select archived into v_archived from public.items where id = v_pack;
+    select archived, repack_only into v_archived, v_repack_only
+    from public.items where id = v_pack;
     if not found then raise exception 'That item no longer exists.'; end if;
     if v_archived then raise exception 'That item is archived.'; end if;
+    if v_repack_only then raise exception 'That item is repack only, so it cannot be made.'; end if;
   end if;
 
   insert into public.repacks (id, pack_item_id, packs, note)

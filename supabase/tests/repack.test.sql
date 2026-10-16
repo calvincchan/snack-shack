@@ -1,7 +1,7 @@
 -- Repacking (ADR-0019, pgTAP).
 -- Run with: supabase test db
 begin;
-select plan(29);
+select plan(40);
 
 set local client_min_messages = warning;
 truncate table auth.users, public.items cascade;
@@ -112,6 +112,11 @@ update public.items set price_cents = 100 where name = 'Peach Slices';
 set local role authenticated;
 select is((select count(*)::int from public.insights_low_margin_items where name = 'Peach Slices'), 0,
   'and out of low margin stock even with a price');
+select is((select count(*)::int from public.insights_slowest_item where name = 'Peach Slices'), 0,
+  'and out of the slowest mover');
+select is((select usual_cost_cents from public.type_benchmarks where type = 'treat'),
+  (select unit_cost_cents from public.items where name = 'Candy pack'),
+  'and out of the Deal check benchmark');
 
 -- Rules.
 select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 0, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
@@ -141,6 +146,37 @@ set local role authenticated;
 select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
   (select id from public.items where name = 'Candy pack'), (select id from ids where name = 'Chips')),
   'P0001', 'That item is archived.', 'no archived sources');
+
+select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
+  (select id from ids where name = 'Chips'), (select id from ids where name = 'Sour Keys')),
+  'P0001', 'That item is archived.', 'no archived pack item');
+select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
+  (select id from ids where name = 'Peach Slices'), (select id from ids where name = 'Sour Keys')),
+  'P0001', 'That item is repack only, so it cannot be made.', 'no repack only pack item');
+select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "99999999-0000-0000-0000-000000000000", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
+  (select id from ids where name = 'Sour Keys')),
+  'P0001', 'That item no longer exists.', 'the pack item must exist');
+select throws_ok(format($q$select public.repack('{"id": "20000000-0000-0000-0000-000000000009", "pack_item_id": "%s", "packs": 1, "sources": [{"item_id": "99999999-0000-0000-0000-000000000000", "pieces_per_pack": 1}]}')$q$,
+  (select id from public.items where name = 'Candy pack')),
+  'P0001', 'That item no longer exists.', 'each source must exist');
+select throws_ok(format($q$select public.repack('{"pack_item_id": "%s", "packs": 1, "sources": [{"item_id": "%s", "pieces_per_pack": 1}]}')$q$,
+  (select id from public.items where name = 'Candy pack'), (select id from ids where name = 'Sour Keys')),
+  'P0001', 'A repack needs an id.', 'a repack needs an id');
+select is((select count(*)::int from public.repacks where id = '20000000-0000-0000-0000-000000000009'), 0,
+  'failed repacks leave nothing behind');
+
+-- The ledger itself holds the rules, whoever writes to it.
+reset role;
+select throws_ok(format($q$insert into public.stock_movements (item_id, qty, reason) values ('%s', -1, 'repacked')$q$,
+  (select id from ids where name = 'Sour Keys')),
+  '23514', null, 'a repacked movement belongs to a repack');
+select throws_ok(format($q$insert into public.stock_movements (item_id, qty, reason, repack_id) values ('%s', 1, 'repacked', '20000000-0000-0000-0000-000000000001')$q$,
+  (select id from ids where name = 'Sour Keys')),
+  'P0001', 'A repack adds to the item made and takes from the items that went in.', 'a source cannot gain');
+select throws_ok(format($q$insert into public.stock_movements (item_id, qty, reason, repack_id) values ('%s', -1, 'repacked', '20000000-0000-0000-0000-000000000001')$q$,
+  (select id from public.items where name = 'Candy pack')),
+  'P0001', 'A repack adds to the item made and takes from the items that went in.', 'the pack item cannot lose');
+set local role authenticated;
 
 select throws_ok(format($q$insert into public.stock_movements (item_id, qty, reason) values ('%s', -1, 'repacked')$q$,
   (select id from ids where name = 'Sour Keys')),
