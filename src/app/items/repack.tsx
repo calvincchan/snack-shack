@@ -52,7 +52,7 @@ export function Repack({
   const repack = useRepack()
 
   // Pack items are what you make; everything else is what goes in.
-  const ingredients = items.filter((item) => !item.madeByRepack)
+  const sourceItems = items.filter((item) => !item.madeByRepack)
   const packItems = items.filter((item) => item.madeByRepack)
 
   // A preview, like the price options: repack() works out the stored cost.
@@ -158,7 +158,7 @@ export function Repack({
             Tap each item, then set how many pieces go in one pack.
           </p>
           <ul className="flex flex-col gap-2" aria-label="Items">
-            {ingredients.map((item) => {
+            {sourceItems.map((item) => {
               const source = sources.find((s) => s.itemId === item.id)
               return (
                 <li

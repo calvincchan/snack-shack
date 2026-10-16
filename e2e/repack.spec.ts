@@ -65,8 +65,8 @@ test('a second repack adds to the pack item', async ({ page }) => {
   await page.getByRole('button', { name: 'Repack', exact: true }).click()
 
   // 1. Pack items do not go into packs.
-  const ingredients = page.getByRole('list', { name: 'Items' })
-  await expect(ingredients).not.toContainText('Movie night pack')
+  const sourceItems = page.getByRole('list', { name: 'Items' })
+  await expect(sourceItems).not.toContainText('Movie night pack')
   await page.getByRole('button', { name: /Popcorn, lightly salted/ }).click()
   await page.getByRole('button', { name: 'Next' }).click()
 
