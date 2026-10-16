@@ -24,7 +24,7 @@ export type Item = {
   piecesGone: number | null
   /** Net repacked pieces since the last count: + made, − used (ADR-0019). */
   repackedSince: number
-  /** A pack item: a repack made it (ADR-0019). Shown with 🛍️. */
+  /** A pack item: a repack made it (ADR-0019). Shown with 🎁. */
   madeByRepack: boolean
   /** Has gone into a repack. With no price, the item is Repack only. */
   inRepacks: boolean
@@ -155,9 +155,9 @@ export function isRepackOnly(item: Pick<Item, 'priceCents' | 'inRepacks'>) {
   return item.priceCents === null && item.inRepacks
 }
 
-/** The name as shown: "🛍️ Candy pack" for a pack item. Never saved. */
+/** The name as shown: "🎁 Candy pack" for a pack item. Never saved. */
 export function itemName(item: { name: string; madeByRepack: boolean }) {
-  return item.madeByRepack ? `🛍️ ${item.name}` : item.name
+  return item.madeByRepack ? `🎁 ${item.name}` : item.name
 }
 
 /** Someone else saved first; the caller decides whose edit wins. */

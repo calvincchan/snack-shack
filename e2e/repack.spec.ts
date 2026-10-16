@@ -60,7 +60,7 @@ test('a second repack adds to the pack item', async ({ page }) => {
   await expect(
     page
       .getByRole('list', { name: 'All items' })
-      .getByRole('button', { name: /🛍️ Movie night pack/ }),
+      .getByRole('button', { name: /🎁 Movie night pack/ }),
   ).toBeVisible()
   await page.getByRole('button', { name: 'Repack', exact: true }).click()
 
@@ -72,7 +72,7 @@ test('a second repack adds to the pack item', async ({ page }) => {
 
   // 2. Only pack items, plus New item.
   await expect(page.getByRole('button', { name: /Popcorn/ })).toHaveCount(0)
-  await page.getByRole('button', { name: /🛍️ Movie night pack/ }).click()
+  await page.getByRole('button', { name: /🎁 Movie night pack/ }).click()
   // More than the ledger holds: a warning, not a block.
   await page.getByRole('textbox', { name: 'Packs made' }).fill('9999')
   await page.getByRole('button', { name: 'Next' }).click()

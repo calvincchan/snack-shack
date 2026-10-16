@@ -118,7 +118,7 @@ Three segments: **Log purchase · Claims · Deal check**.
 ### 4.3 Items
 
 - **Needs a price:** new items logged in Log purchase. Each shows cost per piece and the price options with band, margin and a **Suggested** marker. One tap on a price option prices the item. An unpriced item that has gone into a repack moves to *Repack only* instead.
-- **All items:** name (🛍️ before a pack item, everywhere it is shown), New tag, ❄ label, stock since the last count, naming only what happened ("Counted 24 on Oct 1 · then bought 48", "Counted 2 on Oct 16 · then made 5" for a pack item, "Not counted · bought 250, 155 into packs" for a source item, or just "Counted 24 on Oct 1"), cost per piece, margin %, band pill, price. Tap to open the editor:
+- **All items:** name (🎁 before a pack item, everywhere it is shown), New tag, ❄ label, stock since the last count, naming only what happened ("Counted 24 on Oct 1 · then bought 48", "Counted 2 on Oct 16 · then made 5" for a pack item, "Not counted · bought 250, 155 into packs" for a source item, or just "Counted 24 on Oct 1"), cost per piece, margin %, band pill, price. Tap to open the editor:
   - **Price:** the four options with band and margin; current one highlighted, suggested one marked.
   - **Type:** Snack / Treat.
   - **Storage:** Shelf / ❄ Freezer.
@@ -140,8 +140,8 @@ About once a term (ADR-0016). Any volunteer, any time.
 
 Pieces of some items made into another item, such as 5 Peach Slices and 1 Sour Keys Gummy into one candy pack (ADR-0019). Any volunteer, three steps:
 1. **What went in:** every item except pack items. Tap each item and set pieces per pack with a stepper. Shows what one pack costs.
-2. **What you made:** only pack items (🛍️), to make more of one, or **＋ New item** with the same name, Snack/Treat and Shelf/❄ Freezer fields as Log purchase, plus the four price options with band, margin and **Suggested**. With no pack items yet, New item opens by itself. A name that matches an existing item shows "There is already an item called …" (the same warning appears in Log purchase). Then **How many packs?**
-3. **Check and save:** each item's stock change ("Peach Slices −155", "🛍️ Candy pack +31"), cost per pack, price, margin and band. A source item with fewer pieces on record than are going in shows "Mini bars: 200 going in, but only 130 on record. Check the numbers." Saving is still allowed. **Save repack** shows "Repacked 31 Candy packs".
+2. **What you made:** only pack items (🎁), to make more of one, or **＋ New item** with the same name, Snack/Treat and Shelf/❄ Freezer fields as Log purchase, plus the four price options with band, margin and **Suggested**. With no pack items yet, New item opens by itself. A name that matches an existing item shows "There is already an item called …" (the same warning appears in Log purchase). Then **How many packs?**
+3. **Check and save:** each item's stock change ("Peach Slices −155", "🎁 Candy pack +31"), cost per pack, price, margin and band. A source item with fewer pieces on record than are going in shows "Mini bars: 200 going in, but only 130 on record. Check the numbers." Saving is still allowed. **Save repack** shows "Repacked 31 Candy packs".
 
 The warning never blocks, and there is no undo; the next stock count fixes the stock.
 

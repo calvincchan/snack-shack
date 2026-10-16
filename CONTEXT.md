@@ -123,7 +123,7 @@ Making a new item out of pieces of other items, such as 5 Peach Slices and 1 Sou
 _Avoid_: Bundle, kit, recipe, pre-bag
 
 **Pack item**:
-An item a repack made, such as Candy pack. Shown with 🛍️. It goes into no other pack and isn't bought at the store.
+An item a repack made, such as Candy pack. Shown with 🎁. It goes into no other pack and isn't bought at the store.
 _Avoid_: Bundle, kit
 
 **Repack only**:

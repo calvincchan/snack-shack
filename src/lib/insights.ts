@@ -38,7 +38,7 @@ export type CountedItem = {
   revenueEstimateCents: number | null
   /** Null while the item has no price. */
   margin: number | null
-  /** A pack item (ADR-0019), shown with 🛍️. */
+  /** A pack item (ADR-0019), shown with 🎁. */
   madeByRepack: boolean
 }
 

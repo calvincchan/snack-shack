@@ -329,7 +329,7 @@ export function Repack({
               </li>
             ))}
             <li className="flex items-center justify-between p-3 tabular-nums">
-              <span className="font-medium">🛍️ {packName}</span>
+              <span className="font-medium">🎁 {packName}</span>
               <span className="font-heading text-ok text-lg font-semibold">
                 {signedPieces(packs ?? 0)}
               </span>
