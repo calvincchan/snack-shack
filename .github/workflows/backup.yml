@@ -2,6 +2,8 @@ name: Weekly backup
 
 # Dumps the production database and stores it in the private `backups` bucket
 # in Supabase Storage. The free plan has no daily backups, so this is it.
+# It also copies the `receipts` bucket (receipt and refund slip photos) into
+# `backups/receipts/`. Copy only: existing files are skipped, nothing is deleted.
 # Secrets: SUPABASE_DB_URL (session pooler URI; GitHub runners are IPv4 only),
 # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
@@ -48,6 +50,53 @@ jobs:
             -H "Content-Type: application/gzip" \
             --data-binary "@$file"
 
+      - name: Copy receipt photos
+        run: |
+          set -euo pipefail
+          base="${{ secrets.SUPABASE_URL }}/storage/v1/object"
+          auth="Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
+          key="apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
+
+          # Print "<path><TAB><mimetype>" for every file under a prefix of a
+          # bucket. Folders come back with a null id, so recurse into them.
+          list() {
+            local bucket=$1 prefix=$2 offset=0 page n
+            while :; do
+              page=$(curl --fail-with-body -sS -X POST "$base/list/$bucket" -H "$auth" -H "$key" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -cn --arg p "$prefix" --argjson o "$offset" '{prefix:$p,limit:1000,offset:$o}')")
+              n=$(jq length <<<"$page")
+              jq -r --arg p "$prefix" 'map(select(.id != null)) | .[] | [($p + (if $p == "" then "" else "/" end) + .name), (.metadata.mimetype // "application/octet-stream")] | @tsv' <<<"$page"
+              for folder in $(jq -r '.[] | select(.id == null) | .name' <<<"$page"); do
+                list "$bucket" "${prefix:+$prefix/}$folder"
+              done
+              offset=$((offset + n))
+              [ "$n" -lt 1000 ] && break
+            done
+          }
+          enc() { jq -rn --arg p "$1" '$p | @uri' | sed 's/%2F/\//g'; }
+
+          list receipts "" | sort > source.tsv
+          list backups receipts | sed 's#^receipts/##' | cut -f1 | sort > mirror.txt
+          echo "receipts: $(wc -l < source.tsv) files, mirror: $(wc -l < mirror.txt) files"
+
+          while IFS=$'\t' read -r path mime; do
+            grep -qxF -- "$path" mirror.txt && continue
+            echo "copying $path"
+            curl --fail-with-body -sS "$base/authenticated/receipts/$(enc "$path")" \
+              -H "$auth" -H "$key" -o photo.tmp
+            curl --fail-with-body -sS -X POST "$base/backups/receipts/$(enc "$path")" \
+              -H "$auth" -H "$key" -H "Content-Type: $mime" --data-binary @photo.tmp
+            echo
+          done < source.tsv
+
+          # Every receipt file must now be in the mirror, or the run fails.
+          list backups receipts | sed 's#^receipts/##' | cut -f1 | sort > mirror.txt
+          missing=$(comm -23 <(cut -f1 source.tsv) mirror.txt)
+          if [ -n "$missing" ]; then
+            echo "Missing from the mirror:"; echo "$missing"; exit 1
+          fi
+
       - name: Keep the newest backups only
         run: |
           base="${{ secrets.SUPABASE_URL }}/storage/v1/object"
@@ -56,7 +105,7 @@ jobs:
           old=$(curl --fail-with-body -sS -X POST "$base/list/backups" -H "$auth" -H "$key" \
             -H "Content-Type: application/json" \
             -d '{"prefix":"","limit":100,"sortBy":{"column":"name","order":"desc"}}' \
-            | jq -c --argjson keep "$KEEP" '[.[].name] | .[$keep:]')
+            | jq -c --argjson keep "$KEEP" '[.[].name | select(endswith(".sql.gz"))] | .[$keep:]')
           if [ "$old" != "[]" ]; then
             curl --fail-with-body -sS -X DELETE "$base/backups" -H "$auth" -H "$key" \
               -H "Content-Type: application/json" \
