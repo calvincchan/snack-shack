@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
 import { ItemEditor } from '@/app/items/item-editor'
 import { CountStock } from '@/app/items/count-stock'
+import { RepackPrototype } from '@/app/items/repack-prototype'
+import { useSearchParams } from 'react-router'
 import { stockLine, useItems, useSaveItem, type Item } from '@/lib/items'
 import { formatCents } from '@/lib/money'
 import {
@@ -19,6 +21,10 @@ export function ItemsPage() {
   const [showArchived, setShowArchived] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [counting, setCounting] = useState(false)
+
+  // PROTOTYPE (#85): ?variant= opens the Repack prototype.
+  const [params, setParams] = useSearchParams()
+  const repacking = params.has('variant')
 
   const items = useItems({ includeArchived: showArchived })
 
@@ -40,17 +46,35 @@ export function ItemsPage() {
     )
   }
 
+  if (repacking) {
+    return (
+      <RepackPrototype
+        items={all}
+        onDone={() => setParams({}, { replace: true })}
+      />
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6 p-4 pb-8">
       <h1 className="sr-only">Items</h1>
 
-      <Button
-        variant="outline"
-        className="text-foreground min-h-12 self-start"
-        onClick={() => setCounting(true)}
-      >
-        Count stock
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          className="text-foreground min-h-12 self-start"
+          onClick={() => setCounting(true)}
+        >
+          Count stock
+        </Button>
+        <Button
+          variant="outline"
+          className="text-foreground min-h-12 self-start"
+          onClick={() => setParams({ variant: 'A' })}
+        >
+          Repack
+        </Button>
+      </div>
 
       {items.isPending && (
         <p className="text-muted-foreground text-sm">Loading…</p>
