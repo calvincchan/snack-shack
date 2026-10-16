@@ -54,14 +54,14 @@ export function ItemsPage() {
       <div className="flex gap-2">
         <Button
           variant="outline"
-          className="text-foreground min-h-12"
+          className="text-foreground min-h-12 flex-1"
           onClick={() => setCounting(true)}
         >
           Count stock
         </Button>
         <Button
           variant="outline"
-          className="text-foreground min-h-12"
+          className="text-foreground min-h-12 flex-1"
           onClick={() => setRepacking(true)}
         >
           Repack
