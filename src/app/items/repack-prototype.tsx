@@ -9,6 +9,8 @@ import { toast } from 'sonner'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Stepper } from '@/components/stepper'
 import { BandPill, Tag, TypeDot } from '@/components/item-bits'
 import {
@@ -200,45 +202,66 @@ function NewPackFields({
   costPerPack: number
   onChange: (next: NewPack) => void
 }) {
-  const seg = (active: boolean) =>
-    cn(
-      'border-border min-h-11 flex-1 rounded-lg border px-3 text-sm font-medium',
-      active
-        ? 'bg-primary text-primary-foreground border-primary'
-        : 'bg-card text-foreground',
-    )
   return (
     <div className="flex flex-col gap-3">
-      <Input
-        placeholder="Name kids see, e.g. Candy pack"
-        value={value.name}
-        onChange={(e) => onChange({ ...value, name: e.target.value })}
-        className="h-11"
-      />
-      <div className="flex gap-2">
-        {(['snack', 'treat'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            className={seg(value.type === t)}
-            onClick={() => onChange({ ...value, type: t })}
-          >
-            {t === 'snack' ? 'Snack' : 'Treat'}
-          </button>
-        ))}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="pack-name">Name kids will see</Label>
+        <Input
+          id="pack-name"
+          className="min-h-12"
+          placeholder="e.g. Candy pack"
+          value={value.name}
+          onChange={(e) => onChange({ ...value, name: e.target.value })}
+        />
       </div>
-      <div className="flex gap-2">
-        {(['shelf', 'freezer'] as const).map((s) => (
-          <button
-            key={s}
-            type="button"
-            className={seg(value.storage === s)}
-            onClick={() => onChange({ ...value, storage: s })}
-          >
-            {s === 'shelf' ? 'Shelf' : '❄ Freezer'}
-          </button>
-        ))}
-      </div>
+
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        aria-label="Type"
+        className="w-full"
+        value={value.type}
+        onValueChange={(v) =>
+          v && onChange({ ...value, type: v as NewPack['type'] })
+        }
+      >
+        <ToggleGroupItem
+          value="snack"
+          className="text-foreground min-h-12 flex-1"
+        >
+          Snack
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="treat"
+          className="text-foreground min-h-12 flex-1"
+        >
+          Treat (sugary)
+        </ToggleGroupItem>
+      </ToggleGroup>
+
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        aria-label="Storage"
+        className="w-full"
+        value={value.storage}
+        onValueChange={(v) =>
+          v && onChange({ ...value, storage: v as NewPack['storage'] })
+        }
+      >
+        <ToggleGroupItem
+          value="shelf"
+          className="text-foreground min-h-12 flex-1"
+        >
+          Shelf
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="freezer"
+          className="text-foreground min-h-12 flex-1"
+        >
+          ❄ Freezer
+        </ToggleGroupItem>
+      </ToggleGroup>
       <div className="grid grid-cols-2 gap-2">
         {PRICE_OPTIONS.map((o) => {
           const m = marginOf(costPerPack, o.priceCents, o.bundleSize)
