@@ -21,6 +21,7 @@ import {
   costPerPackCents,
   repackedMessage,
   repackMoves,
+  shortSources,
   useRepack,
   type RepackSource,
 } from '@/lib/repack'
@@ -334,6 +335,13 @@ export function Repack({
               </span>
             </li>
           </ul>
+
+          {shortSources(sources, packs ?? 0, items).map((short) => (
+            <p key={short.name} role="alert" className="text-warn text-sm">
+              {short.name}: {short.needed} going in, but only {short.onRecord}{' '}
+              on record. Check the numbers.
+            </p>
+          ))}
 
           <div className="flex flex-wrap items-center gap-2 text-sm tabular-nums">
             <span>

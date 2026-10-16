@@ -13,7 +13,7 @@ On one sale day, volunteers repacked 155 Peach Slices and 31 Sour Keys Gummy int
 - Items carry no flag. A **pack item** is one a repack made; a **Repack only** item has no price and has gone into a repack. Both are derived from the `repacks` table and the ledger, so they cannot drift and volunteers have nothing to set.
 - Repack only items need no price and don't appear under **Needs a price**. Item insights count only priced items, since an item without a price is not sold. Repack only items are still bought, counted and shown on the Items tab. Giving one a price makes it a regular item again.
 - Pack items show with 🛍️ wherever an item name is shown (display only, not saved in the name). Repack's first step leaves them out (a pack goes into no other pack); its second step shows only them, plus **New item**. Log purchase leaves them out too, since stores don't sell them. These are app rules; `repack()` accepts any active item on either side.
-- Repack doesn't check that enough source pieces are on hand. Between counts the ledger only grows (ADR-0016), so a check would not catch anything real. The next stock count absorbs mistakes.
+- Repack warns, but doesn't block, when a source item has fewer pieces on record than are going in. Sale days post nothing (ADR-0016), so the ledger only ever over-counts; going past it means a typo or stock nobody logged. A typo left in makes **pieces gone** wrong for both items until the count after next; the cash numbers are unaffected. The next stock count fixes the stock.
 
 This is not the pre-bagging of deal items that ADR-0004 rejected: a repack makes a new item out of others, priced on its own.
 

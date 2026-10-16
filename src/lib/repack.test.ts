@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { costPerPackCents, repackMoves, repackedMessage } from '@/lib/repack'
+import {
+  costPerPackCents,
+  repackMoves,
+  repackedMessage,
+  shortSources,
+} from '@/lib/repack'
 
 const items = [
   { id: 'peach', costPerPieceCents: 4.2 },
@@ -50,5 +55,30 @@ describe('repackedMessage', () => {
     expect(repackedMessage(31, 'Candy pack')).toBe('Repacked 31 Candy packs')
     expect(repackedMessage(1, 'Candy pack')).toBe('Repacked 1 Candy pack')
     expect(repackedMessage(4, 'Sour Keys')).toBe('Repacked 4 Sour Keys')
+  })
+})
+
+describe('shortSources', () => {
+  const stock = [
+    { id: 'bars', name: 'Mini bars', onHand: 130 },
+    { id: 'keys', name: 'Sour Keys', onHand: -4 },
+  ]
+
+  it('names sources asked for more than the ledger holds', () => {
+    expect(shortSources([{ itemId: 'bars', perPack: 4 }], 50, stock)).toEqual([
+      { name: 'Mini bars', needed: 200, onRecord: 130 },
+    ])
+  })
+
+  it('is empty when the ledger covers every source', () => {
+    expect(shortSources([{ itemId: 'bars', perPack: 4 }], 30, stock)).toEqual(
+      [],
+    )
+  })
+
+  it('treats a negative ledger as none on record', () => {
+    expect(shortSources([{ itemId: 'keys', perPack: 1 }], 1, stock)).toEqual([
+      { name: 'Sour Keys', needed: 1, onRecord: 0 },
+    ])
   })
 })

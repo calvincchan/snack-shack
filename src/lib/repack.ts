@@ -49,6 +49,26 @@ export function repackMoves(
   }))
 }
 
+/**
+ * Sources asked for more pieces than the ledger holds. Sale days post nothing,
+ * so the ledger only ever over-counts: going past it means a typo or stock
+ * nobody logged. A warning only; the save stays allowed (ADR-0019).
+ */
+export function shortSources(
+  sources: RepackSource[],
+  packs: number,
+  items: Pick<Item, 'id' | 'name' | 'onHand'>[],
+): { name: string; needed: number; onRecord: number }[] {
+  return sources.flatMap((source) => {
+    const item = items.find((i) => i.id === source.itemId)
+    const needed = packs * source.perPack
+    const onRecord = Math.max(item?.onHand ?? 0, 0)
+    return item && needed > onRecord
+      ? [{ name: item.name, needed, onRecord }]
+      : []
+  })
+}
+
 /** "Repacked 31 Candy packs", or "Repacked 1 Candy pack". */
 export function repackedMessage(packs: number, packName: string): string {
   const plural = packs === 1 || /s$/i.test(packName) ? '' : 's'

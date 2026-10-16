@@ -141,9 +141,9 @@ About once a term (ADR-0016). Any volunteer, any time.
 Pieces of some items made into another item, such as 5 Peach Slices and 1 Sour Keys Gummy into one candy pack (ADR-0019). Any volunteer, three steps:
 1. **What went in:** every item except pack items. Tap each item and set pieces per pack with a stepper. Shows what one pack costs.
 2. **What you made:** only pack items (🛍️), to make more of one, or **＋ New item** with the same name, Snack/Treat and Shelf/❄ Freezer fields as Log purchase, plus the four price options with band, margin and **Suggested**. With no pack items yet, New item opens by itself. A name that matches an existing item shows "There is already an item called …" (the same warning appears in Log purchase). Then **How many packs?**
-3. **Check and save:** each item's stock change ("Peach Slices −155", "🛍️ Candy pack +31"), cost per pack, price, margin and band. **Save repack** shows "Repacked 31 Candy packs".
+3. **Check and save:** each item's stock change ("Peach Slices −155", "🛍️ Candy pack +31"), cost per pack, price, margin and band. A source item with fewer pieces on record than are going in shows "Mini bars: 200 going in, but only 130 on record. Check the numbers." Saving is still allowed. **Save repack** shows "Repacked 31 Candy packs".
 
-There is no on-hand check and no undo; the next stock count absorbs mistakes.
+The warning never blocks, and there is no undo; the next stock count fixes the stock.
 
 ### 4.5 Insights
 
