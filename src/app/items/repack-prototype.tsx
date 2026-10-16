@@ -226,6 +226,8 @@ function NewPackFields({
             {t === 'snack' ? 'Snack' : 'Treat'}
           </button>
         ))}
+      </div>
+      <div className="flex gap-2">
         {(['shelf', 'freezer'] as const).map((s) => (
           <button
             key={s}
