@@ -69,9 +69,9 @@ export const DENOMINATIONS = [
   { cents: 500, label: '$5 Bill' },
   { cents: 200, label: '$2 Toonie' },
   { cents: 100, label: '$1 Loonie' },
-  { cents: 25, label: '¢25 Quarter' },
-  { cents: 10, label: '¢10 Dime' },
-  { cents: 5, label: '¢5 Nickel' },
+  { cents: 25, label: '25¢ Quarter' },
+  { cents: 10, label: '10¢ Dime' },
+  { cents: 5, label: '5¢ Nickel' },
 ] as const
 
 /** "$2.00 less than left last time", or null when it matches or can't be compared. */
